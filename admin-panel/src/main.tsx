@@ -6208,6 +6208,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           setPublicationRecords(serverRecords);
           setWorkspaceData({ media: result.data.media || [] });
           setIsConnected(true);
+          setPreviewRole(result.data.user?.role === "admin" ? "admin" : "editor");
           const stageCounts: Record<string, number> = {};
           result.data.submissions.forEach((submission: Record<string, unknown>) => { const stage = String(submission.current_stage || ""); stageCounts[stage] = (stageCounts[stage] || 0) + 1; });
           setRealData({ stageCounts, totalSubmissions: serverSubmissions.length, totalJournals: result.data.journals.length, totalAuthors: result.data.authors.length, journals: result.data.journals });
@@ -6222,6 +6223,11 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only effect; setters are stable, mergeLocalSamples is local
   }, []);
+  useEffect(() => {
+    if (import.meta.env.PROD && submissionsReady && !isConnected) {
+      window.location.replace("/admin/login");
+    }
+  }, [submissionsReady, isConnected]);
   const awaitingScreening = isConnected && realData
     ? (realData.stageCounts["review_new"] || 0) + (realData.stageCounts["review_in_progress"] || 0)
     : editorialSubmissions.filter(

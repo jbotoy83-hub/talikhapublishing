@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "./icon";
+
+const PDFViewer = dynamic(
+  () => import("@/components/ui/pdf-viewer").then((m) => ({ default: m.PDFViewer })),
+  { ssr: false, loading: () => <div className="fpreview-loading">Loading PDF preview…</div> }
+);
+
+const DocxViewer = dynamic(
+  () => import("@/components/ui/docx-viewer").then((m) => ({ default: m.DocxViewer })),
+  { ssr: false, loading: () => <div className="fpreview-loading">Loading document preview…</div> }
+);
 import {
   type StoredFile,
   type FilePurpose,
@@ -230,12 +241,10 @@ type PreviewModalProps = { file: StoredFile; onClose: () => void };
 export function PreviewModal({ file, onClose }: PreviewModalProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [docxBuffer, setDocxBuffer] = useState<ArrayBuffer | null>(null);
-  const [docxError, setDocxError] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const docxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let url: string | null = null;
@@ -257,38 +266,16 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [file]);
 
-  useEffect(() => {
-    if (!docxBuffer) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { renderAsync } = await import("docx-preview");
-        if (cancelled || !docxRef.current) return;
-        docxRef.current.innerHTML = "";
-        await renderAsync(docxBuffer, docxRef.current, undefined, {
-          inWrapper: true,
-          className: "docx",
-          useBase64URL: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-          renderHeaders: true,
-          renderFooters: true
-        });
-      } catch {
-        if (!cancelled) setDocxError(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [docxBuffer]);
-
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
     if (document.fullscreenElement) document.exitFullscreen();
     else containerRef.current.requestFullscreen();
   };
 
-  const showZoom = isDocx(file) || isPdf(file) || isImage(file);
-  const showRotate = isPdf(file) || isImage(file);
+  const pdfFile = isPdf(file);
+  const docxFile = isDocx(file);
+  const imageFile = isImage(file);
+  const documentFile = pdfFile || docxFile;
 
   return (
     <div className="fpreview-overlay" onClick={onClose}>
@@ -296,26 +283,31 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         <div className="fpreview-toolbar">
           <span className="fpreview-title">{file.name}</span>
           <div className="fpreview-controls">
-            {showZoom && (
+            {imageFile && (
               <>
                 <button type="button" onClick={() => setZoom((z) => Math.max(25, z - 25))} title="Zoom out">−</button>
                 <span className="fpreview-zoom">{zoom}%</span>
                 <button type="button" onClick={() => setZoom((z) => Math.min(300, z + 25))} title="Zoom in">+</button>
+                <button type="button" onClick={() => setRotation((r) => (r + 90) % 360)} title="Rotate">↻</button>
               </>
             )}
-            {showRotate && <button type="button" onClick={() => setRotation((r) => (r + 90) % 360)} title="Rotate">↻</button>}
             <button type="button" onClick={toggleFullscreen} title="Fullscreen">⛶</button>
-            {blobUrl && <a href={blobUrl} download={file.name} className="fpreview-dl" title="Download">↓</a>}
+            {imageFile && blobUrl && <a href={blobUrl} download={file.name} className="fpreview-dl" title="Download">↓</a>}
           </div>
           <button type="button" className="fpreview-close" onClick={onClose}>✕</button>
         </div>
-        <div className="fpreview-body" style={{ zoom: `${zoom}%` }}>
+        <div className={`fpreview-body${documentFile ? " fpreview-body--flush" : ""}`} style={imageFile ? { zoom: `${zoom}%` } : undefined}>
           {loading && <div className="fpreview-loading">Loading preview…</div>}
-          {!loading && docxBuffer && !docxError && <div ref={docxRef} className="fpreview-docx" />}
-          {!loading && docxError && <div className="fpreview-loading">Could not render this document.</div>}
-          {!loading && blobUrl && isPdf(file) && <iframe src={blobUrl} className="fpreview-pdf" title={file.name} style={{ transform: `rotate(${rotation}deg)` }} />}
-          {!loading && blobUrl && isImage(file) && <img src={blobUrl} alt={file.name} className="fpreview-img" style={{ transform: `rotate(${rotation}deg)` }} />}
-          {!loading && !docxBuffer && !blobUrl && <div className="fpreview-loading">Preview not available for this file type.</div>}
+          {!loading && pdfFile && blobUrl && (
+            <div className="fpreview-pdf-wrap">
+              <PDFViewer src={blobUrl} fileName={file.name} showDownload showUpload={false} className="h-full w-full" />
+            </div>
+          )}
+          {!loading && docxFile && docxBuffer && (
+            <DocxViewer buffer={docxBuffer} fileName={file.name} showDownload className="h-full w-full" />
+          )}
+          {!loading && imageFile && blobUrl && <img src={blobUrl} alt={file.name} className="fpreview-img" style={{ transform: `rotate(${rotation}deg)` }} />}
+          {!loading && !documentFile && !imageFile && <div className="fpreview-loading">Preview not available for this file type.</div>}
         </div>
       </div>
     </div>

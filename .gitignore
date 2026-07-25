@@ -19,3 +19,4 @@ supabase/.temp/
 .codex/
 .env*
 !.env.example
+public/admin/

@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 export function AdminLoginForm() {
-  const router = useRouter();
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -16,7 +14,7 @@ export function AdminLoginForm() {
     const data = new FormData(event.currentTarget);
     const { error } = await supabase.auth.signInWithPassword({ email: String(data.get("email") || ""), password: String(data.get("password") || "") });
     if (error) { setMessage("Sign-in failed. Check your credentials and administrator access."); setPending(false); return; }
-    router.replace("/admin"); router.refresh();
+    window.location.href = process.env.NODE_ENV === "development" ? "http://localhost:5173/admin" : "/admin";
   }
 
   async function magicLink(event: React.MouseEvent<HTMLButtonElement>) {

@@ -25,11 +25,12 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  `script-src 'self' 'unsafe-inline'${developmentScripts} https://challenges.cloudflare.com`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${developmentScripts} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob:${remoteImageSources ? ` ${remoteImageSources}` : ""}${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
   `font-src 'self' data:`,
-  `connect-src 'self'${developmentConnections} https://challenges.cloudflare.com${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
+  `connect-src 'self' blob: https://cdn.jsdelivr.net${developmentConnections} https://challenges.cloudflare.com${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
+  "worker-src 'self' blob:",
   "frame-src https://challenges.cloudflare.com",
   "upgrade-insecure-requests"
 ].join("; ");
@@ -71,6 +72,12 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "private, no-store" }
         ]
       }
+    ];
+  },
+  async rewrites() {
+    return [
+      { source: "/admin", destination: "/admin/index.html" },
+      { source: "/admin/", destination: "/admin/index.html" }
     ];
   }
 };
