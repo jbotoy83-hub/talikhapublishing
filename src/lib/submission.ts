@@ -3,7 +3,7 @@ import { z } from "zod";
 export const submissionFileRules = {
   manuscript: {
     max: 15 * 1024 * 1024,
-    types: ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+    types: ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/pdf"]
   },
   authorPhoto: {
     max: 5 * 1024 * 1024,
@@ -54,7 +54,7 @@ function validateFileFields(
 
 export const submissionInitSchema = z.object({
   workingTitle: z.string().trim().min(5).max(300),
-  publicationType: z.enum(["Manuscript", "Research article", "Essay or commentary", "Poetry", "Fiction", "Creative nonfiction", "Book manuscript"]),
+  publicationType: z.enum(["Manuscript", "Research article", "Essay or commentary", "Poetry", "Fiction", "Creative nonfiction", "Book manuscript", "Research Article", "Essay", "Book Chapter", "Literary Review", "Commentary"]),
   preferredJournal: z.string().trim().max(100).optional().default(""),
   journalId: z.uuid(),
   issueId: z.uuid(),

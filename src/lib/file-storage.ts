@@ -219,10 +219,10 @@ export const PURPOSE_LABELS: Record<FilePurpose, string> = {
 };
 
 export const PURPOSE_MAX_SIZE: Record<FilePurpose, number> = {
-  manuscript: 50,
+  manuscript: 15,
   supporting: 100,
   "cover-image": 10,
-  "payment-proof": 10
+  "payment-proof": 5
 };
 
 export const PURPOSE_ACCEPT: Record<FilePurpose, string> = {

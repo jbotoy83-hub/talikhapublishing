@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState, type ComponentType } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { getSupabaseBrowser } from "@/lib/supabase/browser";
 import Link from "next/link";
 import { Icon } from "./icon";
 import { BookOpenTextIcon } from "@/components/icons/book-open-text";
@@ -210,7 +211,7 @@ function QrSvg({ modules, className }: { modules: boolean[][]; className?: strin
   );
 }
 
-export function LocalSubmissionForm() {
+export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: { slug: string; id: string; issueId: string }[] } = {}) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -241,6 +242,10 @@ export function LocalSubmissionForm() {
   const abstractRef = useRef<HTMLTextAreaElement>(null);
   const proofInputRef = useRef<HTMLInputElement>(null);
   const billSelectRef = useRef<HTMLDivElement>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitProgress, setSubmitProgress] = useState("");
+  const [serverSubmitted, setServerSubmitted] = useState(false);
 
   useEffect(() => {
     if (!abstractOpen) return;
@@ -332,6 +337,7 @@ export function LocalSubmissionForm() {
     const next: Record<string, string> = {};
     if (s === 0) {
       if (!form.title.trim()) next.title = "Required";
+      else if (form.title.trim().length < 5) next.title = "Use at least 5 characters";
       if (!form.journal) next.journal = "Select a journal";
       if (!uploadedFiles.some((f) => f.purpose === "manuscript" && f.status === "completed")) next.manuscript = "Please upload your main manuscript";
     }
@@ -342,11 +348,13 @@ export function LocalSubmissionForm() {
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = "Invalid email";
       const seen = new Set(form.email.trim() ? [form.email.trim().toLowerCase()] : []);
       for (const a of form.coAuthors) {
-        const em = a.email.trim();
-        if (!em) continue;
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) next[`co-${a.id}`] = "Invalid email";
-        else if (seen.has(em.toLowerCase())) next[`co-${a.id}`] = "Duplicate email";
-        else seen.add(em.toLowerCase());
+        const filled = [a.firstName, a.middleName, a.familyName, a.email, a.affiliation, a.occupation, a.orcid].some((v) => v.trim());
+        if (!filled) continue;
+        if (!a.firstName.trim() || !a.familyName.trim()) next[`co-${a.id}`] = "Add the co-author's first and family name";
+        else if (!a.email.trim()) next[`co-${a.id}`] = "Add the co-author's email";
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim())) next[`co-${a.id}`] = "Invalid co-author email";
+        else if (seen.has(a.email.trim().toLowerCase())) next[`co-${a.id}`] = "Duplicate email";
+        else seen.add(a.email.trim().toLowerCase());
       }
     }
     if (s === 2) {
@@ -378,13 +386,120 @@ export function LocalSubmissionForm() {
   const filesReady = hasAllRequiredFiles(uploadedFiles);
   const uploading = hasActiveUploads(uploadedFiles);
 
-  function submit() {
+  async function submitToServer(
+    sj: { slug: string; id: string; issueId: string },
+    supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>
+  ) {
+    setSubmitting(true);
+    setSubmitError("");
+    setSubmitProgress("Preparing your protected submission…");
+    try {
+      const completed = uploadedFiles.filter((f) => f.status === "completed");
+      const manuscript = completed.find((f) => f.purpose === "manuscript");
+      const proof = completed.find((f) => f.purpose === "payment-proof");
+      if (!manuscript) throw new Error("Please upload your main manuscript before submitting.");
+
+      const fieldFor = (purpose: string) => (purpose === "payment-proof" ? "paymentProof" : "manuscript");
+      const fileDescs: { key: string; field: "manuscript" | "paymentProof"; name: string; type: string; size: number }[] = [];
+      const blobFor = new Map<string, () => Promise<Blob>>();
+      const addFile = (f: StoredFile) => {
+        const raw = (f.id || "").replace(/[^a-zA-Z0-9_-]/g, "");
+        const key = (raw.length >= 6 ? raw : raw + "file" + Math.random().toString(36).slice(2, 8)).slice(0, 80);
+        fileDescs.push({ key, field: fieldFor(f.purpose) as "manuscript" | "paymentProof", name: f.name.slice(0, 180), type: f.mimeType, size: f.size });
+        blobFor.set(key, async () => {
+          const blob = await getBlob(f.id);
+          if (!blob) throw new Error(`Could not read ${f.name} from this browser. Please remove it and upload it again.`);
+          return blob;
+        });
+      };
+      addFile(manuscript);
+      if (proof) addFile(proof);
+
+      const meaningful = (a: { firstName: string; middleName: string; familyName: string; email: string; affiliation: string; occupation: string; orcid: string }) =>
+        [a.firstName, a.middleName, a.familyName, a.email, a.affiliation, a.occupation, a.orcid].some((v) => v.trim());
+      const authorDetails = [
+        { firstName: form.firstName.trim(), surname: form.familyName.trim(), middleInitial: form.middleName.trim(), position: form.occupation.trim(), academicTitle: form.academicTitle.trim(), email: form.email.trim(), institution: form.affiliation.trim(), location: "", orcid: form.orcid.trim() },
+        ...form.coAuthors.filter(meaningful).map((a) => ({ firstName: a.firstName.trim(), surname: a.familyName.trim(), middleInitial: a.middleName.trim(), position: a.occupation.trim(), academicTitle: a.academicTitle.trim(), email: a.email.trim(), institution: a.affiliation.trim(), location: "", orcid: a.orcid.trim() }))
+      ];
+      const notes = [form.summary.trim(), form.keywords.trim() ? `Keywords: ${form.keywords.trim()}` : "", form.coAuthorNote.trim() ? `Co-author note: ${form.coAuthorNote.trim()}` : ""]
+        .filter(Boolean).join("\n\n").slice(0, 3000);
+
+      const initBody = {
+        workingTitle: form.title.trim(),
+        publicationType: form.category.trim() || "Manuscript",
+        preferredJournal: form.journal,
+        journalId: sj.id,
+        issueId: sj.issueId,
+        authorDetails,
+        authorName: fullName(form),
+        authorEmail: form.email.trim(),
+        affiliation: form.affiliation.trim(),
+        phone: "",
+        notes,
+        consent: true as const,
+        turnstileToken: "",
+        website: "",
+        files: fileDescs
+      };
+
+      const initRes = await fetch("/api/submissions/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(initBody) });
+      const init = (await initRes.json().catch(() => ({}))) as { submissionId?: string; reference?: string; uploads?: { key: string; field: string; path: string; token: string }[]; error?: string };
+      if (!initRes.ok || !init.submissionId || !init.uploads) throw new Error(init.error || "The submission service could not start your record. Please try again.");
+
+      setSubmitProgress("Uploading your files to protected storage…");
+      for (const ins of init.uploads) {
+        const make = blobFor.get(ins.key);
+        if (!make) throw new Error("A prepared file is missing. Please try submitting again.");
+        const blob = await make();
+        const { error } = await supabase.storage.from("submission-files").uploadToSignedUrl(ins.path, ins.token, blob, { contentType: blob.type || "application/octet-stream", upsert: false });
+        if (error) throw new Error(`Could not upload one of your files. ${error.message || "Please try again."}`);
+      }
+
+      setSubmitProgress("Finalizing your submission…");
+      const completeRes = await fetch("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
+      const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; error?: string };
+      if (!completeRes.ok || !complete.reference) throw new Error(complete.error || "Your files were uploaded, but the record could not be finalized. Please contact the editorial team.");
+
+      setServerSubmitted(true);
+      setReference(complete.reference);
+      setSubmitProgress("");
+      setForm(emptyForm);
+      setUploadedFiles([]);
+      setPaymentRef("");
+      setPlan("");
+      setPaymentMethod("");
+      setPaymentPhase("configure");
+      setAppliedPromo(null);
+      setPromoInput("");
+      setPromoError("");
+      setProofConfirmed(false);
+      setProofError("");
+      setConfirmations({ original: false, authorsApprove: false, policies: false, billingAccurate: false, billingDelay: false });
+      setChecklistTouched(false);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Something went wrong submitting your work. Please try again.");
+    } finally {
+      setSubmitting(false);
+      setSubmitProgress("");
+    }
+  }
+
+  async function submit() {
+    if (submitting) return;
+
     if (Object.keys(validateStep(0)).length > 0) { setStep(0); return; }
     if (Object.keys(validateStep(1)).length > 0) { setStep(1); return; }
     if (Object.keys(validateStep(2)).length > 0) { setStep(2); return; }
     if (!allConfirmed) { setChecklistTouched(true); return; }
     if (!filesReady) { setChecklistTouched(true); return; }
     if (uploading) return;
+
+    const sj = (serverJournals ?? []).find((j) => j.slug === form.journal);
+    const supabase = getSupabaseBrowser();
+    if (sj && supabase) {
+      await submitToServer(sj, supabase);
+      return;
+    }
 
     const now = new Date();
     const nextReference = `TP-${now.getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -446,11 +561,11 @@ export function LocalSubmissionForm() {
   if (reference) {
     return <section className="submission-success" aria-live="polite">
       <div className="submission-success-seal" aria-hidden="true"><Icon name="check" className="h-10 w-10" /></div>
-      <p className="eyebrow">Submission saved</p>
-      <h2>Your local editorial record is ready.</h2>
-      <p className="submission-success-lead">{message}</p>
-      <aside className="submission-receipt"><p>Submission reference</p><strong>{reference}</strong><span>Copy or screenshot this reference. Use it in Track Submission to follow progress on this device.</span><small>Email receipts will be available once an email service is connected.</small></aside>
-      <div className="submission-success-actions"><button type="button" className="submission-primary" onClick={() => router.push(`/track?reference=${encodeURIComponent(reference)}`)}>Track Submission <Icon name="arrow" className="h-4 w-4" /></button><button type="button" className="submission-secondary" onClick={() => { setReference(""); setStep(0); setForm(emptyForm); setErrors({}); }}>Submit another work</button></div>
+      <p className="eyebrow">{serverSubmitted ? "Submission received" : "Submission saved"}</p>
+      <h2>{serverSubmitted ? "Your work is now in editorial hands." : "Your local editorial record is ready."}</h2>
+      <p className="submission-success-lead">{serverSubmitted ? "Your manuscript and payment proof have been delivered to the protected editorial desk. We will review them and be in touch by email." : message}</p>
+      <aside className="submission-receipt"><p>Submission reference</p><strong>{reference}</strong><span>{serverSubmitted ? "Keep this reference number. Use Track Submission to follow your progress at any time." : "Copy or screenshot this reference. Use it in Track Submission to follow progress on this device."}</span>{serverSubmitted ? null : <small>Email receipts will be available once an email service is connected.</small>}</aside>
+      <div className="submission-success-actions"><button type="button" className="submission-primary" onClick={() => router.push(`/track?reference=${encodeURIComponent(reference)}`)}>Track Submission <Icon name="arrow" className="h-4 w-4" /></button><button type="button" className="submission-secondary" onClick={() => { setReference(""); setServerSubmitted(false); setSubmitError(""); setStep(0); setForm(emptyForm); setErrors({}); }}>Submit another work</button></div>
     </section>;
   }
 
@@ -1293,7 +1408,9 @@ export function LocalSubmissionForm() {
       <div className="footer-actions">
         {step > 0 && <button type="button" className="submission-secondary" onClick={back}><Icon name="arrow" className="h-4 w-4 rotate-180" /> Back to billing</button>}
         {step < lastStep && <button type="button" className="submission-primary" onClick={next}>Continue <Icon name="arrow" className="h-4 w-4" /></button>}
-        {step === lastStep && <button type="button" className="submission-primary" onClick={submit} disabled={uploading}>{uploading ? "Uploading…" : "Confirm & submit"} <Icon name="arrow" className="h-4 w-4" /></button>}
+        {submitProgress && <p role="status" style={{ margin: "0 0 12px", padding: "10px 14px", borderRadius: 12, background: "var(--forest-50, #f2f6f3)", color: "var(--forest-800, #123125)", fontSize: 14, fontWeight: 600 }}>{submitProgress}</p>}
+        {submitError && <p role="alert" style={{ margin: "0 0 12px", padding: "10px 14px", borderRadius: 12, background: "#fdecec", color: "#9f1d1d", fontSize: 14, fontWeight: 600 }}>{submitError}</p>}
+        {step === lastStep && <button type="button" className="submission-primary" onClick={submit} disabled={uploading || submitting}>{submitting ? "Submitting…" : uploading ? "Uploading…" : "Confirm & submit"} <Icon name="arrow" className="h-4 w-4" /></button>}
       </div>
     </div>}
 
