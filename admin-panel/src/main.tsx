@@ -174,6 +174,17 @@ type EditorialSubmission = {
   receipt?: ReceiptSettings;
   targetIssueId?: string;
   issueHistory?: string[];
+  paymentPlan?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+  paymentAmount?: number;
+  paymentStatus?: string;
+  proofFileName?: string;
+  proofFilePath?: string;
+  proofBucket?: string;
+  manuscriptFileName?: string;
+  manuscriptFilePath?: string;
+  manuscriptBucket?: string;
 };
 type PublicationRecord = {
   id: string;
@@ -2237,11 +2248,23 @@ function SubmissionReview({
                 </strong>
                 <span>
                   {submission.paymentProof
-                    ? "Receipt is attached to this local submission record."
-                    : "No receipt has been attached to this local submission record."}
+                    ? "Receipt is attached to this submission record."
+                    : "No receipt has been attached to this submission record."}
                 </span>
               </div>
             </div>
+            {submission.paymentPlan && (
+              <div className="payment-record" style={{ marginTop: "0.75rem" }}>
+                <div style={{ display: "grid", gap: "0.35rem", fontSize: "0.82rem", width: "100%" }}>
+                  {submission.paymentPlan && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Plan:</span><strong>{submission.paymentPlan}</strong></div>}
+                  {submission.paymentMethod && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Method:</span><strong>{submission.paymentMethod}</strong></div>}
+                  {submission.paymentReference && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Reference:</span><strong>{submission.paymentReference}</strong></div>}
+                  {submission.paymentAmount !== undefined && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Amount:</span><strong>₱{submission.paymentAmount.toLocaleString()}</strong></div>}
+                  {submission.paymentStatus && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Status:</span><strong style={{ textTransform: "capitalize" }}>{submission.paymentStatus}</strong></div>}
+                  {submission.proofFileName && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Proof file:</span><strong>{submission.proofFileName}</strong></div>}
+                </div>
+              </div>
+            )}
           </section>
         </div>
         <aside className="detail-side">
@@ -2925,6 +2948,14 @@ function LegacySubmissionReview({
                 {paymentConfirmed ? "Payment accepted" : submission.paymentProof ? "Payment awaiting confirmation" : "Payment pending"}
               </span>
             </header>
+            {submission.paymentPlan && (
+              <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.78rem", display: "grid", gap: "0.25rem", borderBottom: "1px solid var(--border)" }}>
+                {submission.paymentPlan && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Plan:</span><strong>{submission.paymentPlan}</strong></div>}
+                {submission.paymentMethod && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Method:</span><strong>{submission.paymentMethod}</strong></div>}
+                {submission.paymentReference && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Ref:</span><strong>{submission.paymentReference}</strong></div>}
+                {submission.paymentAmount !== undefined && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Amount:</span><strong>₱{submission.paymentAmount.toLocaleString()}</strong></div>}
+              </div>
+            )}
             <div className="payment-proof">
               <button
                 className="payment-file"
@@ -2935,8 +2966,8 @@ function LegacySubmissionReview({
               >
                 <ImageIcon />
                 <div>
-                  <strong>{`payment-proof-${submission.id.toLowerCase()}.jpg`}</strong>
-                  <span>{submission.paymentProof ? "JPG receipt · 428 KB" : "Awaiting author upload"}</span>
+                  <strong>{submission.proofFileName || `payment-proof-${submission.id.toLowerCase()}.jpg`}</strong>
+                  <span>{submission.paymentProof ? "Receipt uploaded" : "Awaiting author upload"}</span>
                 </div>
                 <span className="payment-file-action">View image</span>
               </button>
@@ -6197,7 +6228,13 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
         if (result.connected && result.data) {
           const serverSubmissions = result.data.submissions.map((submission: Record<string, unknown>) => {
             const preferred = Array.isArray(submission.preferred_journal) ? submission.preferred_journal[0] : submission.preferred_journal;
-            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: portraits[0], abstract: String(submission.abstract || ""), fileName: "No manuscript selected", paymentProof: false, history: [] } satisfies EditorialSubmission;
+            const payments = Array.isArray(submission.payments) ? submission.payments as Array<Record<string, unknown>> : [];
+            const payment = payments[0] || null;
+            const paymentMeta = (payment?.metadata as Record<string, unknown>) || {};
+            const files = Array.isArray(submission.submission_files) ? submission.submission_files as Array<Record<string, unknown>> : [];
+            const proofFile = files.find((f) => f.file_kind === "paymentProof") || null;
+            const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
+            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;

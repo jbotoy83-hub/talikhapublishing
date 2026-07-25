@@ -67,7 +67,12 @@ export const submissionInitSchema = z.object({
   consent: z.literal(true),
   turnstileToken: z.string().max(2048).optional().default(""),
   website: z.string().max(0).optional().default(""),
-  files: z.array(fileDescriptorSchema).min(1).max(14)
+  files: z.array(fileDescriptorSchema).min(1).max(14),
+  publicationPlan: z.string().trim().max(40).optional().default(""),
+  paymentMethod: z.string().trim().max(40).optional().default(""),
+  paymentReference: z.string().trim().max(200).optional().default(""),
+  promoCode: z.string().trim().max(40).optional().default(""),
+  paymentTotal: z.number().nonnegative().optional().default(0)
 }).superRefine(({ files }, ctx) => validateFileFields(files, ctx, "files"));
 
 export const submissionCompleteSchema = z.object({

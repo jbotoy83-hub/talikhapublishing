@@ -54,6 +54,22 @@ export async function POST(request: NextRequest) {
   const { data: submission, error } = await admin.from("submissions").insert({ reference, title: input.workingTitle, publication_type: input.publicationType, preferred_journal_id: journal.id, assigned_issue_id: issue.id, journal_title_snapshot: journal.title, volume_snapshot: issue.volume, issue_snapshot: issue.issue_number, abstract: "", author_name: input.authorName, author_email: input.authorEmail, affiliation: input.affiliation || null, phone: input.phone || null, author_notes: input.notes || null, author_details: input.authorDetails, status: "uploading", consent_at: new Date().toISOString(), source_ip_hash: null }).select("id").single();
   if (error || !submission) return NextResponse.json({ error: "Could not create the protected submission record." }, { status: 500 });
 
+  if (input.paymentMethod || input.paymentReference || input.publicationPlan) {
+    await admin.from("payments").insert({
+      submission_id: submission.id,
+      payment_reference: input.paymentReference || null,
+      provider: input.paymentMethod || null,
+      amount: input.paymentTotal ?? 0,
+      currency: "PHP",
+      status: "pending",
+      metadata: {
+        publication_plan: input.publicationPlan || null,
+        promo_code: input.promoCode || null,
+        source: "public_submission"
+      }
+    });
+  }
+
   const uploads = [];
   for (const file of input.files) {
     const path = `${submission.id}/${file.field}/${randomUUID()}-${safeName(file.name)}`;

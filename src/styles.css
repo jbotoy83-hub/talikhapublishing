@@ -1060,7 +1060,7 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
 
 /* Preview Modal */
 .fpreview-overlay { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.6); backdrop-filter:blur(3px); }
-.fpreview-modal { display:flex; flex-direction:column; width:min(90vw,900px); height:min(85vh,700px); border-radius:14px; background:#fff; box-shadow:0 24px 60px rgba(0,0,0,.3); overflow:hidden; }
+.fpreview-modal { display:flex; flex-direction:column; width:min(94vw,1080px); height:min(92vh,860px); border-radius:16px; background:#fff; box-shadow:0 28px 70px rgba(0,0,0,.32); overflow:hidden; }
 .fpreview-toolbar { display:flex; align-items:center; gap:.75rem; padding:.7rem 1rem; border-bottom:1px solid #e7e9ec; background:#fafbfc; }
 .fpreview-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9rem; font-weight:600; color:#14241c; }
 .fpreview-controls { display:flex; align-items:center; gap:.35rem; }
