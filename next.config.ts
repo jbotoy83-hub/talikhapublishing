@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const developmentScripts = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
 const developmentConnections = process.env.NODE_ENV === "development" ? " ws://127.0.0.1:* ws://localhost:*" : "";
+const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
 const indexingEnabled = process.env.SITE_INDEXING_ENABLED?.trim().toLocaleLowerCase() === "true";
 
 function configuredRemoteImageHosts() {
@@ -26,9 +27,9 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   `script-src 'self' 'unsafe-inline'${developmentScripts} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob:${remoteImageSources ? ` ${remoteImageSources}` : ""}`,
+  `img-src 'self' data: blob:${remoteImageSources ? ` ${remoteImageSources}` : ""}${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
   `font-src 'self' data:`,
-  `connect-src 'self'${developmentConnections} https://challenges.cloudflare.com`,
+  `connect-src 'self'${developmentConnections} https://challenges.cloudflare.com${supabaseOrigin ? ` ${supabaseOrigin}` : ""}`,
   "frame-src https://challenges.cloudflare.com",
   "upgrade-insecure-requests"
 ].join("; ");
