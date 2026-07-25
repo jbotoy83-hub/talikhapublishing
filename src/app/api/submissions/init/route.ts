@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Please review the submission fields." }, { status: 400 });
   const input = parsed.data;
   if (input.website) return NextResponse.json({ error: "Submission rejected." }, { status: 400 });
-  if (!(await verifyTurnstileToken(input.turnstileToken, ip))) {
+  if (process.env.TURNSTILE_SECRET_KEY?.trim() && !(await verifyTurnstileToken(input.turnstileToken, ip))) {
     return NextResponse.json({ error: "The security check expired or could not be verified. Please try again." }, { status: 400 });
   }
   const { data: journal } = await admin

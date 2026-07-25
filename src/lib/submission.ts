@@ -65,7 +65,7 @@ export const submissionInitSchema = z.object({
   phone: z.string().trim().max(40).optional().default(""),
   notes: z.string().trim().max(3000).optional().default(""),
   consent: z.literal(true),
-  turnstileToken: z.string().min(1).max(2048),
+  turnstileToken: z.string().max(2048).optional().default(""),
   website: z.string().max(0).optional().default(""),
   files: z.array(fileDescriptorSchema).min(1).max(14)
 }).superRefine(({ files }, ctx) => validateFileFields(files, ctx, "files"));
