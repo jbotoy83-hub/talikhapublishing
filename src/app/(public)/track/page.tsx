@@ -5,7 +5,7 @@ import { SITE_NAME } from "@/lib/site";
 
 export const metadata: Metadata = { title: "Track your submission", description: `Securely check the progress of a submission to ${SITE_NAME}.`, robots: { index: false, follow: false } };
 
-const LocalTrackingForm = dynamic(() => import("@/components/local-tracking-form").then((mod) => ({ default: mod.LocalTrackingForm })));
+const TrackingForm = dynamic(() => import("@/components/tracking-form").then((mod) => ({ default: mod.TrackingForm })));
 
 const PROCESS_STEPS = [
   { icon: FileCheck2, step: "01", title: "Submission received", description: "Your manuscript is logged and confirmed. You receive a unique reference number to track progress." },
@@ -48,7 +48,7 @@ export default function TrackPage() {
 
       {/* Tracking form */}
       <section className="track-form-section">
-        <LocalTrackingForm />
+        <TrackingForm />
       </section>
     </main>
   );

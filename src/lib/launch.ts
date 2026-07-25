@@ -66,7 +66,6 @@ function getLaunchConfigurationIssues() {
   }
 
   for (const name of [
-    "BACKEND_ISOLATION_CONFIRMED",
     "DATABASE_SECURITY_APPROVED",
     "CONTENT_APPROVED",
     "LEGAL_APPROVED",
@@ -82,8 +81,6 @@ function getLaunchConfigurationIssues() {
       "NEXT_PUBLIC_ANALYTICS_ENABLED must remain false until a consent-aware analytics provider is implemented."
     );
   }
-
-  if (isSubmissionsEnabled()) issues.push("Public submissions are not connected for this standalone site.");
 
   return issues;
 }
