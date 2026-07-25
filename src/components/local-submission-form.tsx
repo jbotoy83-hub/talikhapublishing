@@ -230,7 +230,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const [abstractOpen, setAbstractOpen] = useState(false);
   const [plan, setPlan] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
-  const [paymentPhase, setPaymentPhase] = useState<"configure" | "method" | "proof">("configure");
+  const [paymentPhase, setPaymentPhase] = useState<"configure" | "payment">("configure");
   const [promoInput, setPromoInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [promoError, setPromoError] = useState("");
@@ -439,7 +439,12 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         consent: true as const,
         turnstileToken: "",
         website: "",
-        files: fileDescs
+        files: fileDescs,
+        publicationPlan: plan,
+        paymentMethod,
+        paymentReference: paymentRef.trim(),
+        promoCode: appliedPromo || "",
+        paymentTotal: total
       };
 
       const initRes = await fetch("/api/submissions/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(initBody) });
@@ -496,7 +501,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
     const sj = (serverJournals ?? []).find((j) => j.slug === form.journal);
     const supabase = getSupabaseBrowser();
-    if (sj && supabase) {
+    if (supabase) {
+      if (!sj) { setSubmitError("Online submission is not available for the selected journal right now. Please choose a journal that is currently open, or contact the editorial team."); return; }
       await submitToServer(sj, supabase);
       return;
     }
@@ -592,9 +598,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const proofFile = uploadedFiles.find((f) => f.purpose === "payment-proof" && f.status !== "cancelled");
   const proofReady = Boolean(proofFile && proofFile.status === "completed");
   const canConfigureContinue = Boolean(form.journal && plan);
-  const canMethodContinue = Boolean(paymentMethod);
-  const canProofContinue = paymentRef.trim().length > 0 && proofReady && proofConfirmed;
-  const billingSubtitle = paymentPhase === "method" ? "Review your selections and complete your payment to continue." : "Choose the journal, publication plan, and payment option to continue your submission.";
+  const canPaymentContinue = Boolean(paymentMethod) && paymentRef.trim().length > 0 && proofReady && proofConfirmed;
+  const billingSubtitle = paymentPhase === "payment" ? "Select your payment method, complete the payment, and upload proof to continue." : "Choose the journal and publication plan to see your order summary.";
   const otherMethods = PAYMENT_METHODS.filter((m) => m.id !== paymentMethod);
 
   function selectJournal(slug: string) { update("journal", slug); setJournalOpen(false); }
@@ -612,9 +617,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     setCopiedKey(key);
     window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1400);
   }
-  function goPhase(p: "configure" | "method" | "proof") {
-    if (p === "method" && (!form.journal || !plan)) return;
-    if (p === "proof" && !paymentMethod) return;
+  function goPhase(p: "configure" | "payment") {
+    if (p === "payment" && (!form.journal || !plan)) return;
     setPaymentPhase(p);
   }
   function pickProof() { proofInputRef.current?.click(); }
@@ -995,63 +999,9 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                 </div>
                 {errors.plan && <small className="field-error bill-err">{errors.plan}</small>}
               </div>
-
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>3. Payment method</h3><p>Select how you would like to pay. You can review the instructions on the next step.</p></div>
-                <div className="bill-methods">
-                  {PAYMENT_METHODS.map((m) => {
-                    const sel = paymentMethod === m.id;
-                    return (
-                      <button type="button" key={m.id} className={`bill-method ${sel ? "is-selected" : ""}`} aria-pressed={sel} onClick={() => setPaymentMethod(m.id)}>
-                        <span className={`bill-radio ${sel ? "on" : ""}`}>{sel && <Icon name="check" className="h-3 w-3" />}</span>
-                        <MethodBrand kind={m.kind} />
-                        <span>{m.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="bill-info"><InfoGlyph className="h-4 w-4" /><p>After completing your payment, you will be asked to enter a transaction reference number on the next step.</p></div>
             </>}
 
-            {paymentPhase === "method" && <>
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>1. Journal type</h3><p>You have selected the journal or publication type for your submission.</p></div>
-                <div className={`bill-select ${journalOpen ? "open" : ""}`} ref={billSelectRef}>
-                  <button type="button" className="bill-select-trigger" aria-haspopup="listbox" aria-expanded={journalOpen} onClick={() => setJournalOpen((o) => !o)}>
-                    {selectedJournal ? <><Icon name={selectedJournal.icon} className="h-5 w-5 bill-j-ico" /><span>{selectedJournal.longTitle}</span></> : <span className="ph">Select a journal</span>}
-                    <ChevDown className={`h-4 w-4 bill-chev ${journalOpen ? "open" : ""}`} />
-                  </button>
-                  <AnimatePresence>
-                    {journalOpen && (
-                      <motion.ul className="bill-select-menu" role="listbox" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}>
-                        {TEMP_JOURNALS.map((j) => (
-                          <li key={j.slug}>
-                            <button type="button" role="option" aria-selected={form.journal === j.slug} className={`bill-select-option ${form.journal === j.slug ? "is-selected" : ""}`} onClick={() => selectJournal(j.slug)}>
-                              <span className="opt-ico"><Icon name={j.icon} className="h-5 w-5" /></span>
-                              <span className="opt-copy"><strong>{j.longTitle}</strong><p>{j.blurb}</p></span>
-                              {form.journal === j.slug && <Icon name="check" className="h-4 w-4 opt-check" />}
-                            </button>
-                          </li>
-                        ))}
-                      </motion.ul>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
-
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>2. Publication plan</h3><p>You have selected a publication plan that fits your needs.</p></div>
-                {selectedPlan && (
-                  <div className="bill-plan-one">
-                    <span className="bill-radio on"><Icon name="check" className="h-3 w-3" /></span>
-                    <span className="bill-plan-one-copy"><strong>{selectedPlan.name}</strong>{selectedPlan.recommended && <span className="bill-plan-tag inline">Recommended</span>}<p>{selectedPlan.desc}</p></span>
-                    <span className="bill-plan-price">{formatPeso(selectedPlan.price)}</span>
-                  </div>
-                )}
-              </div>
-
+            {paymentPhase === "payment" && <>
               <div className="bill-section">
                 <div className="bill-section-head"><h3>3. Payment method</h3><p>Choose how you would like to pay.</p></div>
                 <div className="bill-methods">
@@ -1066,6 +1016,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                     );
                   })}
                 </div>
+                {errors.paymentMethod && <small className="field-error bill-err">{errors.paymentMethod}</small>}
 
                 <AnimatePresence initial={false}>
                   {selectedMethod && (
@@ -1117,38 +1068,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                 </AnimatePresence>
               </div>
 
-              <div className="bill-info"><InfoGlyph className="h-4 w-4" /><p>After completing your payment, you will be asked to enter a transaction reference number and upload proof of payment on the next step.</p></div>
-            </>}
-
-            {paymentPhase === "proof" && <>
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>1. Journal type</h3></div>
-                <div className="bill-summary-row">
-                  <span className="sr-ico"><Icon name={selectedJournal?.icon ?? "book"} className="h-5 w-5" /></span>
-                  <span className="sr-main"><strong>{selectedJournal?.longTitle ?? "—"}</strong><p>{selectedJournal?.blurb ?? ""}</p></span>
-                  <button type="button" className="sr-edit" onClick={() => goPhase("configure")}>Edit <Icon name="edit" className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>2. Publication plan</h3></div>
-                <div className="bill-summary-row">
-                  <span className="sr-ico on"><Icon name="check" className="h-4 w-4" /></span>
-                  <span className="sr-main"><strong>{selectedPlan?.name ?? "—"}{selectedPlan?.recommended && <span className="bill-plan-tag inline">Recommended</span>}</strong><p>{selectedPlan?.desc ?? ""}</p></span>
-                  <span className="sr-price">{selectedPlan ? formatPeso(selectedPlan.price) : ""}</span>
-                  <button type="button" className="sr-edit" onClick={() => goPhase("configure")}>Edit <Icon name="edit" className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-
-              <div className="bill-section">
-                <div className="bill-section-head"><h3>3. Payment method</h3></div>
-                <div className="bill-summary-row">
-                  <MethodBrand kind={selectedMethod?.kind ?? "bank"} className="sm" />
-                  <span className="sr-main"><strong>{selectedMethod?.name ?? "—"}</strong><p>{selectedMethod?.desc ?? ""}</p></span>
-                  <button type="button" className="sr-edit" onClick={() => goPhase("method")}>Edit <Icon name="edit" className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-
               <div className="bill-section">
                 <div className="bill-section-head"><h3>4. Proof of Payment</h3><p>Enter your transaction reference number and upload proof of payment.</p></div>
                 <div className={`floating-field full ${errors.paymentRef ? "has-error" : ""}`}>
@@ -1193,8 +1112,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
           </motion.div>
 
           <div className="bill-footer">
-            <button type="button" className="bill-btn bill-btn--outline" onClick={paymentPhase === "configure" ? back : paymentPhase === "method" ? () => goPhase("configure") : () => goPhase("method")}><Icon name="arrow" className="h-4 w-4 rotate-180" /> Back</button>
-            {paymentPhase === "proof" && <button type="button" className="bill-btn bill-btn--primary" onClick={next} disabled={!canProofContinue}>Continue to Review <Icon name="arrow" className="h-4 w-4" /></button>}
+            <button type="button" className="bill-btn bill-btn--outline" onClick={paymentPhase === "configure" ? back : () => goPhase("configure")}><Icon name="arrow" className="h-4 w-4 rotate-180" /> Back</button>
+            {paymentPhase === "payment" && <button type="button" className="bill-btn bill-btn--primary" onClick={next} disabled={!canPaymentContinue}>Continue to Review <Icon name="arrow" className="h-4 w-4" /></button>}
           </div>
         </div>
 
@@ -1203,7 +1122,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
           <div className="os-row"><span>Journal</span><strong className={selectedJournal ? "" : "os-muted"}>{selectedJournal ? selectedJournal.longTitle : "Not selected"}</strong></div>
           <div className="os-row"><span>Plan</span><strong className={selectedPlan ? "" : "os-muted"}>{selectedPlan ? selectedPlan.name : "Not selected"}</strong></div>
-          {paymentPhase !== "method" && (
+          {paymentPhase !== "payment" && (
             <div className="os-row">
               <span>Payment method</span>
               {selectedMethod ? <strong className="os-brand-val"><MethodBrand kind={selectedMethod.kind} className="xs" />{selectedMethod.name}</strong> : <strong className="os-muted">Not selected</strong>}
@@ -1224,7 +1143,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
           {discount > 0 && <div className="os-save"><TagGlyph className="h-4 w-4" /><p>You saved <strong>{formatPeso(discount)}</strong> with code <strong>{appliedPromo}</strong>.</p></div>}
           {paymentPhase === "configure" && !canConfigureContinue && <div className="os-note"><InfoGlyph className="h-4 w-4" /><p>Select a journal and plan to see your total.</p></div>}
 
-          {paymentPhase === "method" && (
+          {paymentPhase === "payment" && (
             <div className="os-method">
               <span className="os-method-label">Payment method</span>
               {selectedMethod ? (
@@ -1235,7 +1154,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
             </div>
           )}
 
-          {paymentPhase === "proof" && <>
+          {paymentPhase === "payment" && <>
             <div className="os-status os-status--warn"><ClockGlyph className="h-4 w-4" /><div><span className="os-status-head">Payment status <em>Awaiting verification</em></span><p>Your payment is being verified. You will receive a confirmation once it is approved.</p></div></div>
             <div className="os-status os-status--info"><InfoGlyph className="h-4 w-4" /><p>Your reference number and uploaded receipt will be used to verify your payment.</p></div>
           </>}
@@ -1251,9 +1170,9 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
             </div>
           )}
 
-          {paymentPhase !== "proof" && (
-            <button type="button" className="bill-btn bill-btn--primary bill-btn--block" disabled={paymentPhase === "configure" ? !canConfigureContinue : !canMethodContinue} onClick={paymentPhase === "configure" ? () => goPhase("method") : () => goPhase("proof")}>
-              {paymentPhase === "configure" ? "Continue to Payment" : "I have Made the Payment"} <Icon name="arrow" className="h-4 w-4" />
+          {paymentPhase === "configure" && (
+            <button type="button" className="bill-btn bill-btn--primary bill-btn--block" disabled={!canConfigureContinue} onClick={() => goPhase("payment")}>
+              Continue to Payment <Icon name="arrow" className="h-4 w-4" />
             </button>
           )}
 
