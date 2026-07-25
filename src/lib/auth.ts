@@ -35,7 +35,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   if (isLocalAdminBypassEnabled()) {
     return {
       id: "local-development-admin",
-      email: "local-admin@lakbaysinag.test",
+      email: "local-admin@talikha.test",
       displayName: "Local development admin",
       role: "admin"
     };

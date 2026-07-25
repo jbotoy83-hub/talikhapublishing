@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   if (!issue || issue.journal_id !== journal.id) {
     return NextResponse.json({ error: "The selected issue does not belong to that journal." }, { status: 400 });
   }
-  const reference = `LS-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+  const reference = `TAL-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
   const { data: submission, error } = await admin.from("submissions").insert({ reference, title: input.workingTitle, publication_type: input.publicationType, preferred_journal_id: journal.id, assigned_issue_id: issue.id, journal_title_snapshot: journal.title, volume_snapshot: issue.volume, issue_snapshot: issue.issue_number, abstract: "", author_name: input.authorName, author_email: input.authorEmail, affiliation: input.affiliation || null, phone: input.phone || null, author_notes: input.notes || null, author_details: input.authorDetails, status: "uploading", consent_at: new Date().toISOString(), source_ip_hash: null }).select("id").single();
   if (error || !submission) return NextResponse.json({ error: "Could not create the protected submission record." }, { status: 500 });
 
