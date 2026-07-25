@@ -20,7 +20,6 @@ ${SITE_DESCRIPTION}
 - Authors: ${siteUrl}/authors
 - Editorial standards: ${siteUrl}/editorial-standards
 - Submission guidance: ${siteUrl}/submit
-- About: ${siteUrl}/about
 - XML sitemap: ${siteUrl}/sitemap.xml
 
 ## Citation guidance

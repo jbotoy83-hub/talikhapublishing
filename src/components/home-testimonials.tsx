@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const storageKey = "lakbay-sinag-testimonial-likes-v1";
+const storageKey = "talikha-testimonial-likes-v1";
 const testimonials = [
   ["andrea-villanueva","Andrea Villanueva","Research Teacher","Thank you for the smooth and well-organized publication process. Your team made every step easy to understand.",186],
   ["miguel-santos","Miguel Santos","Educational Researcher","Our manuscript was handled professionally, and the communication was consistent throughout the process.",274],
