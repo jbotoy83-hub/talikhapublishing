@@ -4,6 +4,7 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "npm install --include=dev --no-audit --no-fund --prefix admin-panel",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
