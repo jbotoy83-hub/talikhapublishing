@@ -185,6 +185,10 @@ type EditorialSubmission = {
   manuscriptFileName?: string;
   manuscriptFilePath?: string;
   manuscriptBucket?: string;
+  files?: { id: string; file_kind: string; storage_path: string; original_name: string; mime_type: string; size_bytes: number }[];
+  authorDetails?: { firstName?: string; surname?: string; middleInitial?: string; email?: string; institution?: string; affiliation?: string; academicTitle?: string; position?: string; orcid?: string; location?: string }[];
+  proofFileId?: string;
+  manuscriptFileId?: string;
 };
 type PublicationRecord = {
   id: string;
@@ -258,20 +262,45 @@ const defaultReceiptSettings: ReceiptSettings = {
   tax: 0,
   discount: 0,
 };
+function authorPhotoUrlForIndex(submission: EditorialSubmission, index: number): string | null {
+  const photos = (submission.files || []).filter((f) => f.file_kind === "authorPhoto").sort((a, b) => (a.original_name || "").localeCompare(b.original_name || ""));
+  if (!photos.length) return null;
+  const wanted = `author-${String(index + 1).padStart(3, "0")}`;
+  const exact = photos.find((f) => (f.original_name || "").toLowerCase().startsWith(wanted));
+  const pick = exact || photos[index] || photos[0];
+  return pick ? `/api/admin/files/${pick.id}` : null;
+}
 function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
-  return submission.authors?.length
-    ? submission.authors
-    : [
-        {
-          id: `${submission.id}-author-1`,
-          name: submission.author,
-          email: submission.email,
-          affiliation: submission.affiliation,
-          academicTitle: "",
-          occupation: "Submitting author",
-          photo: null,
-        },
-      ];
+  if (submission.authors?.length) return submission.authors;
+  const details = submission.authorDetails;
+  if (Array.isArray(details) && details.length) {
+    return details.map((d, index) => {
+      const name = [d.academicTitle, d.firstName, d.middleInitial, d.surname].filter((v) => typeof v === "string" && v.trim()).join(" ");
+      return {
+        id: `${submission.id}-author-${index + 1}`,
+        name: name || submission.author,
+        firstName: d.firstName || "",
+        middleInitial: d.middleInitial || "",
+        surname: d.surname || "",
+        email: d.email || submission.email,
+        affiliation: d.institution || d.affiliation || submission.affiliation,
+        academicTitle: d.academicTitle || "",
+        occupation: d.position || (index === 0 ? "Submitting author" : "Co-author"),
+        photo: authorPhotoUrlForIndex(submission, index),
+      };
+    });
+  }
+  return [
+    {
+      id: `${submission.id}-author-1`,
+      name: submission.author,
+      email: submission.email,
+      affiliation: submission.affiliation,
+      academicTitle: "",
+      occupation: "Submitting author",
+      photo: authorPhotoUrlForIndex(submission, 0),
+    },
+  ];
 }
 const initialEditorialSubmissions: EditorialSubmission[] = [
   {
@@ -354,7 +383,8 @@ function Avatar({
   src: string;
   size?: "sm" | "md" | "lg";
 }) {
-  return <img className={`avatar ${size}`} src={`${A}${src}`} alt="" />;
+  const resolved = src && (src.startsWith("/") || src.startsWith("http") || src.startsWith("data:")) ? src : `${A}${src}`;
+  return <img className={`avatar ${size}`} src={resolved} alt="" />;
 }
 const bankTransactions = [
   {
@@ -2379,9 +2409,7 @@ function LegacySubmissionReview({
     [deleteOpen, setDeleteOpen] = useState(false),
     [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false),
     [paymentViewerOpen, setPaymentViewerOpen] = useState(false),
-    [documentViewerOpen, setDocumentViewerOpen] = useState<
-      "pdf" | "word" | null
-    >(null),
+    [previewFile, setPreviewFile] = useState<{ id: string; mime_type: string; original_name: string } | null>(null),
     [authors, setAuthors] = useState(() => authorsFor(submission)),
     [activeAuthor, setActiveAuthor] = useState(0),
     [manuscriptTitle, setManuscriptTitle] = useState(submission.title),
@@ -2588,15 +2616,6 @@ function LegacySubmissionReview({
                 <h2>Author information</h2>
                 <p>Review one author at a time without expanding the record.</p>
               </div>
-              <div className="author-upload">
-                <Avatar src={submission.image} size="lg" />
-                <span>
-                  <strong>2×2 profile picture</strong>
-                  <small>
-                    {author.name.toLowerCase().replaceAll(" ", "-")}.webp
-                  </small>
-                </span>
-              </div>
             </header>
             <div
               className="author-switcher"
@@ -2742,21 +2761,7 @@ function LegacySubmissionReview({
                 onChange={(event) => setManuscriptTitle(event.target.value)}
               />
             </label>
-            <div className="manuscript-files review-manuscript-primary">
-              <span>Manuscript files</span>
-              <div>
-                <button onClick={() => setDocumentViewerOpen("pdf")}>
-                  <FileText />
-                  <span><strong>{submission.fileName}</strong><small>PDF manuscript · scroll preview</small></span>
-                  <Eye />
-                </button>
-                <button onClick={() => setDocumentViewerOpen("word")}>
-                  <FileText />
-                  <span><strong>{submission.fileName.replace(/\.pdf$/i, ".docx")}</strong><small>Word manuscript · scroll preview</small></span>
-                  <Eye />
-                </button>
-              </div>
-            </div>
+            <ManuscriptFileList files={submission.files} fallbackName={submission.fileName} className="review-manuscript-primary" onPreview={setPreviewFile} />
             <div className="review-fields two review-reference-fields">
               <ReviewField
                 label="Invoice number"
@@ -2773,29 +2778,7 @@ function LegacySubmissionReview({
                 onChange={(event) => setManuscriptTitle(event.target.value)}
               />
             </label>
-            <div className="manuscript-files review-manuscript-secondary">
-              <span>Manuscript files</span>
-              <div>
-                <button onClick={() => setDocumentViewerOpen("pdf")}>
-                  <FileText />
-                  <span>
-                    <strong>{submission.fileName}</strong>
-                    <small>PDF manuscript · scroll preview</small>
-                  </span>
-                  <Eye />
-                </button>
-                <button onClick={() => setDocumentViewerOpen("word")}>
-                  <FileText />
-                  <span>
-                    <strong>
-                      {submission.fileName.replace(/\.pdf$/i, ".docx")}
-                    </strong>
-                    <small>Word manuscript · scroll preview</small>
-                  </span>
-                  <Eye />
-                </button>
-              </div>
-            </div>
+            <ManuscriptFileList files={submission.files} fallbackName={submission.fileName} className="review-manuscript-secondary" onPreview={setPreviewFile} />
           </section>
           <section className="review-instructions">
             <header>
@@ -2956,6 +2939,11 @@ function LegacySubmissionReview({
                 {submission.paymentAmount !== undefined && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Amount:</span><strong>₱{submission.paymentAmount.toLocaleString()}</strong></div>}
               </div>
             )}
+            {submission.proofFileId && (
+              <div className="payment-proof-thumb">
+                <img src={`/api/admin/files/${submission.proofFileId}`} alt="Payment proof screenshot" />
+              </div>
+            )}
             <div className="payment-proof">
               <button
                 className="payment-file"
@@ -2990,10 +2978,9 @@ function LegacySubmissionReview({
           onOpenChange={setPaymentViewerOpen}
         />
       <ManuscriptViewer
-          submission={submission}
-          kind={documentViewerOpen || "pdf"}
-          open={!!documentViewerOpen}
-          onOpenChange={(open) => { if (!open) setDocumentViewerOpen(null); }}
+          file={previewFile}
+          open={!!previewFile}
+          onOpenChange={(open) => { if (!open) setPreviewFile(null); }}
         />
       <Dialog open={paymentConfirmOpen} onOpenChange={setPaymentConfirmOpen}>
         <DialogContent className="sm:max-w-md">
@@ -3260,56 +3247,97 @@ function ReviewField({
     </label>
   );
 }
+function describeMime(mime: string) {
+  const t = (mime || "").toLowerCase();
+  if (t.startsWith("image/")) return "Image";
+  if (t === "application/pdf") return "PDF document";
+  if (t.includes("wordprocessingml") || t === "application/msword") return "Word document";
+  return "Document";
+}
+function ManuscriptFileList({ files, fallbackName, className, onPreview }: { files?: EditorialSubmission["files"]; fallbackName: string; className?: string; onPreview: (f: { id: string; mime_type: string; original_name: string }) => void }) {
+  const docs = (files || []).filter((f) => f.file_kind !== "authorPhoto" && f.file_kind !== "paymentProof");
+  return (
+    <div className={`manuscript-files ${className || ""}`}>
+      <span>Manuscript files</span>
+      <div>
+        {docs.length ? docs.map((f) => (
+          <button key={f.id} type="button" onClick={() => onPreview({ id: f.id, mime_type: f.mime_type, original_name: f.original_name })}>
+            <FileText />
+            <span><strong>{f.original_name || "Submitted document"}</strong><small>{describeMime(f.mime_type)} · preview from storage</small></span>
+            <Eye />
+          </button>
+        )) : (
+          <button type="button" disabled>
+            <FileText />
+            <span><strong>{fallbackName}</strong><small>No document attached</small></span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+type MammothApi = { convertToHtml: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string; messages: unknown[] }> };
+function RealFilePreview({ fileId, mime, name }: { fileId: string; mime: string; name: string }) {
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "error"; msg: string } | { kind: "image"; url: string } | { kind: "pdf"; url: string } | { kind: "html"; html: string } | { kind: "binary"; url: string }>({ kind: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/files/${fileId}?stream=1`, { credentials: "include" });
+        if (!res.ok) throw new Error(`Could not load file (${res.status})`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        const type = (mime || blob.type || "").toLowerCase();
+        if (type.startsWith("image/")) {
+          objectUrl = URL.createObjectURL(blob);
+          setState({ kind: "image", url: objectUrl });
+        } else if (type === "application/pdf") {
+          objectUrl = URL.createObjectURL(blob);
+          setState({ kind: "pdf", url: objectUrl });
+        } else if (type.includes("wordprocessingml") || type === "application/msword" || /\.docx$/i.test(name)) {
+          const mammothMod = await import("mammoth");
+          const mammoth: MammothApi = (mammothMod as unknown as { default?: MammothApi }).default || (mammothMod as unknown as MammothApi);
+          const buf = await blob.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+          if (cancelled) return;
+          setState({ kind: "html", html: result.value });
+        } else {
+          objectUrl = URL.createObjectURL(blob);
+          setState({ kind: "binary", url: objectUrl });
+        }
+      } catch (err) {
+        if (!cancelled) setState({ kind: "error", msg: err instanceof Error ? err.message : "Failed to load preview" });
+      }
+    })();
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [fileId, mime, name]);
+  if (state.kind === "loading") return <div className="realfile-state">Loading preview…</div>;
+  if (state.kind === "error") return <div className="realfile-state realfile-error">{state.msg}</div>;
+  if (state.kind === "image") return <div className="realfile-image"><img src={state.url} alt={name} /></div>;
+  if (state.kind === "pdf") return <iframe title={name} src={state.url} className="realfile-iframe" />;
+  if (state.kind === "html") return <div className="realfile-docx" dangerouslySetInnerHTML={{ __html: state.html }} />;
+  return <div className="realfile-state">This file type can’t be previewed inline. <a href={state.url} download={name}>Download {name}</a></div>;
+}
 function ManuscriptViewer({
-  submission,
-  kind,
+  file,
   open,
   onOpenChange,
 }: {
-  submission: EditorialSubmission;
-  kind: "pdf" | "word";
+  file: { id: string; mime_type: string; original_name: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const fileName =
-    kind === "pdf"
-      ? submission.fileName
-      : submission.fileName.replace(/\.pdf$/i, ".docx");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[88vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>{fileName}</DialogTitle>
-          <DialogDescription>
-            {kind === "pdf" ? "PDF document" : "Word document"} · Local scroll
-            preview
-          </DialogDescription>
+          <DialogTitle>{file?.original_name || "Document preview"}</DialogTitle>
+          <DialogDescription>{file ? describeMime(file.mime_type) : ""} · streamed from secure storage</DialogDescription>
         </DialogHeader>
-        <article className="manuscript-paper">
-          <h1>{submission.title}</h1>
-          <p className="manuscript-byline">
-            {submission.author} · {submission.affiliation}
-          </p>
-          <h2>Abstract</h2>
-          <p>{submission.abstract}</p>
-          <h2>Introduction</h2>
-          <p>
-            This local preview represents the submitted manuscript. In
-            production, the signed PDF or Word upload will be streamed into this
-            viewer from secure file storage.
-          </p>
-          <h2>Method and discussion</h2>
-          <p>
-            The editorial team can scroll through the submitted text, compare it
-            with the review record, and leave guidance before accepting or
-            requesting changes.
-          </p>
-          <h2>Conclusion</h2>
-          <p>
-            Document preview is available for review only. The stored source
-            file remains unchanged until a revised manuscript is submitted.
-          </p>
-        </article>
+        <div className="flex-1 min-h-0 overflow-auto">
+          {file ? <RealFilePreview fileId={file.id} mime={file.mime_type} name={file.original_name} /> : null}
+        </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Close preview</Button>
         </DialogFooter>
@@ -3389,11 +3417,11 @@ function PaymentProofViewer({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Payment proof</DialogTitle>
-          <DialogDescription>{`payment-proof-${submission.id.toLowerCase()}.jpg · JPG receipt · 428 KB`}</DialogDescription>
+          <DialogDescription>{submission.proofFileName || `payment-proof-${submission.id.toLowerCase()}.jpg`}</DialogDescription>
         </DialogHeader>
         <div className="attachment-image-wrap">
           <img
-            src={paymentProofPreviewSrc(submission)}
+            src={submission.proofFileId ? `/api/admin/files/${submission.proofFileId}` : paymentProofPreviewSrc(submission)}
             alt={`Payment proof submitted with ${submission.id}`}
           />
         </div>
@@ -5424,9 +5452,9 @@ function OverviewDashboard({
   const monthItems = (key: string) => submissions.filter((submission) => submission.submittedAt.startsWith(key)).map(toItem);
   const stageItems = (statuses: SubmissionStatus[]) => submissions.filter((submission) => statuses.includes(submission.status)).map(toItem);
   const recent = [...submissions].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
-  const journalOptions = realData?.journals.length
+  const journalOptions = (realData?.journals.length
     ? realData.journals.map((entry) => entry.title)
-    : [...new Set(submissions.map((submission) => submission.journal))];
+    : [...new Set(submissions.map((submission) => submission.journal))]).filter((title) => title !== "Special Issue");
   const queue = (journal === "All journals" ? recent : recent.filter((submission) => submission.journal === journal)).slice(0, 4);
   const tasks = recent.slice(0, 3).map((submission, index) => ({
     id: submission.id,
@@ -6238,7 +6266,9 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const files = Array.isArray(submission.submission_files) ? submission.submission_files as Array<Record<string, unknown>> : [];
             const proofFile = files.find((f) => f.file_kind === "paymentProof") || null;
             const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
-            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined } satisfies EditorialSubmission;
+            const authorPhotos = files.filter((f) => f.file_kind === "authorPhoto").sort((a, b) => String(a.original_name || "").localeCompare(String(b.original_name || "")));
+            const primaryPhotoId = authorPhotos.length ? String(authorPhotos[0].id) : null;
+            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;
