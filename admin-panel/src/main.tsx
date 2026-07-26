@@ -5452,9 +5452,9 @@ function OverviewDashboard({
   const monthItems = (key: string) => submissions.filter((submission) => submission.submittedAt.startsWith(key)).map(toItem);
   const stageItems = (statuses: SubmissionStatus[]) => submissions.filter((submission) => statuses.includes(submission.status)).map(toItem);
   const recent = [...submissions].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
-  const journalOptions = (realData?.journals.length
+  const journalOptions = realData?.journals.length
     ? realData.journals.map((entry) => entry.title)
-    : [...new Set(submissions.map((submission) => submission.journal))]).filter((title) => title !== "Special Issue");
+    : [...new Set(submissions.map((submission) => submission.journal))];
   const queue = (journal === "All journals" ? recent : recent.filter((submission) => submission.journal === journal)).slice(0, 4);
   const tasks = recent.slice(0, 3).map((submission, index) => ({
     id: submission.id,
