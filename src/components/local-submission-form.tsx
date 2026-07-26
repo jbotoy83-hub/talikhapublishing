@@ -92,6 +92,10 @@ function wordCount(text: string) {
   return t ? t.split(/\s+/).length : 0;
 }
 
+function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  return fetch(dataUrl).then((r) => r.blob());
+}
+
 function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="review-row">
@@ -400,7 +404,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       if (!manuscript) throw new Error("Please upload your main manuscript before submitting.");
 
       const fieldFor = (purpose: string) => (purpose === "payment-proof" ? "paymentProof" : "manuscript");
-      const fileDescs: { key: string; field: "manuscript" | "paymentProof"; name: string; type: string; size: number }[] = [];
+      const fileDescs: { key: string; field: "manuscript" | "paymentProof" | "authorPhoto"; name: string; type: string; size: number }[] = [];
       const blobFor = new Map<string, () => Promise<Blob>>();
       const addFile = (f: StoredFile) => {
         const raw = (f.id || "").replace(/[^a-zA-Z0-9_-]/g, "");
@@ -421,6 +425,18 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         { firstName: form.firstName.trim(), surname: form.familyName.trim(), middleInitial: form.middleName.trim(), position: form.occupation.trim(), academicTitle: form.academicTitle.trim(), email: form.email.trim(), institution: form.affiliation.trim(), location: "", orcid: form.orcid.trim() },
         ...form.coAuthors.filter(meaningful).map((a) => ({ firstName: a.firstName.trim(), surname: a.familyName.trim(), middleInitial: a.middleName.trim(), position: a.occupation.trim(), academicTitle: a.academicTitle.trim(), email: a.email.trim(), institution: a.affiliation.trim(), location: "", orcid: a.orcid.trim() }))
       ];
+      const photoSources = [form.photo, ...form.coAuthors.filter(meaningful).map((a) => a.photo)];
+      for (let pi = 0; pi < photoSources.length; pi++) {
+        const dataUrl = photoSources[pi];
+        if (!dataUrl) continue;
+        const photoBlob = await dataUrlToBlob(dataUrl);
+        if (photoBlob.size > 5 * 1024 * 1024) throw new Error("One of the author photos is larger than 5 MB. Please use a smaller image.");
+        const photoExt = photoBlob.type === "image/png" ? "png" : "jpg";
+        const photoName = `author-${String(pi + 1).padStart(3, "0")}.${photoExt}`;
+        const photoKey = `aphoto${String(pi + 1).padStart(3, "0")}`;
+        fileDescs.push({ key: photoKey, field: "authorPhoto", name: photoName, type: photoBlob.type || "image/jpeg", size: photoBlob.size });
+        blobFor.set(photoKey, async () => photoBlob);
+      }
       const notes = [form.summary.trim(), form.keywords.trim() ? `Keywords: ${form.keywords.trim()}` : "", form.coAuthorNote.trim() ? `Co-author note: ${form.coAuthorNote.trim()}` : ""]
         .filter(Boolean).join("\n\n").slice(0, 3000);
 
