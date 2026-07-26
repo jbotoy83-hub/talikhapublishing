@@ -84,7 +84,7 @@ export function SiteHeader({ journals }: { journals: HeaderJournal[] }) {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <form role="search" onSubmit={runSearch} className="hidden shrink-0 items-center xl:flex" aria-label="Search publications">
-              <GooeyInput value={query} onValueChange={setQuery} placeholder="Search" collapsedWidth={116} expandedWidth={210} expandedOffset={56} gooeyBlur={6} classNames={{ trigger: "bg-forest-800 text-white font-semibold shadow-none ring-1 ring-white/15 hover:bg-forest-900 focus-visible:ring-2 focus-visible:ring-clay-400/70 focus-visible:ring-offset-0", input: "text-white font-medium placeholder:text-white/70", bubbleSurface: "bg-forest-800 text-white shadow-none ring-1 ring-white/15" }} />
+              <GooeyInput value={query} onValueChange={setQuery} placeholder="Search" collapsedWidth={116} expandedWidth={210} expandedOffset={56} gooeyBlur={6} classNames={{ trigger: "bg-white text-forest-900 font-semibold shadow-none ring-1 ring-forest-900/20 hover:bg-forest-50 hover:ring-forest-900/35 focus-visible:ring-2 focus-visible:ring-clay-400/70 focus-visible:ring-offset-0", input: "text-forest-900 font-medium placeholder:text-forest-800/55", bubbleSurface: "bg-white text-forest-800 shadow-none ring-0" }} />
               <button type="submit" className="sr-only">Search</button>
             </form>
             <Link href="/search" className="inline-flex h-9 items-center gap-2 rounded-full border border-forest-800/15 bg-white/70 px-3 text-sm font-semibold text-forest-800 hover:border-clay-500 hover:text-clay-700 xl:hidden" aria-label="Search publications"><Icon name="search" className="h-4 w-4"/><span className="hidden sm:inline">Search</span></Link>
