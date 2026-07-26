@@ -5245,8 +5245,10 @@ type OverviewDashboardProps = {
   newCount: number;
   inReviewCount: number;
   revisionCount: number;
+  forApprovalCount: number;
+  publishedStageCount: number;
   activeManuscriptCount: number;
-  onOpenSubmission: (id: string | null) => void;
+  onOpenSubmission: (id: string | null, view?: string) => void;
   onOpenIssue: () => void;
   onAddTask: () => void;
   onNavigate: (index: number) => void;
@@ -5345,6 +5347,8 @@ function OverviewDashboard({
   newCount,
   inReviewCount,
   revisionCount,
+  forApprovalCount,
+  publishedStageCount,
   activeManuscriptCount,
   onOpenSubmission,
   onOpenIssue,
@@ -5450,7 +5454,7 @@ function OverviewDashboard({
   for (let value = yMax; value >= 0; value -= yStep) yTicks.push(value);
   if (yTicks[yTicks.length - 1] !== 0) yTicks.push(0);
   const currentMonthCount = buckets[buckets.length - 1].count;
-  const publishedCount = publicationRecords.filter((record) => record.status === "Published").length;
+  const publishedCount = publishedStageCount || publicationRecords.filter((record) => record.status === "Published").length;
   const issueCount = new Set(publicationRecords.map((record) => `${record.journal}-${record.volume}-${record.issue}`)).size;
   const authorCount = realData?.totalAuthors ?? new Set(submissions.map((submission) => submission.author)).size;
   const stageDefs = [
@@ -5502,10 +5506,11 @@ function OverviewDashboard({
   const hmActiveDays = hmCells.filter((c) => c.count > 0).length;
   const hmDow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const kpis = [
-    { label: "Awaiting screening", value: awaitingScreening, note: "New and in progress", icon: FileText, onClick: () => onOpenSubmission(null) },
-    { label: "In review", value: inReviewCount, note: "With the editorial panel", icon: Eye, onClick: () => onOpenSubmission(null) },
-    { label: "Revisions requested", value: revisionCount, note: "Returned to authors", icon: RefreshCw, onClick: () => onOpenSubmission(null) },
-    { label: "Published records", value: publishedCount, note: `${issueCount} issue${issueCount === 1 ? "" : "s"} in the library`, icon: BookOpen, onClick: () => onNavigate(12) },
+    { label: "Awaiting screening", value: awaitingScreening, icon: FileText, onClick: () => onOpenSubmission(null, "New") },
+    { label: "In review", value: inReviewCount, icon: Eye, onClick: () => { onNavigate(12); window.dispatchEvent(new CustomEvent("talikha:production-view", { detail: "Needs action" })); } },
+    { label: "Revisions requested", value: revisionCount, icon: RefreshCw, onClick: () => onOpenSubmission(null, "Needs action") },
+    { label: "For approval", value: forApprovalCount, icon: ShieldCheck, onClick: () => { onNavigate(12); window.dispatchEvent(new CustomEvent("talikha:production-view", { detail: "Approval" })); } },
+    { label: "Published records", value: publishedCount, icon: BookOpen, onClick: () => { onNavigate(12); window.dispatchEvent(new CustomEvent("talikha:production-view", { detail: "Published" })); } },
   ];
   const dashCatalog = getJournalCatalog();
   const dashJournal = dashCatalog.journals.find((j) => !j.deleted && j.title === "InQuira") || dashCatalog.journals.find((j) => !j.deleted && dashCatalog.issues.some((i) => i.journalId === j.id && i.isCurrent && !i.deleted)) || dashCatalog.journals.find((j) => !j.deleted);
@@ -5607,7 +5612,6 @@ function OverviewDashboard({
               <span className="tp-metric__body">
                 <span className="tp-metric__label">{kpi.label}</span>
                 <span className="tp-metric__value">{kpi.value}</span>
-                <span className="tp-metric__note"><i className="tp-dot tp-dot--green" aria-hidden="true" /> {kpi.note}</span>
               </span>
             </button>
           );
@@ -6266,20 +6270,26 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     }
   }, [submissionsReady, isConnected]);
   const awaitingScreening = isConnected && realData
-    ? (realData.stageCounts["review_new"] || 0) + (realData.stageCounts["review_in_progress"] || 0)
+    ? realData.stageCounts["review_new"] || 0
     : editorialSubmissions.filter(
         (submission) =>
-          submission.status === "New" || submission.status === "In progress",
+          submission.status === "New",
       ).length;
   const newCount = isConnected && realData
     ? realData.stageCounts["review_new"] || 0
     : editorialSubmissions.filter((submission) => submission.status === "New").length;
   const inReviewCount = isConnected && realData
-    ? (realData.stageCounts["review_in_progress"] || 0) + (realData.stageCounts["review_final"] || 0)
-    : editorialSubmissions.filter((submission) => submission.status === "In progress" || submission.status === "Review").length;
+    ? (realData.stageCounts["review_in_progress"] || 0) + (realData.stageCounts["review_final"] || 0) + (realData.stageCounts["review_accepted"] || 0) + (realData.stageCounts["production_ready"] || 0) + (realData.stageCounts["production_preparation"] || 0) + (realData.stageCounts["production_proof"] || 0) + (realData.stageCounts["production_records"] || 0)
+    : editorialSubmissions.filter((submission) => submission.status === "In progress" || submission.status === "Review" || submission.status === "Accepted").length;
   const revisionCount = isConnected && realData
-    ? realData.stageCounts["review_accepted"] || 0
+    ? 0
     : editorialSubmissions.filter((submission) => submission.status === "Revise").length;
+  const forApprovalCount = isConnected && realData
+    ? (realData.stageCounts["production_ready_to_publish"] || 0) + (realData.stageCounts["production_scheduled"] || 0)
+    : editorialSubmissions.filter((submission) => submission.status === "For approval" || submission.status === "Scheduled for publishing").length;
+  const publishedStageCount = isConnected && realData
+    ? realData.stageCounts["published"] || 0
+    : editorialSubmissions.filter((submission) => submission.status === "Published").length;
   const activeManuscriptCount = isConnected && realData
     ? realData.totalSubmissions
     : newCount + inReviewCount + revisionCount;
@@ -6558,8 +6568,10 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             newCount={newCount}
             inReviewCount={inReviewCount}
             revisionCount={revisionCount}
+            forApprovalCount={forApprovalCount}
+            publishedStageCount={publishedStageCount}
             activeManuscriptCount={activeManuscriptCount}
-            onOpenSubmission={(id) => { setSelectedSubmissionId(id); setSubmissionView("New"); setSubmissionsOpen(true); setActive(1); }}
+            onOpenSubmission={(id, view) => { setSelectedSubmissionId(id); setSubmissionView((view as "New" | "Needs action" | "Published" | "Closed") || "New"); setSubmissionsOpen(true); setActive(1); }}
             onOpenIssue={() => { setSelectedSubmissionId(null); setSubmissionView("Published"); setSubmissionsOpen(true); setActive(1); }}
             onAddTask={() => { setOverviewTaskSeed({ ...emptyTask, id: `task-${Date.now()}` }); setOverviewTaskOpen(true); }}
             onNavigate={(index) => setActive(index)}
