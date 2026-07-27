@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/cron/journal-lifecycle", "schedule": "0 0 * * *" }
+  ],
   "headers": [
     {
       "source": "/admin",

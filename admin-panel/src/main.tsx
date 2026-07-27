@@ -1,14 +1,20 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
 import { FloatingDock } from "./components/floating-dock";
+import { TeamAccounts } from "./components/team-accounts";
 import { CertificateWorkspace } from "./components/certificates/certificate-workspace";
+import { InboxWorkspace } from "./components/inbox/inbox-workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   Award,
@@ -66,6 +72,10 @@ import {
   Globe,
   X,
 } from "@/components/icons";
+import wallpaperVioletRibbon from "./assets/wallpapers/violet-ribbon.jpg";
+import wallpaperEmberOrb from "./assets/wallpapers/ember-orb.jpg";
+import wallpaperSilkEmber from "./assets/wallpapers/silk-ember.jpg";
+import wallpaperChromeWave from "./assets/wallpapers/chrome-wave.jpg";
 import "@fontsource-variable/newsreader";
 import {
   Sidebar,
@@ -109,6 +119,10 @@ const sidebarSections = [
     ],
   },
   {
+    label: "Communications",
+    items: [{ label: "Inbox", icon: Inbox, index: 15 }],
+  },
+  {
     label: "Editorial library",
     items: [
       { label: "Studies & papers", icon: FileText, index: 4 },
@@ -123,6 +137,7 @@ const sidebarSections = [
       { label: "Media", icon: ImageIcon, index: 13 },
       { label: "Bank & wallets", icon: CreditCard, index: 5 },
       { label: "Reports", icon: FileCheck2, index: 7 },
+      { label: "Activity log", icon: Activity, index: 16 },
     ],
   },
 ];
@@ -162,6 +177,7 @@ type EditorialSubmission = {
   affiliation: string;
   journal: string;
   status: SubmissionStatus;
+  workflowStage?: string;
   submittedAt: string;
   displayDate: string;
   image: string;
@@ -169,6 +185,7 @@ type EditorialSubmission = {
   fileName: string;
   paymentProof: boolean;
   paymentConfirmed?: boolean;
+  paymentId?: string;
   history: string[];
   authors?: ReviewAuthor[];
   receipt?: ReceiptSettings;
@@ -741,6 +758,7 @@ type IssueRecord = {
   description: string;
   status: IssueStatus;
   isCurrent: boolean;
+  isSubmissionTarget: boolean;
   isSpecial: boolean;
   specialLabel: string;
   publicationDate: string;
@@ -778,6 +796,8 @@ type JournalMeta = {
   seoTitle: string;
   seoDescription: string;
   socialImage: string;
+  currentIssueId?: string;
+  submissionIssueId?: string;
   deleted: boolean;
 };
 type JournalCatalog = { journals: JournalMeta[]; issues: IssueRecord[]; syncedAt: string };
@@ -798,7 +818,7 @@ const jwStamp = () => new Date().toLocaleString("en-PH", { month: "short", day: 
 const jwFmtDate = (value: string) => (value ? new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${value.length <= 10 ? value + "T00:00:00" : value}`)) : "—");
 const jwProductionPercent = (status: IssueStatus) => ({ Draft: 8, Open: 18, Editorial: 42, Production: 74, Scheduled: 92, Published: 100, Archived: 100 }[status]);
 const jwEmptyIssue = (journalId: string, volume: number, issue: number): IssueRecord => ({
-  id: jwUid("ISS"), journalId, volume, issue, title: "", description: "", status: "Draft", isCurrent: false,
+  id: jwUid("ISS"), journalId, volume, issue, title: "", description: "", status: "Draft", isCurrent: false, isSubmissionTarget: false,
   isSpecial: false, specialLabel: "", publicationDate: "", submissionDeadline: "", editorialStart: "", editorialEnd: "",
   openAt: "", closeAt: "", publishAt: "", cover: "", articleOrder: [], doi: "", keywords: [], seoTitle: "",
   seoDescription: "", socialImage: "", changelog: [`Created ${jwStamp()}`], deleted: false, createdAt: new Date().toISOString(),
@@ -819,10 +839,14 @@ function jwSeedCatalog(): JournalCatalog {
     { ...jwEmptyIssue("jrn-inquira", 1, 2), title: "Spring cycle", status: "Editorial", publicationDate: "2026-09-30", submissionDeadline: "2026-07-15", changelog: ["Seeded in editorial"] },
     { ...jwEmptyIssue("jrn-lumera", 1, 1), title: "First light", status: "Published", isCurrent: true, publicationDate: "2026-04-20", submissionDeadline: "2026-02-28", cover: "journal-academic-frontiers-hero.jpg", articleOrder: seedArticles("Lumera"), doi: "10.0000/talikha.lumera.v1i1", changelog: ["Seeded as published current issue"] },
   ];
+  journals[0].submissionIssueId = issues[0].id;
+  journals[1].submissionIssueId = issues[2].id;
+  issues[0].isSubmissionTarget = true;
+  issues[2].isSubmissionTarget = true;
   return { journals, issues, syncedAt: new Date().toISOString() };
 }
-type SiteJournal = { id: string; slug: string; title: string; description: string; scope: string; issn: string; hero: string; accent: string; status: string };
-type SiteIssue = { id: string; journalId: string; volume: string; issue: string; title: string; description: string; status: string; isCurrent: boolean; publicationDate: string; cover: string; deleted: boolean };
+type SiteJournal = { id: string; slug: string; title: string; description: string; scope: string; issn: string; issnOnline: string; issnPrint: string; hero: string; accent: string; status: string; submissionIssueId?: string; metadata: Record<string, unknown> };
+type SiteIssue = { id: string; journalId: string; volume: string; issue: string; title: string; description: string; status: string; isCurrent: boolean; isSubmissionTarget: boolean; publicationDate: string; cover: string; deleted: boolean; metadata: Record<string, unknown> };
 type SiteStore = { version: number; journals: SiteJournal[]; issues: SiteIssue[] };
 const jwSluggify: (v: string) => string = (value) => { const out = (value || "journal").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); return out || "journal"; };
 function projectCatalogForSite(catalog: JournalCatalog): SiteStore {
@@ -835,11 +859,11 @@ for (const j of catalog.journals) {
   const rawCover = cur && cur.cover ? cur.cover : "";
   const isAbs = rawCover.charAt(0) === "/" || rawCover.indexOf("data:") === 0 || rawCover.indexOf("http:") === 0 || rawCover.indexOf("https:") === 0;
   const hero = rawCover ? (isAbs ? rawCover : "/assets/" + rawCover) : "/assets/journal-academic-frontiers-hero.jpg";
-  journals.push({ id: j.id, slug: slug, title: j.title, description: j.seoDescription || "", scope: j.subject || "", issn: j.issnOnline || "", hero: hero, accent: "emerald", status: "published" });
+  journals.push({ id: j.id, slug, title: j.title, description: j.seoDescription || "", scope: j.subject || "", issn: j.issnOnline || "", issnOnline: j.issnOnline || "", issnPrint: j.issnPrint || "", hero, accent: "emerald", status: "published", submissionIssueId: j.submissionIssueId, metadata: { editorId: j.id, abbreviation: j.abbreviation, publisher: j.publisher, frequency: j.frequency, language: j.language, subject: j.subject, copyright: j.copyright, license: j.license, doiPrefix: j.doiPrefix, seoTitle: j.seoTitle, seoDescription: j.seoDescription, socialImage: j.socialImage, submissionIssueId: j.submissionIssueId, deleted: j.deleted } });
 }
 for (const i of catalog.issues) {
   if (i.deleted) continue;
-  issues.push({ id: i.id, journalId: i.journalId, volume: String(i.volume), issue: String(i.issue), title: i.title || "", description: i.description || "", status: String(i.status || "draft").toLowerCase(), isCurrent: !!i.isCurrent, publicationDate: i.publicationDate || "", cover: i.cover || "", deleted: false });
+  issues.push({ id: i.id, journalId: i.journalId, volume: String(i.volume), issue: String(i.issue), title: i.title || "", description: i.description || "", status: i.status, isCurrent: !!i.isCurrent, isSubmissionTarget: !!i.isSubmissionTarget, publicationDate: i.publicationDate || "", cover: i.cover || "", deleted: false, metadata: { editorId: i.id, isSpecial: i.isSpecial, specialLabel: i.specialLabel, submissionDeadline: i.submissionDeadline, editorialStart: i.editorialStart, editorialEnd: i.editorialEnd, openAt: i.openAt, closeAt: i.closeAt, publishAt: i.publishAt, articleOrder: i.articleOrder, doi: i.doi, keywords: i.keywords, seoTitle: i.seoTitle, seoDescription: i.seoDescription, socialImage: i.socialImage, changelog: i.changelog, createdAt: i.createdAt, deleted: i.deleted } });
 }
 return { version: 1, journals: journals, issues: issues };
 }
@@ -847,7 +871,7 @@ function publishCatalogToSite(catalog: JournalCatalog): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
   const body = projectCatalogForSite(catalog);
   return fetch("/api/journal-store", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-    .then((r) => { if (!r.ok) { console.error("[journal-store] publish failed", r.status); return false; } return true; })
+    .then(async (r) => { const result = await r.json().catch(() => ({} as { error?: string; dbError?: string })); if (!r.ok || result.dbSynced !== true) { console.error("[journal-store] publish failed", r.status, result.error || result.dbError || "database sync did not complete"); return false; } return true; })
     .catch((e) => { console.error("[journal-store] publish error", e); return false; });
 }
 function jwLoadCatalog(): JournalCatalog {
@@ -866,7 +890,8 @@ function getJournalCatalog(): JournalCatalog { return JOURNAL_CATALOG; }
 function saveJournalCatalog(next: JournalCatalog): void {
   JOURNAL_CATALOG = next;
   if (typeof window !== "undefined") {
-    try { window.localStorage.setItem(JOURNAL_CATALOG_KEY, JSON.stringify(next)); } catch { /* quota — surfaced via sync banner */ }
+    const localSafe = { ...next, issues: next.issues.map((issue) => ({ ...issue, cover: issue.cover.startsWith("data:") ? "" : issue.cover, socialImage: issue.socialImage.startsWith("data:") ? "" : issue.socialImage })) };
+    try { window.localStorage.setItem(JOURNAL_CATALOG_KEY, JSON.stringify(localSafe)); } catch { /* server state remains authoritative */ }
     window.dispatchEvent(new CustomEvent("talikha:catalog"));
   }
 }
@@ -886,11 +911,9 @@ function jwValidateIssue(catalog: JournalCatalog, issue: IssueRecord): { blockin
   const blocking: string[] = [];
   const warnings: string[] = [];
   const journal = catalog.journals.find((j) => j.id === issue.journalId);
-  if (!issue.title.trim()) blocking.push("Issue title is required.");
   if (!journal) blocking.push("The parent journal is missing.");
   const dup = catalog.issues.find((i) => i.id !== issue.id && i.journalId === issue.journalId && !i.deleted && i.volume === issue.volume && i.issue === issue.issue);
   if (dup) blocking.push(`Volume ${issue.volume}, Issue ${issue.issue} already exists for this journal.`);
-  if (issue.publicationDate && issue.submissionDeadline && issue.submissionDeadline > issue.publicationDate) warnings.push("Submission deadline is after the publication date.");
   const maxIssue = Math.max(0, ...catalog.issues.filter((i) => i.journalId === issue.journalId && !i.deleted && i.volume === issue.volume && i.id !== issue.id).map((i) => i.issue));
   if (maxIssue && issue.issue > maxIssue + 1) warnings.push(`Issue number skips the sequence (expected ${maxIssue + 1}).`);
   const orderSet = new Set(issue.articleOrder);
@@ -962,6 +985,23 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(new Set());
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/journal-store", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error || "Could not load the journal catalog.");
+        return payload as JournalCatalog;
+      })
+      .then((remote) => {
+        if (cancelled || !remote || !Array.isArray(remote.journals) || !Array.isArray(remote.issues)) return;
+        setCatalog(remote);
+        setSavedSnapshot(JSON.stringify(remote));
+        setSelJournal((current) => remote.journals.find((journal) => !journal.deleted && journal.id === current)?.id || remote.journals.find((journal) => !journal.deleted)?.id || "");
+      })
+      .catch((error) => console.error("[journal-store] load failed", error));
+    return () => { cancelled = true; };
+  }, []);
   const dirty = JSON.stringify(catalog) !== savedSnapshot;
   const journals = catalog.journals.filter((j) => !j.deleted);
   const journalById = (id: string) => catalog.journals.find((j) => j.id === id);
@@ -969,21 +1009,25 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   catalog.journals.forEach((j) => { titleToId[j.title] = j.id; });
   const currentIssueByJournal: Record<string, string> = {};
   catalog.issues.forEach((i) => { if (!i.deleted && i.isCurrent) currentIssueByJournal[i.journalId] = i.id; });
+  const submissionIssueByJournal: Record<string, string> = {};
+  catalog.journals.forEach((j) => { if (j.submissionIssueId) submissionIssueByJournal[j.id] = j.submissionIssueId; });
   const effectiveTarget = (sub: EditorialSubmission): string | null => {
     const t = sub.targetIssueId;
     if (t === "UNASSIGNED") return "UNASSIGNED";
     if (t) return t;
-    return currentIssueByJournal[titleToId[sub.journal]] || null;
+    return submissionIssueByJournal[titleToId[sub.journal]] || currentIssueByJournal[titleToId[sub.journal]] || null;
   };
   const subById = (id: string) => submissions.find((s) => s.id === id);
   const commit = (next: JournalCatalog) => setCatalog(next);
   const save = () => {
     const next = { ...catalog, journals: catalog.journals.map((j) => (j.slug ? j : { ...j, slug: jwSluggify(j.title) })) };
     commit(next);
-    saveJournalCatalog(next);
-    setSavedSnapshot(JSON.stringify(next));
     setSyncState("publishing");
     publishCatalogToSite(next).then((ok) => {
+      if (ok) {
+        saveJournalCatalog(next);
+        setSavedSnapshot(JSON.stringify(next));
+      }
       setSyncState(ok ? "synced" : "failed");
       if (ok) setTimeout(() => setSyncState("idle"), 4000);
     });
@@ -1000,13 +1044,28 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
     commit({ ...catalog, issues: [...catalog.issues, i] });
     setSelIssue(i.id); setSelJournal(journalId); setTab("details");
   };
+  const setSubmissionTarget = (target: IssueRecord) => {
+    const journal = journalById(target.journalId);
+    if (!journal) return;
+    if (!target.publicationDate) { setConfirm({ title: "Add an official date first", msg: "Set the date when this issue becomes official before opening it for submissions.", onYes: () => setConfirm(null) }); return; }
+    const previous = catalog.issues.find((item) => item.journalId === target.journalId && item.isSubmissionTarget && item.id !== target.id);
+    const nextIssues = catalog.issues.map((item) => {
+      if (item.journalId !== target.journalId || item.deleted) return item;
+      if (item.id === target.id) return { ...item, isSubmissionTarget: true, changelog: [...item.changelog, `${item.isCurrent ? "Opened submissions" : "Opened advance submissions"} ${jwStamp()}`] };
+      if (item.isSubmissionTarget) return { ...item, isSubmissionTarget: false, changelog: [...item.changelog, `Submissions closed because Vol ${target.volume} Issue ${target.issue} became the target ${jwStamp()}`] };
+      return item;
+    });
+    commit({ ...catalog, journals: catalog.journals.map((item) => item.id === journal.id ? { ...item, submissionIssueId: target.id } : item), issues: nextIssues });
+    setConfirm(null);
+    if (previous && previous.id !== target.id) setCoverMsg(`New submissions now route to Vol ${target.volume} Issue ${target.issue}.`);
+  };
   const duplicateIssue = (src: IssueRecord) => { const clone = jwCloneIssue(catalog, src); commit({ ...catalog, issues: [...catalog.issues, clone] }); setSelIssue(clone.id); };
   const softDeleteIssue = (i: IssueRecord) => {
     const hasRecords = publicationRecords.some((r) => r.journal === journalById(i.journalId)?.title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue));
     if (hasRecords) { setConfirm({ title: "Cannot delete", msg: "This issue has published records attached. Archive it instead to keep citation history intact.", onYes: () => setConfirm(null) }); return; }
     setConfirm({ title: "Archive this issue?", msg: `Vol ${i.volume} · Issue ${i.issue} will be hidden from the default workspace. You can recover it from archived issues.`, onYes: () => { patchIssue(i.id, (x) => ({ ...x, deleted: true, changelog: [...x.changelog, `Archived (soft delete) ${jwStamp()}`] })); if (selIssue === i.id) setSelIssue(""); setConfirm(null); } });
   };
-  const setAsCurrent = (i: IssueRecord) => commit({ ...catalog, issues: catalog.issues.map((x) => (x.journalId === i.journalId && !x.deleted ? { ...x, isCurrent: x.id === i.id, changelog: x.id === i.id ? [...x.changelog, `Set as current issue ${jwStamp()}`] : x.isCurrent ? [...x.changelog, `Current status removed ${jwStamp()}`] : x.changelog } : x)) });
+  const setAsCurrent = (_i: IssueRecord) => { /* Current issue is derived by the lifecycle synchronizer. */ };
   const setStatus = (i: IssueRecord, next: IssueStatus) => {
     if (next === i.status) return;
     if (next === "Published") {
@@ -1042,11 +1101,10 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   };
   const assignedFor = (i: IssueRecord) => {
     const title = journalById(i.journalId)?.title;
-    const recs = publicationRecords.filter((r) => r.journal === title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue));
-    const bySub = new Map(recs.map((r) => [r.submissionId, r]));
-    const ordered = i.articleOrder.filter((sid) => bySub.has(sid));
-    const rest = recs.filter((r) => !i.articleOrder.includes(r.submissionId)).map((r) => r.submissionId);
-    return [...ordered, ...rest].map((sid) => { const s = subById(sid); const rec = bySub.get(sid); return s && rec ? { sub: s, rec } : null; }).filter((x): x is { sub: EditorialSubmission; rec: PublicationRecord } => x !== null);
+    const recs = publicationRecords
+      .filter((r) => r.status === "Published" && r.journal === title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue))
+      .sort((a, b) => (Number(a.pageStart) || Number.MAX_SAFE_INTEGER) - (Number(b.pageStart) || Number.MAX_SAFE_INTEGER));
+    return recs.map((rec) => { const sub = subById(rec.submissionId); return sub ? { sub, rec } : null; }).filter((x): x is { sub: EditorialSubmission; rec: PublicationRecord } => x !== null);
   };
   const targetedFor = (i: IssueRecord) => submissions.filter((s) => {
     if (effectiveTarget(s) !== i.id) return false;
@@ -1058,7 +1116,7 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
     setCoverMsg("");
     if (!file) return;
     if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) { setCoverMsg("Use a PNG, JPG or WebP image."); return; }
-    if (file.size > 2 * 1024 * 1024) { setCoverMsg("Cover must be under 2 MB to store safely in this workspace."); return; }
+    if (file.size > 10 * 1024 * 1024) { setCoverMsg("Cover must be 10 MB or smaller."); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -1138,12 +1196,22 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   const totalIssues = catalog.issues.filter((i) => !i.deleted).length;
   const effectiveAddTarget = addIssueTarget || journals[0]?.id || "";
   const issueCompletion = (i: IssueRecord) => {
-    const details = !!(i.title.trim() && i.publicationDate);
+    const details = !!i.publicationDate;
     const metadata = !!(i.volume && i.issue);
     const cover = !!i.cover;
-    const articles = i.articleOrder.length > 0;
-    const preview = details && metadata && cover && articles && (i.status === "Published" || i.status === "Scheduled");
+    const articles = assignedFor(i).length > 0;
+    const preview = details && metadata && cover && (i.status === "Published" || i.isCurrent);
     return { details, metadata, cover, articles, preview };
+  };
+  const lifecycleBadges = (i: IssueRecord) => {
+    const target = i.isSubmissionTarget || submissionIssueByJournal[i.journalId] === i.id;
+    const deadlinePassed = Boolean(i.submissionDeadline && i.submissionDeadline < jwToday());
+    const badges: string[] = [];
+    if (i.isCurrent) badges.push("Official");
+    else if (i.status === "Published") badges.push("Archived");
+    if (target && !deadlinePassed) badges.push(i.isCurrent ? "Accepting submissions" : "Accepting advance submissions");
+    else if (i.isCurrent || i.status === "Published") badges.push("Closed");
+    return badges;
   };
   return (
     <div className="jw">
@@ -1245,7 +1313,7 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                               const meta = ISSUE_STATUS_META[i.status];
                               return (
                                 <tr key={i.id} className="jw-jcard__irow">
-                                  <td colSpan={2}><button type="button" className="jw-jcard__ilink" onClick={() => { setSelIssue(i.id); setTab("details"); }}>Issue {i.issue} â€” {i.title || "Untitled"}</button></td>
+                                  <td colSpan={2}><button type="button" className="jw-jcard__ilink" onClick={() => { setSelIssue(i.id); setTab("details"); }}>Issue {i.issue}</button></td>
                                   <td><span className={`tp-pill ${meta.tone}`}>{meta.label}</span></td>
                                   <td>{i.isCurrent ? <span className="jw-jcard__cur">Current</span> : ""}</td>
                                   <td>{jwFmtDate(i.publicationDate)}</td>
@@ -1300,36 +1368,31 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
               <div className="jw-idd__headacts">
                 <button type="button" className="tp-btn tp-btn--outline" onClick={() => setPreviewOpen(true)}><Eye size={14} strokeWidth={1.8} /> Preview</button>
                 <button type="button" className="tp-btn tp-btn--outline" onClick={save}><Save size={14} strokeWidth={2} /> Save draft</button>
-                <div className="jw-splitbtn">
-                  <button type="button" className="tp-btn tp-btn--solid jw-splitbtn__main" onClick={() => setStatus(issue, "Published")}><Globe size={14} strokeWidth={1.8} /> Publish to website</button>
-                  <button type="button" className="tp-btn tp-btn--solid jw-splitbtn__chev" aria-label="More publish options"><ChevronDown size={14} strokeWidth={2.2} /></button>
-                </div>
+                {!issue.isSubmissionTarget && <button type="button" className="tp-btn tp-btn--solid" onClick={() => setConfirm({ title: issue.isCurrent ? "Open submissions?" : "Accept advance submissions?", msg: issue.isCurrent ? `New submissions will route to Vol ${issue.volume} Issue ${issue.issue}.` : `This will close the previous submission target and route all new submissions to Vol ${issue.volume} Issue ${issue.issue}.`, onYes: () => setSubmissionTarget(issue) })}><Users size={14} strokeWidth={1.8} /> {issue.isCurrent ? "Accept submissions" : "Accept advance submissions"}</button>}
               </div>
             </div>
 
             <div className="jw-idd__status">
               <div className="jw-idd__scard">
-                <strong>Workflow stage</strong>
-                <em>Control the editorial workflow state for this issue.</em>
-                <select className="jw-idd__select" value={issue.status} onChange={(e) => setStatus(issue, e.target.value as IssueStatus)}>
-                  {ISSUE_STATUS_ORDER.map((s) => <option key={s} value={s}>{ISSUE_STATUS_META[s].label}</option>)}
-                </select>
+                <strong>Automatic lifecycle</strong>
+                <em>These labels are derived from the issue date and submission target.</em>
+                <div className="jw-badge-row">{lifecycleBadges(issue).map((badge) => <span key={badge} className={`tp-pill ${badge === "Official" || badge.includes("Accepting") ? "tp-pill--green" : "tp-pill--neutral"}`}>{badge}</span>)}</div>
               </div>
               <div className="jw-idd__scard">
                 <strong>Website status</strong>
-                <em>Manage how this issue appears on your website.</em>
-                <span className={issue.status === "Published" ? "jw-idd__wsbadge is-live" : "jw-idd__wsbadge"}><Globe size={13} strokeWidth={1.8} /> {issue.status === "Published" ? "Live on website" : "Not published"}</span>
+                <em>Publication date controls when this issue becomes official.</em>
+                <span className={issue.status === "Published" ? "jw-idd__wsbadge is-live" : "jw-idd__wsbadge"}><Globe size={13} strokeWidth={1.8} /> {issue.status === "Published" ? "Visible in archive" : "Not published"}</span>
               </div>
               <div className="jw-idd__scard">
-                <strong>Current issue</strong>
-                <em>Mark this as the current active issue.</em>
-                <label className="jw-idd__toggle"><input type="checkbox" checked={issue.isCurrent} onChange={() => setAsCurrent(issue)} /><span className="jw-idd__ttrack"><i /></span><em>This is the current active issue</em></label>
+                <strong>Submission target</strong>
+                <em>Opening another issue automatically closes this target.</em>
+                {issue.isSubmissionTarget ? <span className="jw-idd__wsbadge is-live"><Users size={13} strokeWidth={1.8} /> New submissions route here</span> : <span className="jw-idd__wsbadge"><Users size={13} strokeWidth={1.8} /> Not receiving new submissions</span>}
               </div>
             </div>
 
             <div className="jw-syncbar jw-syncbar--compact">
               <Info size={16} strokeWidth={1.8} className="jw-syncbar__icon" />
-              <p>Publishing this issue makes it visible on the website and updates the current issue across submissions and the public site.</p>
+              <p>The publication date makes an issue official. The submission target controls where new manuscripts are routed.</p>
               <a href="#" className="jw-syncbar__link" onClick={(e) => e.preventDefault()}>Learn more <ArrowUpRight size={12} strokeWidth={2} /></a>
             </div>
 
@@ -1351,12 +1414,12 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                 {tab === "details" && (
                   <div className="jw-pane">
                     <div className="jw-row2">
-                      <JwField label="Issue title *" value={issue.title} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, title: v }))} placeholder="e.g. Summer research issue" />
-                      <JwArea label="Description" value={issue.description} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, description: v }))} placeholder="A short public summary of this issue." />
+                      <JwField label="Volume" type="number" value={String(issue.volume)} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, volume: Number(v) || 1 }))} />
+                      <JwField label="Issue number" type="number" value={String(issue.issue)} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, issue: Number(v) || 1 }))} />
                     </div>
                     <div className="jw-row2">
-                      <JwField label="Publication date *" type="date" value={issue.publicationDate} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, publicationDate: v }))} />
-                      <JwField label="Submission deadline" type="date" value={issue.submissionDeadline} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, submissionDeadline: v }))} />
+                      <JwField label="Official from *" type="date" value={issue.publicationDate} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, publicationDate: v }))} hint="The first date this issue appears officially on the website." />
+                      <JwField label="Submission deadline" type="date" value={issue.submissionDeadline} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, submissionDeadline: v }))} hint="The last date new manuscripts may be submitted to this issue." />
                     </div>
                     <div className="jw-idd__completion">
                       <div className="jw-idd__completion-head"><strong>Issue completion</strong><em>Keep going! Complete the remaining steps to publish.</em></div>
@@ -1381,10 +1444,6 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
 
                 {tab === "metadata" && (
                   <div className="jw-pane">
-                    <div className="jw-row2">
-                      <JwField label="Volume" type="number" value={String(issue.volume)} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, volume: Number(v) || 1 }))} />
-                      <JwField label="Issue number" type="number" value={String(issue.issue)} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, issue: Number(v) || 1 }))} />
-                    </div>
                     <JwField label="SEO title" value={issue.seoTitle} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, seoTitle: v }))} placeholder={issue.title || issueJournal.seoTitle} />
                     <JwArea label="SEO / meta description" value={issue.seoDescription} onChange={(v) => patchIssue(issue.id, (x) => ({ ...x, seoDescription: v }))} placeholder={issueJournal.seoDescription} />
                     <div className="jw-meta-reuse">
@@ -1411,7 +1470,7 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                         <div className="jw-cover__empty"><ImageIcon size={26} strokeWidth={1.6} /><p>No cover yet â€” a cover is required before publishing.</p></div>
                       )}
                       <div className="jw-cover__controls">
-                        <p className="jw-cover__hint">PNG, JPG or WebP Â· under 2 MB Â· recommended 1200Ã—1600 (3:4).</p>
+                        <p className="jw-cover__hint">PNG, JPG or WebP · up to 10 MB · A4 portrait recommended (210×297).</p>
                         <input ref={coverInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => handleCover(e.target.files?.[0], issue)} />
                         <div className="jw-cover__btns">
                           <button type="button" className="tp-btn tp-btn--outline" onClick={() => coverInputRef.current?.click()}>{issue.cover ? <RefreshCw size={14} strokeWidth={1.9} /> : <Plus size={14} strokeWidth={2.2} />}{issue.cover ? "Replace cover" : "Upload cover"}</button>
@@ -1427,8 +1486,8 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                 {tab === "articles" && (
                   <div className="jw-pane">
                     <div className="jw-artsec">
-                      <div className="jw-artsec__head"><h3>Assigned â€” final publication order</h3><span>{assignedFor(issue).length} article{assignedFor(issue).length === 1 ? "" : "s"}</span></div>
-                      <p className="jw-artsec__note">Final assignment is locked to publication records. Reorder to build the table of contents.</p>
+                      <div className="jw-artsec__head"><h3>Published articles · page order</h3><span>{assignedFor(issue).length} article{assignedFor(issue).length === 1 ? "" : "s"}</span></div>
+                      <p className="jw-artsec__note">Only published records linked to this issue appear here. The table of contents follows page number.</p>
                       {assignedFor(issue).length ? (
                         <ul className="jw-artlist">
                           {assignedFor(issue).map(({ sub, rec }, idx) => (
@@ -1436,10 +1495,7 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                               <span className="jw-artlist__order">{idx + 1}</span>
                               <span className="jw-artlist__text"><strong>{sub.title}</strong><em>{sub.author}</em></span>
                               <span className={`tp-pill ${statusToneClass(sub.status)}`}>{rec.status}</span>
-                              <span className="jw-artlist__move">
-                                <button type="button" disabled={idx === 0} aria-label="Move up" onClick={() => reorder(issue, idx, -1)}><ChevronDown size={13} strokeWidth={2} style={{ transform: "rotate(180deg)" }} /></button>
-                                <button type="button" disabled={idx === assignedFor(issue).length - 1} aria-label="Move down" onClick={() => reorder(issue, idx, 1)}><ChevronDown size={13} strokeWidth={2} /></button>
-                              </span>
+                              <span className="jw-artlist__page">pp. {rec.pageStart || "—"}{rec.pageEnd ? `–${rec.pageEnd}` : ""}</span>
                               <button type="button" className="jw-artlist__open" onClick={() => onOpenSubmission(sub.id)}>Open</button>
                             </li>
                           ))}
@@ -1491,9 +1547,9 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                         {issue.cover ? <img src={jwCoverSrc(issue.cover)} alt="" /> : <div className="jw-inline-preview__nocover"><ImageIcon size={20} strokeWidth={1.6} /></div>}
                         <div>
                           <p className="tp-overline">{issue.isSpecial && issue.specialLabel ? issue.specialLabel : "Current issue"}</p>
-                          <h3>{issue.title || "Untitled issue"}</h3>
+                          <h3>Issue {issue.issue}</h3>
                           <p className="jw-inline-preview__vol">Volume {issue.volume} Â· Issue {issue.issue} Â· {jwFmtDate(issue.publicationDate)}</p>
-                          <p className="jw-inline-preview__desc">{issue.description || "No description provided yet."}</p>
+                          <p className="jw-inline-preview__desc">Official journal issue · Published articles appear in page order.</p>
                         </div>
                       </div>
                       <h4>Table of contents</h4>
@@ -1611,9 +1667,9 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
                   {previewIssue.cover ? <img src={jwCoverSrc(previewIssue.cover)} alt="" /> : <div className="jw-preview__nocover"><ImageIcon size={28} strokeWidth={1.5} /></div>}
                   <div>
                     <p className="tp-overline">{previewIssue.isSpecial && previewIssue.specialLabel ? previewIssue.specialLabel : previewIssue.isCurrent ? "Current issue" : ISSUE_STATUS_META[previewIssue.status].label}</p>
-                    <h3>{previewIssue.title || "Untitled issue"}</h3>
+                    <h3>Issue {previewIssue.issue}</h3>
                     <p className="jw-preview__vol">Volume {previewIssue.volume} · Issue {previewIssue.issue} · {jwFmtDate(previewIssue.publicationDate)}</p>
-                    <p className="jw-preview__desc">{previewIssue.description || "No description provided yet."}</p>
+                    <p className="jw-preview__desc">Official journal issue · Published articles appear in page order.</p>
                     <div className="jw-preview__cycle">{previewIssue.submissionDeadline ? `Submissions close ${jwFmtDate(previewIssue.submissionDeadline)}` : previewIssue.status === "Open" ? "Open for submissions" : "Submissions closed"}</div>
                   </div>
                 </div>
@@ -1936,6 +1992,14 @@ function StudiesView({ submissions, publicationRecords, onOpenRecord }: { submis
                     <FileText />
                     {study.reference} · PDF · {study.file}
                   </span>
+                  <span>
+                    <Eye />
+                    {study.record.readCount ?? 0} views
+                  </span>
+                  <span>
+                    <Download />
+                    {study.record.downloadCount ?? 0} downloads
+                  </span>
                 </div>
               </div>
               <button
@@ -2146,219 +2210,6 @@ function SubmissionWorkspace({
   );
 }
 
-function SubmissionReview({
-  submission,
-  onBack,
-  onUpdate,
-}: {
-  submission: EditorialSubmission;
-  onBack: () => void;
-  onUpdate: (submission: EditorialSubmission) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(submission.title);
-  const [abstract, setAbstract] = useState(submission.abstract);
-  const moveTo = (status: SubmissionStatus) =>
-    onUpdate({
-      ...submission,
-      status,
-      history: [...submission.history, `Moved to ${status} · ${new Date().toLocaleString("en-PH")}`],
-    });
-  const saveDetails = () => {
-    onUpdate({
-      ...submission,
-      title,
-      abstract,
-      history: [...submission.history, "Record details updated"],
-    });
-    setEditing(false);
-  };
-  return (
-    <section className="submission-detail">
-      <div className="detail-topline">
-        <button onClick={onBack}>
-          <ArrowLeft /> Back to submissions
-        </button>
-        <span>Editorial record · {submission.id}</span>
-      </div>
-      <div className="submission-heading detail-heading">
-        <div>
-          <span>{submission.journal}</span>
-          <h1>{submission.title}</h1>
-          <p>
-            Submitted by {submission.author} on {submission.displayDate}.
-          </p>
-        </div>
-        <span
-          className={`submission-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}
-        >
-          {submission.status}
-        </span>
-      </div>
-      <div className="detail-layout">
-        <div className="detail-main">
-          <section className="detail-card">
-            <header>
-              <div>
-                <h2>Submission record</h2>
-                <p>Review the record before changing its editorial stage.</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => (editing ? saveDetails() : setEditing(true))}
-              >
-                {editing ? <Save /> : <FileText />}
-                {editing ? "Save changes" : "Edit details"}
-              </Button>
-            </header>
-            <div className="record-grid">
-              <div>
-                <span>Author</span>
-                <strong>{submission.author}</strong>
-              </div>
-              <div>
-                <span>Email</span>
-                <strong>{submission.email}</strong>
-              </div>
-              <div>
-                <span>Affiliation</span>
-                <strong>{submission.affiliation}</strong>
-              </div>
-              <div>
-                <span>Journal</span>
-                <strong>{submission.journal}</strong>
-              </div>
-              <div>
-                <span>Reference</span>
-                <strong>{submission.id}</strong>
-              </div>
-              <div>
-                <span>Manuscript file</span>
-                <strong>{submission.fileName}</strong>
-              </div>
-            </div>
-            <label className="detail-field">
-              Study title
-              {editing ? (
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              ) : (
-                <strong>{submission.title}</strong>
-              )}
-            </label>
-            <label className="detail-field">
-              Abstract
-              {editing ? (
-                <textarea
-                  value={abstract}
-                  onChange={(event) => setAbstract(event.target.value)}
-                />
-              ) : (
-                <p>{submission.abstract}</p>
-              )}
-            </label>
-          </section>
-          <section className="detail-card">
-            <header>
-              <div>
-                <h2>Payment record</h2>
-                <p>Submitted receipt status for this manuscript.</p>
-              </div>
-            </header>
-            <div className="payment-record">
-              <CreditCard />
-              <div>
-                <strong>
-                  {submission.paymentProof
-                    ? "Payment proof received"
-                    : "Payment proof pending"}
-                </strong>
-                <span>
-                  {submission.paymentProof
-                    ? "Receipt is attached to this submission record."
-                    : "No receipt has been attached to this submission record."}
-                </span>
-              </div>
-            </div>
-            {submission.paymentPlan && (
-              <div className="payment-record" style={{ marginTop: "0.75rem" }}>
-                <div style={{ display: "grid", gap: "0.35rem", fontSize: "0.82rem", width: "100%" }}>
-                  {submission.paymentPlan && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Plan:</span><strong>{submission.paymentPlan}</strong></div>}
-                  {submission.paymentMethod && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Method:</span><strong>{submission.paymentMethod}</strong></div>}
-                  {submission.paymentReference && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Reference:</span><strong>{submission.paymentReference}</strong></div>}
-                  {submission.paymentAmount !== undefined && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Amount:</span><strong>₱{submission.paymentAmount.toLocaleString()}</strong></div>}
-                  {submission.paymentStatus && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Status:</span><strong style={{ textTransform: "capitalize" }}>{submission.paymentStatus}</strong></div>}
-                  {submission.proofFileName && <div><span style={{ color: "var(--muted)", marginRight: "0.5rem" }}>Proof file:</span><strong>{submission.proofFileName}</strong></div>}
-                </div>
-              </div>
-            )}
-          </section>
-        </div>
-        <aside className="detail-side">
-          <section className="detail-card status-rail">
-            <header>
-              <div>
-                <h2>Editorial stage</h2>
-                <p>Record decisions as the submission progresses.</p>
-              </div>
-            </header>
-            <ol>
-              {submissionStatusOrder
-                .filter((status) => status !== "Rejected")
-                .map((status) => (
-                  <li
-                    key={status}
-                    className={
-                      submission.status === status
-                        ? "current"
-                        : submissionStatusOrder.indexOf(submission.status) >
-                            submissionStatusOrder.indexOf(status)
-                          ? "complete"
-                          : ""
-                    }
-                  >
-                    <i />
-                    {status}
-                  </li>
-                ))}
-            </ol>
-            <div className="review-actions">
-              {statusActions(submission.status).map((action) => (
-                <button
-                  key={action.label}
-                  className={action.tone || ""}
-                  onClick={() => moveTo(action.status)}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          </section>
-          <section className="detail-card">
-            <header>
-              <div>
-                <h2>Record history</h2>
-                <p>Local editorial activity.</p>
-              </div>
-            </header>
-            <ul className="record-history">
-              {submission.history.map((item, index) => (
-                <li key={`${item}-${index}`}>
-                  <i />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
-      </div>
-    </section>
-  );
-}
-
 function acceptedTimestamp(submission: EditorialSubmission) {
   const entry = [...submission.history].reverse().find((item) => item.includes("Moved to Accepted"));
   const rawDate = entry?.split(/\s+(?:·|Â·)\s+/).at(-1)?.trim();
@@ -2424,6 +2275,8 @@ function LegacySubmissionReview({
     [reviewTab, setReviewTab] = useState<"review" | "publication">(() => initialTab || "review"),
     [scheduleUnlocked, setScheduleUnlocked] = useState(false);
   const paymentConfirmed = submission.paymentConfirmed === true;
+  const reviewUnlocked = submission.workflowStage ? submission.workflowStage !== "review_new" : submission.status !== "New";
+  const reviewActions = submission.workflowStage?.startsWith("production_") ? [] : statusActions(submission.status);
   const author = authors[activeAuthor] ?? authors[0];
   const nameParts = author.name.trim().split(/\s+/).filter(Boolean);
   const firstName = author.firstName?.trim() || nameParts[0] || "";
@@ -2461,26 +2314,67 @@ function LegacySubmissionReview({
       history: [...submission.history, "Review record saved"],
     });
   };
-  const moveTo = (status: SubmissionStatus) => {
+  const moveTo = async (status: SubmissionStatus) => {
+    const stage = submission.workflowStage;
+    const targets: string[] =
+      status === "In progress" && stage === "review_new" ? ["review_in_progress"] :
+      status === "Review" && stage === "review_in_progress" ? ["review_final"] :
+      status === "Accepted" && stage === "review_final" ? ["review_accepted", "production_ready"] :
+      status === "Rejected" && stage ? ["closed"] : [];
+    if (targets.length) {
+      try {
+        for (const toStage of targets) {
+          const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ toStage }),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.error || "The workflow could not be updated.");
+          }
+        }
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The workflow could not be updated.");
+        return;
+      }
+    }
     onUpdate({
       ...submission,
       status,
+      workflowStage: targets.at(-1) || submission.workflowStage,
       history: [...submission.history, `Moved to ${status} · ${new Date().toLocaleString("en-PH")}`],
     });
-    if (status === "In progress") onReturnToSubmissions?.();
   };
-  const confirmPayment = () => {
-    if (paymentConfirmed) return;
+  const confirmPayment = async () => {
+    if (paymentConfirmed || !isAdmin) return;
+    const paymentId = submission.paymentId;
+    if (!submission.paymentProof || !submission.paymentMethod || !submission.paymentReference) {
+      window.alert("A payment proof, method, and reference are required before confirmation.");
+      return;
+    }
+    const response = await fetch(`/api/admin/submissions/${submission.id}/payment/confirm`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(paymentId ? { paymentId } : {}) });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      window.alert(body?.error || "The payment could not be confirmed.");
+      return;
+    }
     onUpdate({
       ...submission,
       paymentConfirmed: true,
-      history: [...submission.history, "Payment confirmed"],
+      status: submission.status,
+      history: [...submission.history, "Payment approved — In review"],
     });
   };
   const publicationRecord = publicationRecords.find(
     (record) => record.submissionId === submission.id,
   );
   const openPublicationRecord = () => {
+    if (!submission.workflowStage?.startsWith("production_") && submission.status !== "Accepted") {
+      window.alert("The production record becomes available only after the submission is accepted.");
+      return;
+    }
     if (!publicationRecord) {
       const defaults = journalIssueDefaults[submission.journal] ?? { volume: "1", issue: "1" };
       onPublicationRecordsChange([
@@ -2500,7 +2394,6 @@ function LegacySubmissionReview({
         },
       ]);
     }
-    if (submission.status === "New") moveTo("In progress");
     setReviewTab("publication");
   };
   const updatePublicationRecord = (next: PublicationRecord) =>
@@ -2522,10 +2415,31 @@ function LegacySubmissionReview({
     window.dispatchEvent(new CustomEvent("talikha:production-view", { detail: "Needs action" }));
     onBack();
   };
-  const schedulePublication = (scheduledFor: string) => {
-    if (!publicationRecord || !scheduledFor) return;
+  const schedulePublication = async (scheduledFor: string): Promise<boolean> => {
+    if (!publicationRecord || !scheduledFor) return false;
+    const scheduledIso = new Date(`${scheduledFor}T00:00:00`).toISOString();
+    try {
+      const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: scheduledIso } }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "The publication could not be scheduled.");
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The publication could not be scheduled.");
+      return false;
+    }
     updatePublicationRecord({ ...publicationRecord, scheduledFor, status: "Scheduled" });
-    moveTo("Scheduled for publishing");
+    onUpdate({
+      ...submission,
+      workflowStage: "production_scheduled",
+      history: [...submission.history, `Scheduled for publishing · ${new Date().toLocaleString("en-PH")}`],
+    });
+    return true;
   };
   return (
     <section className="submission-review">
@@ -2534,7 +2448,7 @@ function LegacySubmissionReview({
           <nav className="review-breadcrumb" aria-label="Breadcrumb">
             <button onClick={onBack}>Editorial records</button>
             <ChevronRight aria-hidden="true" />
-            <span aria-current="page">Review</span>
+            <span aria-current="page">{reviewTab === "publication" ? "Publication record" : "Review"}</span>
           </nav>
           <h1>{reviewTab === "review" ? "Submission review" : publicationRecord && (publicationRecord.status === "Ready to publish" || publicationRecord.status === "Scheduled" || (publicationRecord.status === "For approval" && scheduleUnlocked)) ? "Publishing schedule" : "Publication record"}</h1>
           <p>
@@ -2555,7 +2469,7 @@ function LegacySubmissionReview({
           <button type="button" className="review-delete-action" onClick={() => setDeleteOpen(true)}>
             <Trash2 /> Delete submission
           </button>
-          {!publicationOnly && reviewTab === "review" && statusActions(submission.status).length > 0 && statusActions(submission.status)
+          {!publicationOnly && reviewTab === "review" && reviewActions.length > 0 && reviewActions
             .filter((action) => action.status !== "Revise")
             .map((action) => (
               <button
@@ -2589,6 +2503,7 @@ function LegacySubmissionReview({
             record={publicationRecord}
             publicationRecords={publicationRecords}
             onChange={updatePublicationRecord}
+            onSubmissionUpdate={onUpdate}
             onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
             onMarkForApproval={markForApproval}
             onRevise={revisePublication}
@@ -2603,13 +2518,16 @@ function LegacySubmissionReview({
           record={publicationRecord ?? null}
           publicationRecords={publicationRecords}
           onChange={updatePublicationRecord}
+          onSubmissionUpdate={onUpdate}
           onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
           onMarkForApproval={markForApproval}
           onRevise={revisePublication}
           canManagePublication={isAdmin}
         />
-      ) : <div className="review-layout">
-        <div className="review-form">
+      ) : <>
+        {!reviewUnlocked && <div className="review-lock-banner" role="status"><LockKeyhole /><div><strong>Review is locked</strong><span>Confirm the payment, then click Start review to unlock the manuscript, files, and receipt.</span></div></div>}
+        <div className={`review-layout${reviewUnlocked ? "" : " review-layout--locked"}`}>
+        <div className="review-form review-content-lock" aria-disabled={!reviewUnlocked}>
           <section>
             <header>
               <div>
@@ -2914,34 +2832,31 @@ function LegacySubmissionReview({
           </section>
         </div>
         <aside className="review-receipt-column">
-          <ReceiptPreview
-            submission={submission}
-            author={authors[0]}
-            manuscriptTitle={manuscriptTitle}
-            receipt={receipt}
-          />
+          <div className={!reviewUnlocked ? "review-content-lock" : ""} aria-disabled={!reviewUnlocked}>
+            <ReceiptPreview
+              submission={submission}
+              author={authors[0]}
+              manuscriptTitle={manuscriptTitle}
+              receipt={receipt}
+            />
+          </div>
           <section className="payment-proof-card">
             <header>
               <div>
-                <h2>Photo of payment</h2>
-                <p>Uploaded proof associated with the invoice number.</p>
+                <h2>Payment review</h2>
+                <p>Review the proof and details before you confirm this payment.</p>
               </div>
               <span className="verified">
                 <CheckCircle2 />
-                {paymentConfirmed ? "Payment accepted" : submission.paymentProof ? "Payment awaiting confirmation" : "Payment pending"}
+                {paymentConfirmed ? "Payment accepted" : submission.paymentProof ? "Manual review required" : "Payment proof pending"}
               </span>
             </header>
-            {submission.paymentPlan && (
+            {(submission.paymentPlan || submission.paymentMethod || submission.paymentReference || submission.paymentAmount !== undefined) && (
               <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.78rem", display: "grid", gap: "0.25rem", borderBottom: "1px solid var(--border)" }}>
                 {submission.paymentPlan && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Plan:</span><strong>{submission.paymentPlan}</strong></div>}
                 {submission.paymentMethod && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Method:</span><strong>{submission.paymentMethod}</strong></div>}
                 {submission.paymentReference && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Ref:</span><strong>{submission.paymentReference}</strong></div>}
                 {submission.paymentAmount !== undefined && <div><span style={{ color: "var(--muted)", marginRight: "0.4rem" }}>Amount:</span><strong>₱{submission.paymentAmount.toLocaleString()}</strong></div>}
-              </div>
-            )}
-            {submission.proofFileId && (
-              <div className="payment-proof-thumb">
-                <img src={`/api/admin/files/${submission.proofFileId}`} alt="Payment proof screenshot" />
               </div>
             )}
             <div className="payment-proof">
@@ -2964,14 +2879,14 @@ function LegacySubmissionReview({
               type="button"
               className="approve payment-confirm-action"
               onClick={() => setPaymentConfirmOpen(true)}
-              disabled={paymentConfirmed}
+              disabled={paymentConfirmed || !isAdmin || !submission.paymentProof || !submission.paymentMethod || !submission.paymentReference}
             >
               <CheckCircle2 />
-              {paymentConfirmed ? "Payment accepted" : "Accept payment"}
+              {paymentConfirmed ? "Payment accepted" : "Confirm payment & start review"}
             </button>
           </section>
         </aside>
-      </div>}
+      </div></>}
       <PaymentProofViewer
           submission={submission}
           open={paymentViewerOpen}
@@ -2987,11 +2902,11 @@ function LegacySubmissionReview({
           <DialogHeader>
             <div className="submission-delete-icon payment-confirm-icon"><CheckCircle2 /></div>
             <DialogTitle>Accept this payment?</DialogTitle>
-            <DialogDescription>Confirming the payment will unlock <strong>Start review</strong> for this submission.</DialogDescription>
+            <DialogDescription>Confirming the payment will make <strong>Start review</strong> available. It will not open the manuscript or move it into production.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => setPaymentConfirmOpen(false)}>Cancel</Button>
-            <Button type="button" size="sm" onClick={() => { confirmPayment(); setPaymentConfirmOpen(false); }}><CheckCircle2 /> Accept payment</Button>
+            <Button type="button" size="sm" onClick={async () => { await confirmPayment(); setPaymentConfirmOpen(false); }}><CheckCircle2 /> Accept payment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3038,6 +2953,7 @@ function PublicationRecordEditor({
   record,
   publicationRecords,
   onChange,
+  onSubmissionUpdate,
   onOpenPublish,
   onMarkForApproval,
   onRevise,
@@ -3049,6 +2965,7 @@ function PublicationRecordEditor({
   record: PublicationRecord | null;
   publicationRecords: PublicationRecord[];
   onChange: (record: PublicationRecord) => void;
+  onSubmissionUpdate: (submission: EditorialSubmission) => void;
   onOpenPublish: () => void;
   onMarkForApproval?: () => void;
   onRevise?: () => void;
@@ -3091,6 +3008,9 @@ function PublicationRecordEditor({
     let suffix = 2;
     while (publicationRecords.some((item) => item.id !== record.id && item.doi === candidate)) candidate = `${base}-${suffix++}`;
     onChange({ ...record, doi: candidate });
+  };
+  const openCertificateCreator = () => {
+    window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
   };
   type PubAction = { key: string; label: string; variant: "default" | "outline" | "destructive"; tone?: "danger"; disabled: boolean; onClick: () => void };
   const editAction: PubAction = { key: "edit", label: "Edit publication record", variant: "outline", disabled: false, onClick: () => setEditingRecord(true) };
@@ -3165,11 +3085,12 @@ function PublicationRecordEditor({
         <div className="doi-row tp-pub-doi"><ReviewField label="DOI" value={record.doi} onChange={editingRecord ? (doi) => onChange({ ...record, doi }) : undefined} /></div>
         {doiExists ? <p className="publication-warning">This DOI is already used by another local publication record.</p> : record.doi && <p className="publication-note">Unique in this local website record. It becomes an official DOI only after registration with your DOI provider.</p>}
         <div className="publication-subsection">
-          <header><div><span>Publication engagement</span><h3>Reads and downloads</h3><p>Set the displayed totals for this publication record.</p></div></header>
-          <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" value={String(record.readCount ?? 0)} onChange={editingRecord ? (value) => onChange({ ...record, readCount: Math.max(0, Number(value) || 0) }) : undefined} /><ReviewField label="Number of downloads" value={String(record.downloadCount ?? 0)} onChange={editingRecord ? (value) => onChange({ ...record, downloadCount: Math.max(0, Number(value) || 0) }) : undefined} /></div>
+          <header><div><span>Publication engagement</span><h3>Reads and downloads</h3><p>Tracked automatically from reader activity on the public site.</p></div></header>
+          <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" value={String(record.readCount ?? 0)} onChange={undefined} /><ReviewField label="Number of downloads" value={String(record.downloadCount ?? 0)} onChange={undefined} /></div>
         </div>
       </section>
       <section className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA 7 citation preview</h2></div></header><ApaCitationPreview submission={submission} authors={authors} record={record} /></section>
+      <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
       <div className="tp-pub-actions">
           {primaryAction && (
             <Button type="button" variant={primaryAction.variant} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
@@ -3204,7 +3125,7 @@ function PublicationSchedulePanel({
 }: {
   record: PublicationRecord;
   submission: EditorialSubmission;
-  onSchedule: (date: string) => void;
+  onSchedule: (date: string) => Promise<boolean>;
   canManagePublication?: boolean;
 }) {
   const isScheduled = record.status === "Scheduled";
@@ -3222,7 +3143,7 @@ function PublicationSchedulePanel({
     </section>
     <section className="publication-card">
       <header><div><span>Publication date</span><h2>Schedule this record</h2><p>The status becomes Scheduled for publishing until the chosen date.</p></div></header>
-      <div className="schedule-publication-control"><label>Publish on<input type="date" min={new Date().toISOString().slice(0, 10)} value={scheduledFor} disabled={!canManagePublication || !editingSchedule} onChange={(event) => { setScheduledFor(event.target.value); setSavedReview(false); }} /></label>{isScheduled ? <p className="publication-note">Scheduled for {new Date(`${scheduledFor || record.scheduledFor}T00:00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}. {certificateIssued ? "It will publish automatically when the date arrives." : "Issue the certificate to release the publication hold."}</p> : !canManagePublication ? <p className="publication-note">Admin approval is required before this record can be scheduled.</p> : null}{canManagePublication && isScheduled && !editingSchedule && <button type="button" onClick={() => { setEditingSchedule(true); setSavedReview(false); }}>Edit schedule</button>}{canManagePublication && editingSchedule && <button className="approve" disabled={!scheduledFor} onClick={() => { onSchedule(scheduledFor); setEditingSchedule(false); setSavedReview(true); }}><Save /> {isScheduled ? "Save review" : "Schedule publication"}</button>}{savedReview && <p className="publication-note">Schedule review saved. This is the publication date currently in use.</p>}</div>
+      <div className="schedule-publication-control"><label>Publish on<input type="date" min={new Date().toISOString().slice(0, 10)} value={scheduledFor} disabled={!canManagePublication || !editingSchedule} onChange={(event) => { setScheduledFor(event.target.value); setSavedReview(false); }} /></label>{isScheduled ? <p className="publication-note">Scheduled for {new Date(`${scheduledFor || record.scheduledFor}T00:00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}. {certificateIssued ? "It will publish automatically when the date arrives." : "Issue the certificate to release the publication hold."}</p> : !canManagePublication ? <p className="publication-note">Admin approval is required before this record can be scheduled.</p> : null}{canManagePublication && isScheduled && !editingSchedule && <button type="button" onClick={() => { setEditingSchedule(true); setSavedReview(false); }}>Edit schedule</button>}{canManagePublication && editingSchedule && <button className="approve" disabled={!scheduledFor} onClick={async () => { const saved = await onSchedule(scheduledFor); if (saved) { setEditingSchedule(false); setSavedReview(true); } }}><Save /> {isScheduled ? "Save review" : "Schedule publication"}</button>}{savedReview && <p className="publication-note">Schedule review saved. This is the publication date currently in use.</p>}</div>
     </section>
   </section>;
 }
@@ -3275,6 +3196,47 @@ function ManuscriptFileList({ files, fallbackName, className, onPreview }: { fil
       </div>
     </div>
   );
+}
+
+type PublicationMaterialKind = "final_pdf" | "peer_review" | "publication_certificate";
+const publicationMaterialOptions: Array<{ kind: PublicationMaterialKind; title: string; description: string; accept: string; required?: boolean }> = [
+  { kind: "final_pdf", title: "Final manuscript", description: "The approved PDF prepared for publication.", accept: "application/pdf,.pdf", required: true },
+  { kind: "peer_review", title: "Peer-review result", description: "Reviewer reports, recommendation, or editorial decision.", accept: "application/pdf,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+  { kind: "publication_certificate", title: "Issued certificate", description: "Attached automatically after issue, or add an approved PDF.", accept: "application/pdf,.pdf", required: true },
+];
+
+function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onOpenCertificateCreator }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onOpenCertificateCreator: () => void }) {
+  const [uploading, setUploading] = useState<PublicationMaterialKind | null>(null);
+  const [message, setMessage] = useState("");
+  const files = submission.files || [];
+  const uploadMaterial = async (kind: PublicationMaterialKind, file?: File) => {
+    if (!file) return;
+    setUploading(kind); setMessage("");
+    const form = new FormData();
+    form.set("submissionId", submission.id); form.set("fileKind", kind); form.set("file", file);
+    const response = await fetch("/api/admin/workflow-files", { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }, body: form }).catch(() => null);
+    const body = await response?.json().catch(() => null);
+    setUploading(null);
+    if (!response?.ok || !body?.file) { setMessage(body?.error || "The attachment could not be saved. Please try again."); return; }
+    const savedFile = body.file as { id: string; file_kind: string; storage_path: string; original_name: string; mime_type: string; size_bytes: number };
+    onSubmissionUpdate({ ...submission, files: [...files.filter((item) => item.id !== savedFile.id), savedFile] });
+    setMessage(`${savedFile.original_name} is attached to this publication record.`);
+  };
+  return <section className="publication-card publication-materials">
+    <header><div><span>Record materials</span><h2>Files required for publication</h2><p>Keep the certificate, final manuscript, and editorial evidence together with this record.</p></div><button type="button" className="publication-certificate-launch" onClick={onOpenCertificateCreator}><Award /> + Certificate</button></header>
+    <div className="publication-certificate-note"><FileCheck2 /><div><strong>Certificate editor is linked</strong><span>It opens with this manuscript, author, journal, issue, citation, and reference already prepared. Issuing the certificate attaches its PDF back to this record.</span></div></div>
+    <div className="publication-material-grid">
+      {publicationMaterialOptions.map((option) => {
+        const attached = files.filter((file) => file.file_kind === option.kind);
+        return <article key={option.kind} className={attached.length ? "publication-material attached" : "publication-material"}>
+          <div className="publication-material-head"><div><h3>{option.title}</h3><p>{option.description}</p></div><span>{attached.length ? "Attached" : option.required ? "Required" : "Optional"}</span></div>
+          {attached.length ? <div className="publication-material-files">{attached.map((file) => <a key={file.id} href={`/api/admin/files/${file.id}`} target="_blank" rel="noreferrer"><FileText /><span>{file.original_name}</span><Eye /></a>)}</div> : <p className="publication-material-empty">No file attached yet.</p>}
+          <label className="publication-material-upload"><Upload />{uploading === option.kind ? "Attaching…" : attached.length ? "Replace or add file" : `Attach ${option.title.toLowerCase()}`}<input type="file" accept={option.accept} disabled={uploading !== null} onChange={(event) => { void uploadMaterial(option.kind, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
+        </article>;
+      })}
+    </div>
+    {message && <p className="publication-material-message" role="status">{message}</p>}
+  </section>;
 }
 type MammothApi = { convertToHtml: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string; messages: unknown[] }> };
 function RealFilePreview({ fileId, mime, name }: { fileId: string; mime: string; name: string }) {
@@ -3414,16 +3376,37 @@ function PaymentProofViewer({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Payment proof</DialogTitle>
           <DialogDescription>{submission.proofFileName || `payment-proof-${submission.id.toLowerCase()}.jpg`}</DialogDescription>
         </DialogHeader>
-        <div className="attachment-image-wrap">
-          <img
-            src={submission.proofFileId ? `/api/admin/files/${submission.proofFileId}` : paymentProofPreviewSrc(submission)}
-            alt={`Payment proof submitted with ${submission.id}`}
-          />
+        <div className="payment-proof-viewer">
+          <div className="attachment-image-wrap payment-proof-viewer-image">
+            <img
+              src={submission.proofFileId ? `/api/admin/files/${submission.proofFileId}` : paymentProofPreviewSrc(submission)}
+              alt={`Payment proof submitted with ${submission.id}`}
+            />
+          </div>
+          <aside className="payment-proof-review-summary" aria-label="Payment review details">
+            <div className="payment-proof-review-heading">
+              <span className="payment-proof-review-icon"><CreditCard /></span>
+              <div>
+                <h3>Payment review</h3>
+                <p>{submission.paymentConfirmed ? "Payment confirmed" : "Manual confirmation required"}</p>
+              </div>
+            </div>
+            <dl className="payment-proof-review-details">
+              <div><dt>Payment method</dt><dd>{submission.paymentMethod || "Not provided"}</dd></div>
+              <div><dt>Reference</dt><dd>{submission.paymentReference || "Not provided"}</dd></div>
+              <div><dt>Amount submitted</dt><dd>{submission.paymentAmount !== undefined ? `₱${submission.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "Not provided"}</dd></div>
+              {submission.paymentPlan && <div><dt>Publication plan</dt><dd>{submission.paymentPlan}</dd></div>}
+            </dl>
+            <div className={submission.paymentConfirmed ? "payment-proof-review-state confirmed" : "payment-proof-review-state"}>
+              <CheckCircle2 />
+              <span>{submission.paymentConfirmed ? "This payment is confirmed and the submission is in review." : "Compare these details with the uploaded proof before confirming payment."}</span>
+            </div>
+          </aside>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Close preview</Button>
@@ -3475,6 +3458,7 @@ function ReceiptPreview({
   receipt: ReceiptSettings;
 }) {
   const total = receipt.fee + receipt.tax - receipt.discount;
+  const paymentAccepted = submission.paymentConfirmed === true;
   return (
     <aside className="receipt-preview">
       <div className="receipt-paper">
@@ -3517,9 +3501,9 @@ function ReceiptPreview({
           </div>
           <div>
             <span>Payment status</span>
-            <strong className={submission.paymentProof ? "paid" : undefined}>
+            <strong className={paymentAccepted ? "paid" : undefined}>
               <CheckCircle2 />
-              {submission.paymentProof ? "Paid" : "Pending"}
+              {paymentAccepted ? "Paid" : "Awaiting manual review"}
             </strong>
           </div>
         </div>
@@ -3552,7 +3536,7 @@ function ReceiptPreview({
             <strong>{`−₱${receipt.discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</strong>
           </div>
           <div className="total-due">
-            <span>{submission.paymentProof ? "Total paid" : "Amount due"}</span>
+            <span>{paymentAccepted ? "Total paid" : "Amount submitted"}</span>
             <strong>{`₱${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</strong>
           </div>
         </div>
@@ -3560,11 +3544,12 @@ function ReceiptPreview({
           <FileCheck2 />
           <div>
             <strong>
-              {submission.paymentProof ? "Payment verified" : "Payment pending"}
+              {paymentAccepted ? "Payment confirmed" : "Payment review required"}
             </strong>
             <p>
-              This receipt is attached to submission {submission.id} for
-              editorial review.
+              {paymentAccepted
+                ? `Payment was confirmed for submission ${submission.id}.`
+                : `Review the submitted proof before confirming payment for ${submission.id}.`}
             </p>
           </div>
         </div>
@@ -4782,11 +4767,79 @@ function ReportsView() {
   );
 }
 
-function SettingsView() {
+const WALLPAPER_KEY = "talikha-wallpaper-v1";
+type WallpaperChoice = { mode: "none" | "preset" | "custom"; id?: string; name?: string; src?: string };
+const WALLPAPER_PRESETS = [
+  { id: "violet-ribbon", name: "Violet Ribbon", src: wallpaperVioletRibbon },
+  { id: "ember-orb", name: "Ember Orb", src: wallpaperEmberOrb },
+  { id: "silk-ember", name: "Silk Ember", src: wallpaperSilkEmber },
+  { id: "chrome-wave", name: "Chrome Wave", src: wallpaperChromeWave },
+];
+function loadWallpaper(): WallpaperChoice {
+  try {
+    const raw = localStorage.getItem(WALLPAPER_KEY);
+    if (!raw) return { mode: "none" };
+    const parsed = JSON.parse(raw) as WallpaperChoice;
+    if (parsed && (parsed.mode === "none" || parsed.mode === "preset" || parsed.mode === "custom")) return parsed;
+  } catch {}
+  return { mode: "none" };
+}
+function imageFileToWallpaper(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode"));
+      img.onload = () => {
+        const max = 1920;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("context"));
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function SettingsView({ isAdmin, wallpaper, onWallpaperChange }: { isAdmin: boolean; wallpaper: WallpaperChoice; onWallpaperChange: (choice: WallpaperChoice) => void }) {
   const [keyboard, setKeyboard] = useState(true),
     [compact, setCompact] = useState(false),
     [digest, setDigest] = useState(false),
-    [saved, setSaved] = useState(false);
+    [saved, setSaved] = useState(false),
+    [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const activeSrc = wallpaper.mode === "custom"
+    ? (wallpaper.src || null)
+    : wallpaper.mode === "preset"
+      ? (WALLPAPER_PRESETS.find((p) => p.id === wallpaper.id)?.src ?? null)
+      : null;
+  const activeName = wallpaper.mode === "none"
+    ? "Default"
+    : wallpaper.mode === "custom"
+      ? (wallpaper.name || "Custom image")
+      : (WALLPAPER_PRESETS.find((p) => p.id === wallpaper.id)?.name ?? "Preset");
+  const onUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const src = await imageFileToWallpaper(file);
+      onWallpaperChange({ mode: "custom", name: file.name, src });
+    } catch {
+      alert("That image could not be read. Try a JPG or PNG.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
   return (
     <section className="utility-page">
       <PageHeading
@@ -4794,6 +4847,54 @@ function SettingsView() {
         title="Settings"
         copy="Personalize this local admin preview. Production account and security settings will be connected later."
       />
+      <section className="settings-panel wp-panel">
+        <header className="wp-head">
+          <span className="wp-head__icon" aria-hidden="true"><ImageIcon size={18} strokeWidth={1.9} /></span>
+          <div>
+            <strong>Wallpaper</strong>
+            <small>Set the backdrop behind the Overview. Pick a preset or upload your own image — it is stored locally on this device.</small>
+          </div>
+        </header>
+        <div className="wp-preview" aria-label="Current wallpaper preview">
+          {activeSrc
+            ? <img src={activeSrc} alt="" />
+            : <div className="wp-preview__default" aria-hidden="true" />}
+          <div className="wp-preview__meta">
+            <span className="wp-preview__name">{activeName}</span>
+            <span className="wp-preview__pill">{wallpaper.mode === "none" ? "Default canvas" : "Applied to Overview"}</span>
+          </div>
+        </div>
+        <div className="wp-grid" role="radiogroup" aria-label="Wallpaper presets">
+          <button type="button" role="radio" aria-checked={wallpaper.mode === "none"} className={`wp-tile wp-tile--default${wallpaper.mode === "none" ? " is-active" : ""}`} onClick={() => onWallpaperChange({ mode: "none" })}>
+            <span className="wp-tile__swatch" aria-hidden="true" />
+            <span className="wp-tile__label">Default</span>
+            {wallpaper.mode === "none" && <i className="wp-tile__check"><Check size={12} strokeWidth={3} /></i>}
+          </button>
+          {WALLPAPER_PRESETS.map((p) => {
+            const active = wallpaper.mode === "preset" && wallpaper.id === p.id;
+            return (
+              <button type="button" key={p.id} role="radio" aria-checked={active} className={`wp-tile${active ? " is-active" : ""}`} onClick={() => onWallpaperChange({ mode: "preset", id: p.id, name: p.name })}>
+                <span className="wp-tile__swatch" style={{ backgroundImage: `url("${p.src}")` }} aria-hidden="true" />
+                <span className="wp-tile__label">{p.name}</span>
+                {active && <i className="wp-tile__check"><Check size={12} strokeWidth={3} /></i>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="wp-custom">
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onUpload(e.target.files?.[0])} />
+          <button type="button" className="wp-upload" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            <Upload size={15} strokeWidth={1.9} />
+            {uploading ? "Processing…" : "Upload custom image"}
+          </button>
+          <span className="wp-custom__hint">Auto-resized to fit · JPG or PNG.</span>
+          {wallpaper.mode === "custom" && (
+            <button type="button" className="wp-remove" onClick={() => onWallpaperChange({ mode: "none" })} aria-label="Remove custom wallpaper">
+              <X size={14} strokeWidth={2} /> Remove custom
+            </button>
+          )}
+        </div>
+      </section>
       <section className="settings-panel">
         <SettingRow
           title="Keyboard focus indicators"
@@ -4826,6 +4927,7 @@ function SettingsView() {
           </button>
         </footer>
       </section>
+      <TeamAccounts isAdmin={isAdmin} />
     </section>
   );
 }
@@ -4957,9 +5059,9 @@ function SettingRow({
 }
 
 const destinations = [
-  "Overview", "Submissions", "Publishing schedule", "Authors", "Studies and papers", "Bank and wallets", "Featured", "Reports", "Settings", "Support", "Certificates", "Journals", "Production", "Media", "Announcements",
+  "Overview", "Submissions", "Publishing schedule", "Authors", "Studies and papers", "Bank and wallets", "Featured", "Reports", "Settings", "Support", "Certificates", "Journals", "Production", "Media", "Announcements", "Inbox",
 ];
-const workspaceViews = ["overview", "submissions", "schedule", "authors", "studies", "bank", "featured", "reports", "settings", "support", "certificates", "journals", "production", "media", "announcements"] as const;
+const workspaceViews = ["overview", "submissions", "schedule", "authors", "studies", "bank", "featured", "reports", "settings", "support", "certificates", "journals", "production", "media", "announcements", "inbox"] as const;
 type WorkspaceView = typeof workspaceViews[number];
 const viewIndex = (view: string | null) => {
   const index = workspaceViews.indexOf(view as WorkspaceView);
@@ -4968,7 +5070,7 @@ const viewIndex = (view: string | null) => {
 const viewFromLocation = () => typeof window === "undefined" ? 0 : viewIndex(new URLSearchParams(window.location.search).get("view"));
 const stageToSubmissionStatus: Record<string, SubmissionStatus> = {
   review_new: "New", review_in_progress: "In progress", review_final: "Review", review_accepted: "Accepted",
-  production_ready: "Accepted", production_preparation: "Accepted", production_proof: "Accepted", production_records: "Accepted", production_ready_to_publish: "For approval",
+  production_ready: "In progress", production_preparation: "In progress", production_proof: "In progress", production_records: "In progress", production_ready_to_publish: "For approval",
   production_scheduled: "Scheduled for publishing", published: "Published", closed: "Rejected",
 };
 const workspaceDate = (value?: string | null) => value ? new Date(value).toISOString().slice(0, 10) : "";
@@ -5154,14 +5256,318 @@ type AnnouncementSettings = {
 };
 const announcementStorageKey = "talikha-announcement-settings-v1";
 const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", actionLabel: "Submit your work", actionHref: "/submit", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
+
+function AnxCard({ icon: Icon, title, desc, children }: { icon: ComponentType<{ className?: string }>; title: string; desc: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-[var(--ui-line)] bg-white p-5 transition-colors hover:border-[#183d2c]/25 sm:p-6">
+      <header className="mb-5 flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#edf5f0] text-[#183d2c]"><Icon className="size-[18px]" /></span>
+        <div className="min-w-0">
+          <h2 style={{ fontSize: 15, fontWeight: 600 }} className="tracking-tight text-[var(--ui-strong)]">{title}</h2>
+          <p style={{ color: "var(--ui-muted)", fontSize: 12.5 }} className="mt-0.5 leading-relaxed">{desc}</p>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function AnxField({ label, hint, full, children }: { label: string; hint?: ReactNode; full?: boolean; children: ReactNode }) {
+  return (
+    <div className={cn("flex flex-col gap-1.5", full && "sm:col-span-2")}>
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-medium text-[var(--ui-body)]">{label}</span>
+        {hint ? <span className="text-[11px] font-medium text-[var(--ui-muted)]">{hint}</span> : null}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function AnxSegmented<T extends string>({ value, onChange, options, ariaLabel }: { value: T; onChange: (value: T) => void; options: { value: T; label: string }[]; ariaLabel: string }) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex w-full gap-0.5 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-soft)] p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          onClick={() => onChange(option.value)}
+          style={{ color: value === option.value ? "#fff" : "var(--ui-muted)" }}
+          className={cn(
+            "flex-1 rounded-md px-2 py-1.5 text-[12.5px] font-medium transition active:scale-[0.98]",
+            value === option.value ? "bg-[#183d2c] shadow-sm" : "hover:opacity-80",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AnxSwitch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <label className="relative inline-flex shrink-0 cursor-pointer items-center">
+      <input type="checkbox" className="peer sr-only" checked={checked} onChange={(event) => onChange(event.target.checked)} aria-label={label} />
+      <span className="h-5 w-9 rounded-full bg-[#cdd6cd] transition-colors peer-checked:bg-[#183d2c] peer-focus-visible:ring-3 peer-focus-visible:ring-[#183d2c]/25" />
+      <span className="absolute left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+    </label>
+  );
+}
+
+function AnxSelect({ value, onChange, options, ariaLabel }: { value: string; onChange: (value: string) => void; options: string[]; ariaLabel: string }) {
+  return (
+    <div className="relative">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 w-full appearance-none rounded-lg border border-[var(--ui-line)] bg-white px-2.5 pr-8 text-[13.5px] text-[var(--ui-strong)] outline-none transition focus-visible:border-[#183d2c] focus-visible:ring-3 focus-visible:ring-[#183d2c]/15"
+      >
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-[var(--ui-muted)]" />
+    </div>
+  );
+}
+
+type AuditEventRow = {
+  id: number;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  details: unknown;
+  created_at: string;
+  actor_name: string;
+  actor_role: string | null;
+};
+
+function ActivityLogView() {
+  const [events, setEvents] = useState<AuditEventRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/admin/audit", { credentials: "same-origin" });
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.error || "The activity log could not be loaded.");
+        }
+        const body = await response.json();
+        if (!cancelled) setEvents(body.events || []);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "The activity log could not be loaded.");
+          setEvents([]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const query = filter.trim().toLowerCase();
+  const visible = (events || []).filter((event) =>
+    !query || `${event.action} ${event.entity_type} ${event.entity_id} ${event.actor_name}`.toLowerCase().includes(query)
+  );
+
+  return (
+    <section className="activity-log-workspace space-y-5 p-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Activity log</h1>
+        <p className="text-sm text-muted-foreground">A trace of editorial and administrative actions, newest first.</p>
+      </header>
+      <input
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+        placeholder="Filter by action, entity, or person"
+        className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+      />
+      {error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : events === null ? (
+        <p className="text-sm text-muted-foreground">Loading activity…</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full border-collapse text-sm">
+            <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">When</th>
+                <th className="px-3 py-2 font-medium">Who</th>
+                <th className="px-3 py-2 font-medium">Action</th>
+                <th className="px-3 py-2 font-medium">Entity</th>
+                <th className="px-3 py-2 font-medium">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((event) => (
+                <tr key={event.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(event.created_at).toLocaleString("en-PH")}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{event.actor_name}{event.actor_role ? <span className="ml-1 text-xs text-muted-foreground">({event.actor_role})</span> : null}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{event.action}</td>
+                  <td className="whitespace-nowrap px-3 py-2"><span className="font-mono text-xs">{event.entity_type}</span> <span className="text-xs text-muted-foreground">{event.entity_id}</span></td>
+                  <td className="max-w-xs truncate px-3 py-2 text-xs text-muted-foreground" title={JSON.stringify(event.details)}>{JSON.stringify(event.details)}</td>
+                </tr>
+              ))}
+              {!visible.length && (
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-sm text-muted-foreground">No matching activity.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AnnouncementWorkspace() {
   const [settings, setSettings] = useState<AnnouncementSettings>(defaultAnnouncementSettings);
   const [saved, setSaved] = useState(false);
+  const [previewTab, setPreviewTab] = useState<"bar" | "popup">("bar");
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage on mount; cannot run during SSR render
   useEffect(() => { try { const stored = window.localStorage.getItem(announcementStorageKey); if (stored) setSettings({ ...defaultAnnouncementSettings, ...JSON.parse(stored) }); } catch {} }, []);
   const update = <K extends keyof AnnouncementSettings>(key: K, value: AnnouncementSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const save = () => { window.localStorage.setItem(announcementStorageKey, JSON.stringify(settings)); window.dispatchEvent(new window.Event("talikha:announcement-updated")); setSaved(true); window.setTimeout(() => setSaved(false), 2200); };
-  return <section className="announcement-workspace"><PageHeading icon={Bell} title="Announcements" copy="Control the public announcement bar and optional popup without editing the site." /><div className="announcement-admin-layout"><section className="announcement-admin-card"><header><div><h2>Announcement content</h2><p>The bar is composed of a category, a message, and one linked action.</p></div><label className="announcement-switch"><input type="checkbox" checked={settings.enabled} onChange={(event) => update("enabled", event.target.checked)} /><span>{settings.enabled ? "Live" : "Hidden"}</span></label></header><div className="announcement-form-grid"><label>Category<select value={settings.category} onChange={(event) => update("category", event.target.value)}><option>Announcement</option><option>Notice</option><option>Update</option><option>Call for papers</option><option>Event</option></select></label><label>Display as<select value={settings.presentation} onChange={(event) => update("presentation", event.target.value as AnnouncementSettings["presentation"])}><option value="banner">Announcement bar</option><option value="popup">Popup only</option><option value="both">Bar and popup</option></select></label><label className="wide">Message<textarea value={settings.message} maxLength={240} rows={3} onChange={(event) => update("message", event.target.value)} /></label><label>Action label<input value={settings.actionLabel} maxLength={80} onChange={(event) => update("actionLabel", event.target.value)} /></label><label>Action link<input value={settings.actionHref} maxLength={500} placeholder="/submit or https://…" onChange={(event) => update("actionHref", event.target.value)} /></label></div></section><section className="announcement-admin-card"><header><div><h2>Visibility and trigger</h2><p>Choose where the announcement appears and how a popup opens.</p></div></header><div className="announcement-form-grid"><label>Show on<select value={settings.target} onChange={(event) => update("target", event.target.value as AnnouncementSettings["target"])}><option value="all">All public pages</option><option value="home">Home page only</option><option value="journals">Journal pages only</option><option value="submit">Submission page only</option></select></label><label>Popup trigger<select value={settings.trigger} onChange={(event) => update("trigger", event.target.value as AnnouncementSettings["trigger"])}><option value="load">After page load</option><option value="scroll">After scrolling</option></select></label><label>Delay (seconds)<input type="number" min="0" max="60" value={settings.delaySeconds} onChange={(event) => update("delaySeconds", Math.max(0, Math.min(60, Number(event.target.value) || 0)))} /></label><label>Frequency<select value={settings.frequency} onChange={(event) => update("frequency", event.target.value as AnnouncementSettings["frequency"])}><option value="visit">Every visit</option><option value="session">Once per session</option></select></label><label>Start date and time<input type="datetime-local" value={settings.startsAt} onChange={(event) => update("startsAt", event.target.value)} /></label><label>End date and time<input type="datetime-local" value={settings.endsAt} onChange={(event) => update("endsAt", event.target.value)} /></label><label className="announcement-check wide"><input type="checkbox" checked={settings.dismissible} onChange={(event) => update("dismissible", event.target.checked)} /> Allow visitors to dismiss the announcement</label></div></section><aside className="announcement-admin-preview"><span>Live preview</span><div><b>{settings.category || "Announcement"}</b><p>{settings.message || "Your announcement message appears here."}</p><strong>{settings.actionLabel || "Action"} →</strong></div><button onClick={save}><Save /> {saved ? "Saved to preview" : "Save announcement"}</button><small>Preview settings are stored in this browser until Supabase is connected.</small></aside></div></section>;
+
+  const showBar = settings.presentation !== "popup";
+  const showPopup = settings.presentation !== "banner";
+  const previewTabs = ([showBar ? "bar" : "", showPopup ? "popup" : ""].filter(Boolean)) as Array<"bar" | "popup">;
+  const activePreview = (previewTabs.includes(previewTab) ? previewTab : previewTabs[0]) || "bar";
+  const targetLabel: Record<AnnouncementSettings["target"], string> = { all: "all public pages", home: "the home page", journals: "journal pages", submit: "the submissions page" };
+  const messageLeft = 240 - settings.message.length;
+  const signature = [settings.category, settings.message, settings.actionLabel, settings.presentation, String(settings.dismissible)].join("·");
+
+  return (
+    <section className="utility-page">
+      <PageHeading icon={Bell} title="Announcements" copy="Control the public announcement bar and optional popup without editing the site." />
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--ui-line)] bg-white px-4 py-3 shadow-[0_1px_2px_rgba(28,40,33,0.04)]">
+        <div className="flex items-center gap-3">
+          <AnxSwitch checked={settings.enabled} onChange={(value) => update("enabled", value)} label="Publish announcement" />
+          <div className="leading-tight">
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--ui-strong)]">
+              <span className={cn("size-2 rounded-full", settings.enabled ? "bg-[#1f9d57]" : "bg-[#aab4aa]")} />
+              {settings.enabled ? "Live" : "Hidden"}
+            </div>
+            <div className="text-[11.5px] text-[var(--ui-muted)]">{settings.enabled ? `Publishing to ${targetLabel[settings.target]}` : "Not shown on the site"}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="hidden items-center gap-1.5 text-[11.5px] text-[var(--ui-muted)] sm:inline-flex"><Info className="size-3.5" /> Saved to this browser</span>
+          <Button onClick={save} style={{ color: "#fff" }} className="min-w-[156px] gap-1.5 px-4">{saved ? <Check className="size-4" /> : <Save className="size-4" />}{saved ? "Saved" : "Save announcement"}</Button>
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--ui-line)] bg-white">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-soft)]/70 px-4 py-2.5">
+          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#a65335]"><Eye className="size-3.5" /> Live preview</div>
+          <div className="flex items-center gap-2">
+            {previewTabs.length > 1 ? (
+              <div className="inline-flex rounded-lg border border-[var(--ui-line)] bg-white p-0.5">
+                {previewTabs.map((tab) => (
+                  <button key={tab} type="button" onClick={() => setPreviewTab(tab)} style={{ color: activePreview === tab ? "#fff" : "var(--ui-muted)" }} className={cn("rounded-md px-2.5 py-1 text-[11.5px] font-medium transition active:scale-[0.98]", activePreview === tab ? "bg-[#183d2c]" : "hover:opacity-80")}>{tab === "bar" ? "Bar" : "Popup"}</button>
+                ))}
+              </div>
+            ) : null}
+            <Badge variant="outline">Preview</Badge>
+          </div>
+        </div>
+
+        <div className="relative bg-[#f3f4f1] p-5 sm:p-8" style={{ backgroundImage: "radial-gradient(circle, rgba(28,40,33,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-[var(--ui-line)] bg-white shadow-[0_24px_55px_-24px_rgba(28,40,33,0.4)]">
+            <div className="flex items-center gap-2 border-b border-[var(--ui-line)] bg-[#fafaf8] px-3 py-2">
+              <span className="flex gap-1.5"><span className="size-2.5 rounded-full bg-[#e3c4bd]" /><span className="size-2.5 rounded-full bg-[#e8dcb6]" /><span className="size-2.5 rounded-full bg-[#c6d8c9]" /></span>
+              <span className="ml-2 flex-1 truncate rounded-md bg-white px-3 py-1 text-center text-[11px] text-[var(--ui-muted)] ring-1 ring-[var(--ui-line)]">talikhapublishing.vercel.app</span>
+            </div>
+
+            <div className="relative">
+              {!settings.enabled ? (
+                <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-center gap-1.5 bg-[#b54747] py-1 text-[11px] font-semibold text-white">
+                  <span className="size-1.5 rounded-full bg-white" /> Announcement hidden — not shown to visitors
+                </div>
+              ) : null}
+
+              {showBar ? (
+                <div key={signature} className={cn("relative flex items-center gap-3 bg-[#183d2c] px-4 py-2.5 text-white animate-in slide-in-from-top-2 fade-in duration-500", !settings.enabled && "opacity-50")}>
+                  <span className="hidden shrink-0 rounded-full bg-[#e8b45e] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#183d2c] sm:inline">{settings.category || "Announcement"}</span>
+                  <span className="flex-1 truncate text-[12.5px] font-medium text-[#f1efe7]">{settings.message || "Your announcement message appears here."}</span>
+                  {settings.actionLabel ? <span className="hidden shrink-0 items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11.5px] font-semibold text-white ring-1 ring-white/20 sm:inline-flex">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
+                  {settings.dismissible ? <span className="grid size-5 shrink-0 place-items-center rounded text-white/70"><X className="size-3.5" /></span> : null}
+                </div>
+              ) : null}
+
+              <div className={cn("space-y-3 p-4 sm:p-6", !settings.enabled && "opacity-60")}>
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-20 rounded bg-[#e7e9e3]" />
+                  <div className="flex gap-2"><div className="h-3 w-10 rounded bg-[#eef0ea]" /><div className="h-3 w-10 rounded bg-[#eef0ea]" /><div className="h-3 w-10 rounded bg-[#eef0ea]" /></div>
+                </div>
+                <div className="h-px w-full bg-[#eef0ea]" />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-2 sm:col-span-2"><div className="h-4 w-3/4 rounded bg-[#e7e9e3]" /><div className="h-3 w-full rounded bg-[#eef0ea]" /><div className="h-3 w-5/6 rounded bg-[#eef0ea]" /><div className="mt-2 h-7 w-28 rounded-full bg-[#183d2c]/15" /></div>
+                  <div className="h-20 rounded-lg bg-[#f1f2ed]" />
+                </div>
+              </div>
+
+              {showPopup && activePreview === "popup" ? (
+                <div className="absolute inset-0 z-10 grid place-items-center bg-[#1c2821]/45 p-4 backdrop-blur-[1px] animate-in fade-in duration-300">
+                  <div key={`${signature}p`} className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_30px_60px_-20px_rgba(28,40,33,0.5)] ring-1 ring-[#1c2821]/5 animate-in zoom-in-95 fade-in duration-300">
+                    {settings.dismissible ? <span className="absolute right-3 top-3 grid size-6 place-items-center rounded-full text-[var(--ui-muted)]"><X className="size-3.5" /></span> : null}
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#a65335]">{settings.category || "Announcement"}</span>
+                    <p className="mt-2 text-[14px] font-medium leading-relaxed text-[var(--ui-strong)]">{settings.message || "Your announcement message appears here."}</p>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      {settings.actionLabel ? <span className="inline-flex items-center gap-1 rounded-full bg-[#183d2c] px-3.5 py-1.5 text-[12.5px] font-semibold text-white">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
+                      {settings.dismissible ? <span className="text-[12px] font-medium text-[var(--ui-muted)]">Maybe later</span> : null}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--ui-line)] pt-3 text-[11px] text-[var(--ui-muted)]">
+                      <span className="inline-flex items-center gap-1"><Clock3 className="size-3.5" />{settings.trigger === "load" ? "After page load" : "After scrolling"}{settings.delaySeconds > 0 ? ` + ${settings.delaySeconds}s` : ""}</span>
+                      <span className="inline-flex items-center gap-1"><CalendarDays className="size-3.5" />{settings.frequency === "visit" ? "Every visit" : "Once per session"}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <AnxCard icon={MessageSquare} title="Announcement content" desc="A category eyebrow, one message, and a single linked action.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <AnxField label="Category"><AnxSelect ariaLabel="Category" value={settings.category} onChange={(value) => update("category", value)} options={["Announcement", "Notice", "Update", "Call for papers", "Event"]} /></AnxField>
+            <AnxField label="Display as"><AnxSegmented ariaLabel="Display as" value={settings.presentation} onChange={(value) => update("presentation", value)} options={[{ value: "banner", label: "Bar" }, { value: "popup", label: "Popup" }, { value: "both", label: "Both" }]} /></AnxField>
+            <AnxField full label="Message" hint={<span className={cn(messageLeft < 40 ? "font-semibold" : "", messageLeft <= 0 ? "text-[#b54747]" : messageLeft < 40 ? "text-[#a65335]" : "")}>{settings.message.length}/240</span>}>
+              <Textarea value={settings.message} maxLength={240} rows={3} placeholder="Write the announcement visitors will see…" onChange={(event) => update("message", event.target.value)} />
+            </AnxField>
+            <AnxField label="Action label"><Input value={settings.actionLabel} maxLength={80} placeholder="Submit your work" onChange={(event) => update("actionLabel", event.target.value)} /></AnxField>
+            <AnxField label="Action link"><Input value={settings.actionHref} maxLength={500} placeholder="/submit or https://…" onChange={(event) => update("actionHref", event.target.value)} /></AnxField>
+          </div>
+        </AnxCard>
+
+        <AnxCard icon={Globe} title="Visibility and trigger" desc="Where the announcement appears and how a popup opens.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <AnxField full label="Show on"><AnxSegmented ariaLabel="Show on" value={settings.target} onChange={(value) => update("target", value)} options={[{ value: "all", label: "All pages" }, { value: "home", label: "Home" }, { value: "journals", label: "Journals" }, { value: "submit", label: "Submit" }]} /></AnxField>
+            <AnxField label="Popup trigger"><AnxSegmented ariaLabel="Popup trigger" value={settings.trigger} onChange={(value) => update("trigger", value)} options={[{ value: "load", label: "On load" }, { value: "scroll", label: "On scroll" }]} /></AnxField>
+            <AnxField label="Delay" hint="seconds"><Input type="number" min={0} max={60} value={settings.delaySeconds} onChange={(event) => update("delaySeconds", Math.max(0, Math.min(60, Number(event.target.value) || 0)))} /></AnxField>
+            <AnxField full label="Frequency"><AnxSegmented ariaLabel="Frequency" value={settings.frequency} onChange={(value) => update("frequency", value)} options={[{ value: "visit", label: "Every visit" }, { value: "session", label: "Once per session" }]} /></AnxField>
+            <AnxField label="Starts"><Input type="datetime-local" value={settings.startsAt} onChange={(event) => update("startsAt", event.target.value)} /></AnxField>
+            <AnxField label="Ends"><Input type="datetime-local" value={settings.endsAt} onChange={(event) => update("endsAt", event.target.value)} /></AnxField>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-soft)] px-3.5 py-3 sm:col-span-2">
+              <div className="leading-tight">
+                <div className="text-[13px] font-medium text-[var(--ui-strong)]">Allow visitors to dismiss</div>
+                <div className="text-[11.5px] text-[var(--ui-muted)]">Adds a close control to the bar and popup.</div>
+              </div>
+              <AnxSwitch checked={settings.dismissible} onChange={(value) => update("dismissible", value)} label="Allow visitors to dismiss the announcement" />
+            </div>
+          </div>
+        </AnxCard>
+      </div>
+
+      <p style={{ color: "var(--ui-muted)", fontSize: 12 }} className="mt-4 flex items-center gap-1.5"><Info className="size-3.5" /> Preview settings are stored in this browser until Supabase is connected.</p>
+    </section>
+  );
 }
 
 type SkeletonKind = "overview" | "list" | "split" | "grid";
@@ -5993,6 +6399,7 @@ type AdminSidebarProps = {
   onToggleSubmissions: () => void;
   onOpenNewSubmissions: () => void;
   newSubmissionsCount: number;
+  productionNeedsActionCount: number;
 };
 function AdminSidebar({
   active,
@@ -6003,6 +6410,7 @@ function AdminSidebar({
   onToggleSubmissions,
   onOpenNewSubmissions,
   newSubmissionsCount,
+  productionNeedsActionCount,
 }: AdminSidebarProps) {
   const { setOpenMobile } = useSidebar();
   const sections = sidebarSections
@@ -6046,8 +6454,9 @@ function AdminSidebar({
                       setOpenMobile(false);
                     }}
                   >
-                    <Inbox />
+                    <ClipboardList />
                     <span>Submissions</span>
+                    {newSubmissionsCount > 0 && <b className="tp-count" aria-label={`${newSubmissionsCount} new submissions`}>{newSubmissionsCount}</b>}
                     <ChevronDown className={submissionsOpen ? "tp-subchev ml-auto size-3.5 opacity-60 transition-transform duration-200 rotate-180" : "tp-subchev ml-auto size-3.5 opacity-60 transition-transform duration-200"} />
                   </SidebarMenuButton>
                   {submissionsOpen && (
@@ -6061,14 +6470,16 @@ function AdminSidebar({
                           }}
                         >
                           <span>New submissions</span>
-                          <b className="tp-count">{newSubmissionsCount}</b>
+                          {newSubmissionsCount > 0 && <b className="tp-count">{newSubmissionsCount}</b>}
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     </SidebarMenuSub>
                   )}
                 </SidebarMenuItem>
               )}
-              {section.items.map(({ label, icon: Icon, index }) => (
+              {section.items.map(({ label, icon: Icon, index }) => {
+                const count = index === 12 ? productionNeedsActionCount : 0;
+                return (
                 <SidebarMenuItem key={label}>
                   <SidebarMenuButton
                     isActive={active === index}
@@ -6078,9 +6489,11 @@ function AdminSidebar({
                   >
                     <Icon />
                     <span>{label}</span>
+                    {count > 0 && <b className="tp-count" aria-label={`${count} production records needing action`}>{count}</b>}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+                );
+              })}
             </SidebarMenu>
           </SidebarGroup>
         ))}
@@ -6098,6 +6511,14 @@ function AdminSidebar({
               <Headphones />
               <span>Support</span>
             </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <form action="/api/admin/logout" method="post">
+              <SidebarMenuButton type="submit" tooltip="Sign out">
+                <span aria-hidden="true">↗</span>
+                <span>Sign out</span>
+              </SidebarMenuButton>
+            </form>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
@@ -6131,14 +6552,29 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
       null,
     ),
     [isConnected, setIsConnected] = useState(false),
+    [workspaceAuthRequired, setWorkspaceAuthRequired] = useState(false),
     [workspaceData, setWorkspaceData] = useState<{ media: Record<string, unknown>[] } | null>(null),
     [realData, setRealData] = useState<{ stageCounts: Record<string, number>; totalSubmissions: number; totalJournals: number; totalAuthors: number; journals: { id: string; title: string; slug: string }[] } | null>(null);
   const [viewSwitching, setViewSwitching] = useState(false);
   const viewSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [previewRole, setPreviewRole] = useState<"admin" | "editor">(accessRole === "admin" ? "admin" : "editor");
+  const [accountIdentity, setAccountIdentity] = useState({
+    displayName: "jbotoy83",
+    email: "jbotoy83@gmail.com",
+  });
+  const [assignedViews, setAssignedViews] = useState<string[] | null>(null);
+  const [wallpaper, setWallpaper] = useState<WallpaperChoice>(() => loadWallpaper());
+  useEffect(() => {
+    try { localStorage.setItem(WALLPAPER_KEY, JSON.stringify(wallpaper)); } catch {}
+  }, [wallpaper]);
+  const wallpaperSrc = wallpaper.mode === "custom"
+    ? (wallpaper.src || null)
+    : wallpaper.mode === "preset"
+      ? (WALLPAPER_PRESETS.find((p) => p.id === wallpaper.id)?.src ?? null)
+      : null;
   const effectiveRole = previewRole;
   const isAdmin = effectiveRole === "admin";
-  const allowedViews = isAdmin ? null : [0, 2, 3, 4, 7, 10, 12, 13];
+  const allowedViews = isAdmin ? null : (assignedViews || ["overview", "schedule", "authors", "studies", "reports", "certificates", "production", "media", "inbox"]).map((view) => viewIndex(view));
   // eslint-disable-next-line react-hooks/set-state-in-effect -- restores URL view on role change; reads window.location
   // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedViews is derived from isAdmin (the dep); including it would cause infinite loop
   useEffect(() => {
@@ -6254,9 +6690,11 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     };
     window.addEventListener("popstate", restoreLocation);
     window.addEventListener("storage", syncLocalSamples);
+    fetch("/api/admin/activity", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "admin_app_opened" }) }).catch(() => undefined);
     fetch("/api/admin/workspace")
-      .then((res) => res.json())
-      .then((result) => {
+      .then(async (res) => ({ status: res.status, result: await res.json() }))
+      .then(({ status, result }) => {
+        if (status === 401) { setWorkspaceAuthRequired(true); return; }
         if (result.connected && result.data) {
           const serverSubmissions = result.data.submissions.map((submission: Record<string, unknown>) => {
             const preferred = Array.isArray(submission.preferred_journal) ? submission.preferred_journal[0] : submission.preferred_journal;
@@ -6268,18 +6706,23 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
             const authorPhotos = files.filter((f) => f.file_kind === "authorPhoto").sort((a, b) => String(a.original_name || "").localeCompare(String(b.original_name || "")));
             const primaryPhotoId = authorPhotos.length ? String(authorPhotos[0].id) : null;
-            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined } satisfies EditorialSubmission;
+            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;
             const issue = Array.isArray(record.issues) ? record.issues[0] : record.issues;
-            return { id: String(record.id), submissionId: String(record.submission_id), journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || "—"), doi: String(record.doi || ""), pageStart: "", pageEnd: "", scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : "Ready to publish" } satisfies PublicationRecord;
+            return { id: String(record.id), submissionId: String(record.submission_id), journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || "—"), doi: String(record.doi || ""), pageStart: "", pageEnd: "", scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : "Ready to publish", readCount: Number((record.publications as { views?: number } | null)?.views ?? 0), downloadCount: Number((record.publications as { downloads?: number } | null)?.downloads ?? 0) } satisfies PublicationRecord;
           });
           setEditorialSubmissions(mergeLocalSamples(serverSubmissions));
           setPublicationRecords(serverRecords);
           setWorkspaceData({ media: result.data.media || [] });
-          setIsConnected(true);
-          setPreviewRole(result.data.user?.role === "admin" ? "admin" : "editor");
+           setIsConnected(true);
+           setPreviewRole(result.data.user?.role === "admin" ? "admin" : "editor");
+           setAccountIdentity({
+             displayName: String(result.data.user?.displayName || "jbotoy83"),
+             email: String(result.data.user?.email || "jbotoy83@gmail.com"),
+           });
+           setAssignedViews(Array.isArray(result.data.user?.accessViews) ? result.data.user.accessViews : null);
           const stageCounts: Record<string, number> = {};
           result.data.submissions.forEach((submission: Record<string, unknown>) => { const stage = String(submission.current_stage || ""); stageCounts[stage] = (stageCounts[stage] || 0) + 1; });
           setRealData({ stageCounts, totalSubmissions: serverSubmissions.length, totalJournals: result.data.journals.length, totalAuthors: result.data.authors.length, journals: result.data.journals });
@@ -6295,19 +6738,21 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only effect; setters are stable, mergeLocalSamples is local
   }, []);
   useEffect(() => {
-    if (import.meta.env.PROD && submissionsReady && !isConnected) {
-      window.location.replace("/admin/login");
+    if (workspaceAuthRequired) {
+      window.location.replace(`/admin/login?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
     }
-  }, [submissionsReady, isConnected]);
+  }, [workspaceAuthRequired]);
   const awaitingScreening = isConnected && realData
     ? realData.stageCounts["review_new"] || 0
     : editorialSubmissions.filter(
         (submission) =>
           submission.status === "New",
       ).length;
-  const newCount = isConnected && realData
-    ? realData.stageCounts["review_new"] || 0
-    : editorialSubmissions.filter((submission) => submission.status === "New").length;
+  // Use the live workspace list so the badge clears immediately after an editor moves a record.
+  const newCount = editorialSubmissions.filter((submission) => submission.status === "New").length;
+  const productionNeedsActionCount = editorialSubmissions.filter((submission) =>
+    ["In progress", "Review", "Revise", "Accepted"].includes(submission.status),
+  ).length;
   const inReviewCount = isConnected && realData
     ? (realData.stageCounts["review_in_progress"] || 0) + (realData.stageCounts["review_final"] || 0) + (realData.stageCounts["review_accepted"] || 0) + (realData.stageCounts["production_ready"] || 0) + (realData.stageCounts["production_preparation"] || 0) + (realData.stageCounts["production_proof"] || 0) + (realData.stageCounts["production_records"] || 0)
     : editorialSubmissions.filter((submission) => submission.status === "In progress" || submission.status === "Review" || submission.status === "Accepted").length;
@@ -6410,10 +6855,14 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           setSubmissionView("New");
           setSelectedSubmissionId(null);
         }}
-        newSubmissionsCount={submissionsForView(editorialSubmissions, "New").length}
+        newSubmissionsCount={newCount}
+        productionNeedsActionCount={productionNeedsActionCount}
       />
-      <SidebarInset className="tp-main">
-        <header className="tp-top">
+      <SidebarInset
+        className={`tp-main ${active === 10 ? "tp-main--certificate" : ""}${wallpaper.mode !== "none" ? " tp-main--wallpaper" : ""}`}
+        style={wallpaperSrc ? ({ "--tp-wallpaper": `url("${wallpaperSrc}")` } as React.CSSProperties) : undefined}
+      >
+        <header className={`tp-top ${active === 10 ? "tp-top--certificate" : ""}`}>
           <div className="tp-top__left">
             <SidebarTrigger className="tp-iconbtn" />
             <nav className="tp-crumb" aria-label="Breadcrumb">
@@ -6484,8 +6933,8 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             )}
             {profileOpen && (
               <div className="tp-popover">
-                <strong>Local preview editor</strong>
-                <span>Local preview account</span>
+                <strong>{accountIdentity.displayName}</strong>
+                <span>{accountIdentity.email} · Administrator</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -6500,6 +6949,9 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
                   <ShieldCheck size={14} strokeWidth={1.75} />
                   Account security
                 </button>
+                <form action="/api/admin/logout" method="post">
+                  <button type="submit">Sign out</button>
+                </form>
               </div>
             )}
           </div>
@@ -6580,7 +7032,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           </div>
         ) : active === 8 ? (
           <div className="utility-workspace">
-            <SettingsView />
+            <SettingsView isAdmin={isAdmin} wallpaper={wallpaper} onWallpaperChange={setWallpaper} />
           </div>
         ) : active === 9 ? (
           <div className="utility-workspace">
@@ -6588,6 +7040,12 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           </div>
         ) : active === 10 ? (
           <CertificateWorkspace submissions={editorialSubmissions} />
+        ) : active === 15 ? (
+          <InboxWorkspace />
+        ) : active === 16 ? (
+          <div className="utility-workspace">
+            <ActivityLogView />
+          </div>
         ) : (
           <OverviewDashboard
             submissions={editorialSubmissions}

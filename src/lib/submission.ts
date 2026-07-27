@@ -49,7 +49,7 @@ function validateFileFields(
   if (counts.get("manuscript") !== 1) {
     ctx.addIssue({ code: "custom", path: [path], message: "A manuscript file is required." });
   }
-  if ((counts.get("paymentProof") || 0) > 1) ctx.addIssue({ code: "custom", path: [path], message: "Only one proof of payment can be uploaded." });
+  if (counts.get("paymentProof") !== 1) ctx.addIssue({ code: "custom", path: [path], message: "One proof of payment is required." });
 }
 
 export const submissionInitSchema = z.object({
@@ -69,8 +69,8 @@ export const submissionInitSchema = z.object({
   website: z.string().max(0).optional().default(""),
   files: z.array(fileDescriptorSchema).min(1).max(14),
   publicationPlan: z.string().trim().max(40).optional().default(""),
-  paymentMethod: z.string().trim().max(40).optional().default(""),
-  paymentReference: z.string().trim().max(200).optional().default(""),
+  paymentMethod: z.string().trim().min(2, "Choose or enter the payment method.").max(40),
+  paymentReference: z.string().trim().min(3, "Enter the payment reference number.").max(200),
   promoCode: z.string().trim().max(40).optional().default(""),
   paymentTotal: z.number().nonnegative().optional().default(0)
 }).superRefine(({ files }, ctx) => validateFileFields(files, ctx, "files"));

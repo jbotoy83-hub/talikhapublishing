@@ -5,28 +5,34 @@ import { allowRequest, getRequestRateLimitKey } from "@/lib/rate-limit";
 
 const responseInput = z.object({
   reference: z.string().trim().min(3).max(120),
-  email: z.string().trim().email().max(254),
   requestId: z.string().uuid(),
   choice: z.enum(["yes", "no"])
 });
 
 type TrackedSubmission = {
   id: string;
-  author_email: string;
 };
 
-async function findTrackedSubmission(reference: string, email: string) {
+async function findTrackedSubmission(reference: string) {
   const admin = getSupabaseAdmin();
   if (!admin) return { admin: null, submission: null };
 
-  const normalizedEmail = email.toLocaleLowerCase();
-  const { data: direct } = await admin
+  const { data: byReference } = await admin
     .from("submissions")
-    .select("id, author_email")
+    .select("id")
+    .eq("reference", reference)
+    .maybeSingle();
+  if (byReference) {
+    return { admin, submission: byReference as TrackedSubmission };
+  }
+
+  const { data: byTrackingNumber } = await admin
+    .from("submissions")
+    .select("id")
     .eq("tracking_number", reference)
     .maybeSingle();
-  if (direct && String(direct.author_email).toLocaleLowerCase() === normalizedEmail) {
-    return { admin, submission: direct as TrackedSubmission };
+  if (byTrackingNumber) {
+    return { admin, submission: byTrackingNumber as TrackedSubmission };
   }
 
   const { data: receipt } = await admin
@@ -38,10 +44,10 @@ async function findTrackedSubmission(reference: string, email: string) {
 
   const { data: receiptSubmission } = await admin
     .from("submissions")
-    .select("id, author_email")
+    .select("id")
     .eq("id", receipt.submission_id)
     .maybeSingle();
-  if (receiptSubmission && String(receiptSubmission.author_email).toLocaleLowerCase() === normalizedEmail) {
+  if (receiptSubmission) {
     return { admin, submission: receiptSubmission as TrackedSubmission };
   }
 
@@ -56,13 +62,13 @@ export async function POST(request: NextRequest) {
 
   const parsed = responseInput.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Enter your tracking or receipt number, author email, and response." }, { status: 400 });
+    return NextResponse.json({ error: "Enter your submission reference and response." }, { status: 400 });
   }
 
-  const { admin, submission } = await findTrackedSubmission(parsed.data.reference, parsed.data.email);
+  const { admin, submission } = await findTrackedSubmission(parsed.data.reference);
   if (!admin) return NextResponse.json({ error: "Tracking is not available yet." }, { status: 503 });
   if (!submission) {
-    return NextResponse.json({ error: "We could not match those details. Check the number and author email, then try again." }, { status: 404 });
+    return NextResponse.json({ error: "We could not find that submission reference. Check the number and try again." }, { status: 404 });
   }
 
   const { data, error } = await admin.rpc("respond_to_author_request", {

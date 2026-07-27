@@ -11,6 +11,8 @@ import { createApa7JournalCitation } from "@/lib/apa-citation";
 
 const uuid = z.string().uuid();
 const optionalText = (maximum: number) => z.string().trim().max(maximum).optional().transform((value) => value || undefined);
+const optionalDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date (YYYY-MM-DD)").optional().transform((value) => value || undefined);
+const doiField = z.string().trim().max(255).regex(/^10\.\d{4,9}\/\S+$/, "Enter a valid DOI, e.g. 10.1000/xyz123").optional().transform((value) => value || undefined);
 
 const transitionInput = z.object({
   submissionId: uuid,
@@ -27,9 +29,20 @@ const publicationRecordInput = z.object({
   submissionId: uuid,
   journalId: uuid.optional(),
   issueId: uuid.optional(),
-  doi: optionalText(255),
+  doi: doiField,
   finalPdfFileId: uuid.optional(),
   certificateFileId: uuid.optional(),
+  volume: optionalText(20),
+  issueNumber: optionalText(20),
+  pageStart: optionalText(20),
+  pageEnd: optionalText(20),
+  pages: optionalText(50),
+  keywords: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  abstract: optionalText(20000),
+  licenseName: optionalText(200),
+  licenseUrl: optionalText(500),
+  copyrightHolder: optionalText(200),
+  publicationDate: optionalDate,
   citationData: z.record(z.string(), z.unknown()).default({}),
   metadata: z.record(z.string(), z.unknown()).default({})
 });
@@ -92,10 +105,132 @@ function publicationSlug(title: string, submissionId: string) {
   return `${base}-${submissionId.slice(0, 8).toLocaleLowerCase()}`;
 }
 
-function publicationContentType(value: string) {
+function publicationContentType(value: string): "research" | "creative" | "commentary" {
   if (/creative|poetry|fiction|literature/i.test(value)) return "creative";
   if (/commentary|essay|opinion/i.test(value)) return "commentary";
   return "research";
+}
+
+type AdminClient = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
+
+type PromotedAuthor = {
+  name: string;
+  orcid?: string | null;
+  affiliation?: string | null;
+  credentials?: string | null;
+  corresponding?: boolean;
+};
+
+type SubmissionAuthorDetail = {
+  firstName?: string | null;
+  middleInitial?: string | null;
+  surname?: string | null;
+  name?: string | null;
+  orcid?: string | null;
+  affiliation?: string | null;
+  institution?: string | null;
+  academicTitle?: string | null;
+};
+
+function authorSlug(name: string) {
+  return name.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "author";
+}
+
+function composeAuthorName(detail: SubmissionAuthorDetail, fallback: string) {
+  const firstName = detail.firstName?.trim() || "";
+  const middle = detail.middleInitial?.trim() ? `${detail.middleInitial.trim()}.` : "";
+  const surname = detail.surname?.trim() || "";
+  const given = [firstName, middle].filter(Boolean).join(" ");
+  if (surname && given) return `${surname}, ${given}`;
+  if (surname) return surname;
+  if (given) return given;
+  return detail.name?.trim() || fallback;
+}
+
+async function resolveAuthorsFromSubmission(admin: AdminClient, submissionId: string, fallbackName: string): Promise<PromotedAuthor[]> {
+  const { data: submissionRow } = await admin.from("submissions").select("author_details").eq("id", submissionId).maybeSingle();
+  const rawDetails = (submissionRow?.author_details as unknown as SubmissionAuthorDetail[] | null) || [];
+  const details = Array.isArray(rawDetails) ? rawDetails : [];
+  if (details.length) {
+    return details
+      .map((detail, index) => ({
+        name: composeAuthorName(detail, fallbackName),
+        orcid: detail.orcid || null,
+        affiliation: detail.affiliation || detail.institution || null,
+        credentials: detail.academicTitle || null,
+        corresponding: index === 0
+      }))
+      .filter((author) => author.name.trim().length > 0);
+  }
+  const { data: rows } = await admin
+    .from("submission_authors")
+    .select("first_name, middle_initial, surname, institution, orcid, academic_title")
+    .eq("submission_id", submissionId)
+    .order("position");
+  if (rows?.length) {
+    return rows
+      .map((row, index) => ({
+        name: composeAuthorName({ firstName: row.first_name, middleInitial: row.middle_initial, surname: row.surname }, fallbackName),
+        orcid: row.orcid || null,
+        affiliation: row.institution || null,
+        credentials: row.academic_title || null,
+        corresponding: index === 0
+      }))
+      .filter((author) => author.name.trim().length > 0);
+  }
+  return fallbackName.trim() ? [{ name: fallbackName.trim(), corresponding: true }] : [];
+}
+
+async function syncPublicationAuthors(admin: AdminClient, publicationId: string, authors: PromotedAuthor[]) {
+  const candidates = authors.filter((author) => author.name.trim().length > 0);
+  if (!candidates.length) return;
+  const linked: Array<{ id: string; corresponding: boolean }> = [];
+  const seen = new Set<string>();
+  for (const author of candidates) {
+    const baseSlug = authorSlug(author.name);
+    let existing: { id: string } | null = null;
+    if (author.orcid) {
+      const { data } = await admin.from("authors").select("id").eq("orcid", author.orcid).limit(1).maybeSingle();
+      existing = data;
+    }
+    if (!existing) {
+      const { data } = await admin.from("authors").select("id").eq("slug", baseSlug).limit(1).maybeSingle();
+      existing = data;
+    }
+    let authorId: string;
+    if (existing) {
+      authorId = existing.id;
+      const patch: Record<string, unknown> = {};
+      if (author.orcid) patch.orcid = author.orcid;
+      if (author.affiliation) patch.affiliation = author.affiliation;
+      if (author.credentials) patch.credentials = author.credentials;
+      if (Object.keys(patch).length) await admin.from("authors").update(patch).eq("id", authorId);
+    } else {
+      let created: { id: string } | null = null;
+      for (let attempt = 0; attempt < 50 && !created; attempt += 1) {
+        const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
+        const { data, error } = await admin
+          .from("authors")
+          .insert({ name: author.name, slug, orcid: author.orcid || null, affiliation: author.affiliation || null, credentials: author.credentials || null, bio: "", status: "published" })
+          .select("id")
+          .maybeSingle();
+        if (!error && data) created = data;
+      }
+      if (!created) throw new Error("An author profile could not be created.");
+      authorId = created.id;
+    }
+    if (seen.has(authorId)) continue;
+    seen.add(authorId);
+    linked.push({ id: authorId, corresponding: Boolean(author.corresponding) });
+  }
+  const { error: clearError } = await admin.from("publication_authors").delete().eq("publication_id", publicationId);
+  if (clearError) throw new Error("The author links could not be refreshed.");
+  let position = 0;
+  for (const link of linked) {
+    position += 1;
+    const { error } = await admin.from("publication_authors").insert({ publication_id: publicationId, author_id: link.id, position, corresponding: link.corresponding });
+    if (error) throw new Error("The author links could not be saved.");
+  }
 }
 
 export async function transitionSubmission(input: z.input<typeof transitionInput>) {
@@ -145,7 +280,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
 
   const { data: submission, error: submissionError } = await admin
     .from("submissions")
-    .select("id, title, abstract, author_name, publication_type, current_stage")
+    .select("id, title, abstract, author_name, publication_type, current_stage, preferred_journal_id, assigned_issue_id, volume_snapshot, issue_snapshot")
     .eq("id", parsed.submissionId)
     .maybeSingle();
   if (submissionError || !submission) throw new Error("The submission record could not be found.");
@@ -153,67 +288,76 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     throw new Error("Publication records can only be prepared after acceptance.");
   }
 
-  if (parsed.issueId && !parsed.journalId) throw new Error("Choose the journal before assigning an issue.");
-  if (parsed.issueId && parsed.journalId) {
-    const { data: issue } = await admin.from("issues").select("journal_id").eq("id", parsed.issueId).maybeSingle();
-    if (!issue || issue.journal_id !== parsed.journalId) throw new Error("The selected issue does not belong to the selected journal.");
+  const resolvedJournalId = parsed.journalId || submission.preferred_journal_id || undefined;
+  const resolvedIssueId = parsed.issueId || submission.assigned_issue_id || undefined;
+  if (parsed.issueId && !resolvedJournalId) throw new Error("Choose the journal before assigning an issue.");
+  if (resolvedIssueId && resolvedJournalId) {
+    const { data: issue } = await admin.from("issues").select("journal_id,volume,issue_number").eq("id", resolvedIssueId).maybeSingle();
+    if (!issue || issue.journal_id !== resolvedJournalId) throw new Error("The selected issue does not belong to the selected journal.");
+    if (parsed.volume && parsed.volume !== issue.volume) throw new Error("The volume must match the selected issue.");
+    if (parsed.issueNumber && parsed.issueNumber !== issue.issue_number) throw new Error("The issue number must match the selected issue.");
   }
 
   let publicationId: string | null = null;
   let publicArticleUrl: string | null = null;
   let citationData: Record<string, unknown> = parsed.citationData;
-  if (parsed.journalId) {
+  if (resolvedJournalId) {
     const { data: existingPublications } = await admin.from("publications").select("id, slug").eq("source_submission_id", parsed.submissionId).limit(1);
     const existingPublication = existingPublications?.[0];
     const { data: submittedAuthors } = await admin.from("submission_authors").select("position, first_name, middle_initial, surname").eq("submission_id", parsed.submissionId).order("position");
     const authorDisplay = (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).join("; ") || submission.author_name;
-    const { data: journal } = await admin.from("journals").select("title").eq("id", parsed.journalId).maybeSingle();
-    const { data: citationIssue } = parsed.issueId ? await admin.from("issues").select("volume, issue_number").eq("id", parsed.issueId).maybeSingle() : { data: null };
-    citationData = createApa7JournalCitation({ authors: (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).filter(Boolean).length ? (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")) : [submission.author_name], title: submission.title, year: new Date().getFullYear(), journalTitle: journal?.title || "", volume: citationIssue?.volume, issue: citationIssue?.issue_number, doi: parsed.doi });
+    const { data: journal } = await admin.from("journals").select("title").eq("id", resolvedJournalId).maybeSingle();
+    const { data: citationIssue } = resolvedIssueId ? await admin.from("issues").select("volume, issue_number").eq("id", resolvedIssueId).maybeSingle() : { data: null };
+    const resolvedVolume = citationIssue?.volume || parsed.volume || submission.volume_snapshot || null;
+    const resolvedIssueNumber = citationIssue?.issue_number || parsed.issueNumber || submission.issue_snapshot || null;
+    const resolvedPages = parsed.pages || (parsed.pageStart ? [parsed.pageStart, parsed.pageEnd].filter(Boolean).join("-") : null);
+    const resolvedAbstract = parsed.abstract || submission.abstract || "";
+    const citationAuthors = (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).filter(Boolean);
+    citationData = createApa7JournalCitation({ authors: citationAuthors.length ? citationAuthors : [submission.author_name], title: submission.title, year: new Date().getFullYear(), journalTitle: journal?.title || "", volume: resolvedVolume, issue: resolvedIssueNumber, pages: resolvedPages, doi: parsed.doi });
     const slug = existingPublication?.slug || publicationSlug(submission.title, submission.id);
     const pdfUrl = new URL(`/api/publications/${slug}/pdf`, `${getSiteUrl()}/`).toString();
 
+    const sharedColumns = {
+      journal_id: resolvedJournalId,
+      issue_id: resolvedIssueId || null,
+      title: submission.title,
+      abstract: resolvedAbstract,
+      author_display: authorDisplay,
+      doi: parsed.doi || null,
+      pdf_url: pdfUrl,
+      recommended_citation: String(citationData.formatted_citation || ""),
+      content_type: publicationContentType(String((submission as { publication_type?: string }).publication_type || "")),
+      volume: resolvedVolume,
+      issue_number: resolvedIssueNumber,
+      pages: resolvedPages,
+      keywords: parsed.keywords || [],
+      license_name: parsed.licenseName || "All rights reserved",
+      license_url: parsed.licenseUrl || null,
+      copyright_holder: parsed.copyrightHolder || "The authors",
+      publication_date: parsed.publicationDate || null
+    };
+
     if (existingPublication) {
-      const { data: updated, error: updateError } = await admin.from("publications").update({
-        journal_id: parsed.journalId,
-        issue_id: parsed.issueId || null,
-        title: submission.title,
-        abstract: submission.abstract || "",
-        author_display: authorDisplay,
-        doi: parsed.doi || null,
-        pdf_url: pdfUrl,
-        recommended_citation: String(citationData.formatted_citation || ""),
-        content_type: publicationContentType(String((submission as { publication_type?: string }).publication_type || ""))
-      }).eq("id", existingPublication.id).select("id, slug").single();
+      const { data: updated, error: updateError } = await admin.from("publications").update(sharedColumns).eq("id", existingPublication.id).select("id, slug").single();
       if (updateError || !updated) throw new Error("The public publication record could not be updated.");
       publicationId = updated.id;
       publicArticleUrl = new URL(`/publications/${updated.slug}`, `${getSiteUrl()}/`).toString();
     } else {
-      const { data: created, error: createError } = await admin.from("publications").insert({
-        journal_id: parsed.journalId,
-        issue_id: parsed.issueId || null,
-        source_submission_id: parsed.submissionId,
-        slug,
-        title: submission.title,
-        abstract: submission.abstract || "",
-        author_display: authorDisplay,
-        doi: parsed.doi || null,
-        pdf_url: pdfUrl,
-        recommended_citation: String(citationData.formatted_citation || ""),
-        content_type: publicationContentType(String((submission as { publication_type?: string }).publication_type || "")),
-        status: "draft"
-      }).select("id, slug").single();
+      const { data: created, error: createError } = await admin.from("publications").insert({ ...sharedColumns, source_submission_id: parsed.submissionId, slug, status: "draft" }).select("id, slug").single();
       if (createError || !created) throw new Error("The public publication record could not be created.");
       publicationId = created.id;
       publicArticleUrl = new URL(`/publications/${created.slug}`, `${getSiteUrl()}/`).toString();
     }
+
+    const promotedAuthors = await resolveAuthorsFromSubmission(admin, parsed.submissionId, submission.author_name);
+    if (publicationId) await syncPublicationAuthors(admin, publicationId, promotedAuthors);
   }
 
   const { error } = await admin.from("publication_records").upsert({
     submission_id: parsed.submissionId,
     publication_id: publicationId,
-    journal_id: parsed.journalId || null,
-    issue_id: parsed.issueId || null,
+    journal_id: resolvedJournalId || null,
+    issue_id: resolvedIssueId || null,
     doi: parsed.doi || null,
     public_article_url: publicArticleUrl || null,
     final_pdf_file_id: parsed.finalPdfFileId || null,
@@ -231,7 +375,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     visibility: "internal",
     actor_type: user.role,
     actor_id: user.id,
-    metadata: { doi: parsed.doi || null, issue_id: parsed.issueId || null }
+    metadata: { doi: parsed.doi || null, issue_id: resolvedIssueId || null }
   });
   refreshWorkflowPages(parsed.submissionId);
 }
@@ -329,10 +473,15 @@ export async function configureSubmissionPayment(input: z.input<typeof paymentQu
 export async function confirmSubmissionPayment(input: z.input<typeof confirmPaymentInput>) {
   const parsed = confirmPaymentInput.parse(input);
   const user = await requireAdmin();
+  if (user.role !== "admin") throw new Error("Only an administrator can confirm a payment.");
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("The editorial database is not configured.");
 
-  const { data: payment, error } = await admin.rpc("confirm_submission_payment", { p_payment_id: parsed.paymentId, p_actor_id: user.id });
+  const { data: payment, error } = await admin.rpc("confirm_payment_and_start_review", {
+    p_submission_id: parsed.submissionId,
+    p_payment_id: parsed.paymentId,
+    p_actor_id: user.id
+  });
   if (error) throw new Error(workflowFailure(error));
   if (!payment) throw new Error("The payment could not be confirmed.");
   await createOfficialReceiptPdf({ paymentId: parsed.paymentId, submissionId: parsed.submissionId });

@@ -20,3 +20,5 @@ supabase/.temp/
 .env*
 !.env.example
 public/admin/
+admin-panel/dist-verify*/
+tmp/

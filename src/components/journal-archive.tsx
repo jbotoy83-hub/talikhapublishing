@@ -12,6 +12,7 @@ const PAGE_SIZE = 24;
 type JournalArchiveProps = {
   journal: Journal;
   publications: Publication[];
+  declaredIssues?: { volume: string; issue: string }[];
   initialSearch: string;
   initialVolume: string;
   initialIssue: string;
@@ -28,7 +29,7 @@ function archivePart(value: string | undefined, prefix: "Volume" | "Issue") {
   return value && value !== "Unassigned" ? `${prefix} ${value}` : `${prefix} metadata pending`;
 }
 
-export function JournalArchive({ journal, publications, initialSearch, initialVolume, initialIssue, initialPage }: JournalArchiveProps) {
+export function JournalArchive({ journal, publications, declaredIssues = [], initialSearch, initialVolume, initialIssue, initialPage }: JournalArchiveProps) {
   const [search, setSearch] = useState(initialSearch);
   const [volume, setVolume] = useState(initialVolume);
   const [issue, setIssue] = useState(initialIssue);
@@ -36,8 +37,16 @@ export function JournalArchive({ journal, publications, initialSearch, initialVo
 
   const sortedPublications = useMemo(() => [...publications].sort(comparePublicationsNewestFirst), [publications]);
   const currentPublication = sortedPublications[0];
-  const volumeOptions = useMemo(() => [...new Set(sortedPublications.map((publication) => publication.volume || "Unassigned"))].sort((a, b) => b.localeCompare(a, "en", { numeric: true })), [sortedPublications]);
-  const issueOptions = useMemo(() => [...new Set(sortedPublications.filter((publication) => !volume || (publication.volume || "Unassigned") === volume).map((publication) => publication.issue || "Unassigned"))].sort((a, b) => b.localeCompare(a, "en", { numeric: true })), [sortedPublications, volume]);
+  const volumeOptions = useMemo(() => {
+    const set = new Set(sortedPublications.map((publication) => publication.volume || "Unassigned"));
+    for (const declared of declaredIssues) if (declared.volume) set.add(declared.volume);
+    return [...set].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+  }, [sortedPublications, declaredIssues]);
+  const issueOptions = useMemo(() => {
+    const set = new Set(sortedPublications.filter((publication) => !volume || (publication.volume || "Unassigned") === volume).map((publication) => publication.issue || "Unassigned"));
+    for (const declared of declaredIssues) if ((!volume || declared.volume === volume) && declared.issue) set.add(declared.issue);
+    return [...set].sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+  }, [sortedPublications, volume, declaredIssues]);
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return sortedPublications.filter((publication) => {
@@ -82,7 +91,9 @@ export function JournalArchive({ journal, publications, initialSearch, initialVo
     <p className="journal-filter-status" role="status">{filtered.length.toLocaleString("en-US")} publication{filtered.length === 1 ? "" : "s"}{search || volume || issue ? " match the selected filters" : " in this archive"}.</p>
     <div className="journal-latest-list" id="journalLatestGrid">
       {visiblePublications.map((publication) => <article className="journal-latest-record" key={publication.id}><Link href={`/publications/${publication.slug}`} className="journal-latest-image" aria-label={`Read ${publication.title}`}><Image src={journal.heroImage} alt="" fill sizes="145px" /></Link><div className="journal-latest-content"><div className="journal-latest-badges"><span>{publication.contentType}</span>{publication.licenseUrl && <span className="journal-open-access"><Icon name="unlock" className="h-3.5 w-3.5" />Open access</span>}</div><h3><Link href={`/publications/${publication.slug}`}>{publication.title}</Link></h3><p className="journal-latest-authors">{publication.authors.length ? publication.authors.map((author, index) => <span key={author.id}>{index > 0 && ", "}<Link href={`/authors/${author.slug}`}>{author.name}</Link></span>) : publication.authorDisplay}</p><div className="journal-latest-meta"><time dateTime={publication.publicationDate}>{formatPublicationDate(publication)}</time>{publication.volume && <span><strong>Vol. {publication.volume}</strong>{publication.issue ? `, No. ${publication.issue}` : ""}</span>}{publication.doi && <span>DOI {publication.doi}</span>}</div></div></article>)}
-      {!visiblePublications.length && <p className="journal-empty-state">No verified publications match these filters.</p>}
+      {!visiblePublications.length && (publications.length === 0
+        ? <div className="journal-empty-archive"><span className="journal-empty-archive-mark"><Icon name="search" className="h-5 w-5" /></span><h3>No publications in this archive yet.</h3><p>{journal.title} is preparing its first verified records. You can still submit a manuscript for an upcoming issue.</p><Link href={`/submit?journal=${journal.slug}`} className="journal-empty-archive-action">Submit your work <Icon name="arrow" className="h-4 w-4" /></Link></div>
+        : <p className="journal-empty-state">No verified publications match these filters.</p>)}
     </div>
     {totalPages > 1 && <nav className="journal-pagination" aria-label="Publication archive pages">
       <button type="button" className="journal-pagination-previous" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={currentPage === 1} aria-label="Go to previous page"><Icon name="arrow" className="h-4 w-4" /> <span>Previous</span></button>

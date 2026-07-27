@@ -41,7 +41,7 @@ export function TurnstileWidget({
   }, [onTokenChange]);
 
   const renderWidget = useCallback(() => {
-    if (!containerRef.current || !window.turnstile || widgetIdRef.current) return;
+    if (!siteKey || !containerRef.current || !window.turnstile || widgetIdRef.current) return;
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
       sitekey: siteKey,
       action: "submission",

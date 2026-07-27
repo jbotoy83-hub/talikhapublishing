@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const developmentScripts = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
 const developmentConnections = process.env.NODE_ENV === "development" ? " ws://127.0.0.1:* ws://localhost:*" : "";
 const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
+const supabaseImageHost = (() => {
+  try { return supabaseOrigin ? new URL(supabaseOrigin).hostname : ""; } catch { return ""; }
+})();
 const indexingEnabled = process.env.SITE_INDEXING_ENABLED?.trim().toLocaleLowerCase() === "true";
 
 function configuredRemoteImageHosts() {
@@ -43,7 +46,8 @@ const nextConfig: NextConfig = {
   experimental: { optimizePackageImports: ["lucide-react"] },
   images: {
     remotePatterns: [
-      ...remoteImageHosts.map((hostname) => ({ protocol: "https" as const, hostname }))
+      ...remoteImageHosts.map((hostname) => ({ protocol: "https" as const, hostname })),
+      ...(supabaseImageHost ? [{ protocol: "https" as const, hostname: supabaseImageHost }] : [])
     ],
     formats: ["image/avif", "image/webp"]
   },

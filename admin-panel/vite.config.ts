@@ -11,6 +11,17 @@ export default defineConfig(({ command }) => ({
   server: {
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },
+      "/admin/login": { target: "http://localhost:3000", changeOrigin: true },
+    },
+    watch: {
+      ignored: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/*.tsbuildinfo",
+        "**/.vite-dev.log",
+        "**/inbox-preview.html",
+        "**/package-lock.json",
+      ],
     },
   },
 }));

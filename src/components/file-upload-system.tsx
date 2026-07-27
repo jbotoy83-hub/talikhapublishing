@@ -590,7 +590,8 @@ export function FileUploadSystem({ files, onFilesChange, uploader, locked, showZ
                 )}
 
                 {/* Upload affordance — centered hero when empty; collapses to an icon-only button above the formats once files exist */}
-                <motion.div
+                <motion.button
+                  type="button"
                   layout
                   transition={{ type: "spring", stiffness: 300, damping: 28 }}
                   className={`fuz-prompt ${hasFiles ? "compact" : "empty"}`}
@@ -614,7 +615,7 @@ export function FileUploadSystem({ files, onFilesChange, uploader, locked, showZ
                       <span className="fuz-browse">Browse</span>
                     </>
                   )}
-                </motion.div>
+                </motion.button>
 
                 <div className="fuz-formats">
                   <span className="fuz-formats-label">Supported formats:</span>

@@ -1,0 +1,3 @@
+export function AdminLoginArt() {
+  return <aside className="relative hidden h-full min-h-0 overflow-hidden bg-black bg-cover bg-center p-8 text-white sm:p-12 lg:flex lg:flex-col lg:justify-between" style={{ backgroundImage: "url('/admin/assets/talikha-login-grain.png')" }}><div className="relative z-10"><h2 className="max-w-[620px] text-5xl font-medium tracking-[-0.05em] text-white sm:text-6xl lg:pt-16 lg:text-[64px] lg:leading-[0.98] xl:text-[70px]">Care for the work,<br/>keep the record.</h2></div><p className="relative z-10 mb-0 max-w-md border-t border-white/25 pt-5 text-base leading-7 text-white/85 xl:mb-32">Talikha Publishing editorial access is reserved for the team accounts your administrator creates.</p></aside>;
+}

@@ -6,6 +6,9 @@ import { Icon } from "@/components/icon";
 import { JsonLd } from "@/components/json-ld";
 import { PublicationTools } from "@/components/publication-tools";
 import { RelatedPublicationsCarousel } from "@/components/related-publications-carousel";
+import { PublicationViewTracker } from "@/components/publication-view-tracker";
+import { PublicationPdfReader } from "@/components/publication-pdf-reader";
+import { DemoPublicationPdfReader } from "@/components/demo-publication-pdf-reader";
 import { getPublication, getPublications } from "@/lib/content";
 import { absoluteUrl, SITE_LANGUAGE, SITE_NAME } from "@/lib/site";
 
@@ -26,6 +29,17 @@ function isPdfUrl(value: string | undefined) {
   if (!value) return false;
   try {
     return new URL(value, absoluteUrl("/")).pathname.toLocaleLowerCase().endsWith(".pdf");
+  } catch {
+    return false;
+  }
+}
+
+function isEmbeddablePdf(value: string | undefined) {
+  if (!value) return false;
+  try {
+    const pathname = new URL(value, absoluteUrl("/")).pathname;
+    if (pathname.toLocaleLowerCase().endsWith(".pdf")) return true;
+    return /^\/api\/publications\/[^/]+\/pdf\/?$/.test(pathname);
   } catch {
     return false;
   }
@@ -89,6 +103,9 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
   const articleType = publication.contentType === "research" ? "ScholarlyArticle" : "Article";
   const typeLabel = publication.contentType === "research" ? "Research article" : publication.contentType === "creative" ? "Creative work" : "Commentary";
   const hasPdf = isPdfUrl(publication.pdfUrl);
+  const embeddablePdf = isEmbeddablePdf(publication.pdfUrl);
+  const readerSrc = publication.pdfUrl ? `${publication.pdfUrl}${publication.pdfUrl.includes("?") ? "&" : "?"}embed=1` : "";
+  const demoReader = process.env.DEMO_CONTENT_ENABLED === "true";
   return (
     <main id="main-content" className="publication-detail-page">
       <JsonLd data={{ "@context": "https://schema.org", "@graph": [
@@ -96,6 +113,7 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
         { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") }, { "@type": "ListItem", position: 2, name: "Publications", item: absoluteUrl("/publications") }, { "@type": "ListItem", position: 3, name: publication.title, item: absoluteUrl(`/publications/${publication.slug}`) }] }
       ] }} />
 
+      <PublicationViewTracker slug={publication.slug} />
       <article>
         <header className={`publication-detail-hero publication-detail-hero-${publication.journal.slug}`}>
           <div className="section-shell publication-detail-hero-grid">
@@ -117,9 +135,10 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
               <p className="eyebrow">{publication.abstract ? "Abstract" : "Publication note"}</p>
               {publication.abstract ? <p className="article-abstract">{publication.abstract}</p> : <p className="article-abstract">This historical record does not include an abstract. Use the DOI and recommended citation to access and identify the complete work.</p>}
             </section>
+            {embeddablePdf ? <PublicationPdfReader src={readerSrc} title={publication.title} /> : demoReader ? <DemoPublicationPdfReader title={publication.title} /> : null}
           </div>
           <aside className="publication-detail-sidebar">
-            {(publication.pdfUrl || doiUrl) && <section className="publication-access-panel publication-activity-panel"><div className="publication-activity-heading"><span><Icon name="eye" className="h-5 w-5" /></span><div><p className="eyebrow">Reader activity</p><h2>Publication reach</h2></div></div><div className="publication-activity-metrics" aria-label="Publication analytics"><div><span>Views</span><strong>—</strong><small>Not tracked yet</small></div><div><span>Downloads</span><strong>—</strong><small>Not tracked yet</small></div></div><div className="publication-activity-action"><a href={publication.pdfUrl || doiUrl} target="_blank" rel="noopener noreferrer"><Icon name="file" className="h-4 w-4" /> Download publication</a></div></section>}
+            <section className="publication-access-panel publication-activity-panel"><div className="publication-activity-heading"><span className="publication-activity-icon"><Icon name="eye" className="h-4 w-4" /></span><span className="publication-activity-label">Publication reach</span></div><div className="publication-activity-metrics" aria-label="Publication analytics"><div><span>Views</span><strong>{publication.views.toLocaleString("en-PH")}</strong><small>all time</small></div><div><span>Downloads</span><strong>{publication.downloads.toLocaleString("en-PH")}</strong><small>all time</small></div></div><div className="publication-activity-action">{publication.pdfUrl ? <a href={publication.pdfUrl} target="_blank" rel="noopener noreferrer"><Icon name="file" className="h-4 w-4" /> Download publication</a> : <p>The full-text PDF for this record is not available yet.</p>}</div></section>
             <section className="article-rights-panel"><div className="publication-panel-heading">Rights and reuse</div><div className="rights-row"><span>License</span>{publication.licenseUrl ? <a href={publication.licenseUrl} target="_blank" rel="noopener noreferrer"><strong>{publication.licenseName}</strong></a> : <strong>{publication.licenseName}</strong>}</div><div className="rights-row"><span>Publisher</span><strong>{SITE_NAME}</strong></div></section>
           </aside>
         </div>

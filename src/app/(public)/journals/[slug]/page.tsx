@@ -48,15 +48,16 @@ function publicationHref(publication: Publication) {
 export default async function JournalPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { slug } = await params;
   const query = await searchParams;
-  const [journal, publications] = await Promise.all([getJournal(slug), getPublications()]);
+  const journal = await getJournal(slug);
   if (!journal) notFound();
+  const [publications, curIssue, journalIssues] = await Promise.all([getPublications(), getCurrentIssueForJournal(journal.id, journal.slug), getJournalIssues(journal.id, journal.slug)]);
 
-  const journalPublications = publications.filter((publication) => publication.journal.id === journal.id).sort(comparePublicationsNewestFirst);
+  const journalPublications = publications.filter((publication) => publication.journal.slug === journal.slug).sort(comparePublicationsNewestFirst);
   const presentation = getJournalPresentation(journal);
   const volumes = groupJournalArchive(journalPublications);
+  const declaredVolumes = new Set(journalIssues.map((i) => i.volume)).size;
   const latest = journalPublications[0];
-  const curIssue = getCurrentIssueForJournal(journal.id);
-  const cycleIssues = getJournalIssues(journal.id).filter((i) => i.status === "published" || i.status === "open" || i.status === "scheduled");
+  const cycleIssues = journalIssues.filter((i) => i.isCurrent || i.status === "published" || i.status === "open" || i.status === "scheduled");
   const featured = journalPublications.slice(0, 3);
   const search = queryValue(query.q).trim();
   const volume = queryValue(query.volume);
@@ -110,7 +111,7 @@ export default async function JournalPage({ params, searchParams }: { params: Pr
             </div>
             <aside className="journal-current-issue">
               <p>Current archive record</p><h2>{curIssue ? "Vol. " + curIssue.volume + ", No. " + curIssue.issue + (curIssue.title ? " · " + curIssue.title : "") : archiveIssueLabel(latest)}</h2>
-              <dl><div><dt>Publication schedule</dt><dd>{presentation.cadence}</dd></div><div><dt>Published works</dt><dd>{journalPublications.length.toLocaleString("en-US")}</dd></div><div><dt>Available volumes</dt><dd>{volumes.length}</dd></div></dl>
+              <dl><div><dt>Publication schedule</dt><dd>{presentation.cadence}</dd></div><div><dt>Published works</dt><dd>{journalPublications.length.toLocaleString("en-US")}</dd></div><div><dt>Available volumes</dt><dd>{(declaredVolumes || volumes.length).toLocaleString("en-US")}</dd></div></dl>
               <a href="#archive">View current publications <Icon name="arrow" className="h-4 w-4" /></a>
               <p>{cycleIssues.length ? "Issues in cycle: " + cycleIssues.map((i) => "Vol. " + i.volume + " No. " + i.issue + (i.isCurrent ? " (current)" : "")).join(", ") : "No issues in cycle yet."}</p>
             </aside>
@@ -129,7 +130,7 @@ export default async function JournalPage({ params, searchParams }: { params: Pr
                 <Link href={publicationHref(publication)} className="journal-recognition-image" aria-label={`Read ${publication.title}`}><Image src={journal.heroImage} alt="" fill sizes="(max-width: 720px) 100vw, 33vw" /><span className="journal-recognition-ribbon">Featured · {String(index + 1).padStart(2, "0")}</span></Link>
                 <div className="journal-recognition-copy"><div className="journal-recognition-meta"><span>{publication.contentType}</span>{publication.volume && <span>Vol. {publication.volume}{publication.issue ? `, No. ${publication.issue}` : ""}</span>}{publication.doi && <span>DOI supplied</span>}</div><h3><Link href={publicationHref(publication)}>{publication.title}</Link></h3>{publication.abstract && <p>{publication.abstract}</p>}<div className="journal-recognition-authors"><small>Authors</small><div>{publication.authors.length ? publication.authors.map((author) => <Link href={`/authors/${author.slug}`} key={author.id}><span>{initials(author.name)}</span><strong>{author.name}</strong></Link>) : <strong>{publication.authorDisplay}</strong>}</div></div><div className="journal-recognition-record"><span>{journal.title}{publication.volume ? `, Vol. ${publication.volume}` : ""}{publication.issue ? `, No. ${publication.issue}` : ""}</span><time dateTime={publication.publicationDate}>{formatPublicationDate(publication)}</time></div><Link href={publicationHref(publication)} className="journal-recognition-action">Read publication <Icon name="arrow" className="h-4 w-4" /></Link></div>
               </article>)}
-            </div></div> : <p className="journal-empty-state">Draft archive: featured records will appear after verified publications are supplied.</p>}
+            </div></div> : <div className="journal-empty-feature"><div className="journal-empty-feature-copy"><span className="journal-empty-feature-mark"><Icon name="book" className="h-5 w-5" /></span><div><p className="journal-publisher-overline">Featured works</p><h3>The archive for {journal.title} is being assembled.</h3><p>{curIssue ? `The current cycle — Vol. ${curIssue.volume}, No. ${curIssue.issue}${curIssue.title ? `, ${curIssue.title}` : ""} — is open and accepting manuscripts.` : "Verified publications will appear here as soon as the first cycle is released."}</p></div></div><Link href={`/submit?journal=${journal.slug}`} className="journal-empty-feature-action">Submit to this journal <Icon name="arrow" className="h-4 w-4" /></Link></div>}
           </section>
 
           <div className="journal-publisher-layout journal-archive-about-layout" id="about">

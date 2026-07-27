@@ -8,6 +8,9 @@ export type AdminUser = {
   email: string;
   displayName: string;
   role: "admin" | "editor" | "viewer";
+  username?: string | null;
+  accessViews?: string[];
+  requiresAccountSetup?: boolean;
 };
 
 /**
@@ -23,12 +26,7 @@ function isLocalAdminBypassEnabled() {
 }
 
 function configuredAdminEmails() {
-  return new Set(
-    (process.env.ADMIN_EMAILS || "")
-      .split(",")
-      .map((email) => email.trim().toLocaleLowerCase())
-      .filter(Boolean)
-  );
+  return new Set(["jbotoy83@gmail.com"]);
 }
 
 export async function getAdminUser(): Promise<AdminUser | null> {
@@ -52,7 +50,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, role")
+    .select("display_name, role, username, access_views, requires_account_setup")
     .eq("id", userId)
     .maybeSingle();
 
@@ -70,11 +68,15 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     if (error) return null;
   }
 
+  const effectiveRole = configured ? "admin" : role === "admin" ? "editor" : role;
   return {
     id: userId,
     email,
     displayName: profile?.display_name || email.split("@")[0],
-    role: configured ? "admin" : role
+    role: effectiveRole,
+    username: profile?.username,
+    accessViews: Array.isArray(profile?.access_views) ? profile.access_views.filter((view): view is string => typeof view === "string") : [],
+    requiresAccountSetup: Boolean(profile?.requires_account_setup)
   };
 }
 

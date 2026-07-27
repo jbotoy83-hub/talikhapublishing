@@ -10,7 +10,7 @@ import type {
   BlockStyle,
   TextSegment,
 } from "./types";
-import { DEFAULT_FIELDS, DEFAULT_PAGE_NAMES, DEFAULT_BLOCK_STYLE, A4_LANDSCAPE, STORAGE_KEYS, CERT_FONTS } from "./types";
+import { DEFAULT_FIELDS, DEFAULT_PAGE_NAMES, DEFAULT_BLOCK_STYLE, A4_LANDSCAPE, CERT_FONTS } from "./types";
 
 let _idCounter = 0;
 export function uid(): string {
@@ -79,7 +79,7 @@ export function normalizeSegments(segs: TextSegment[]): TextSegment[] {
       if (prev && prev.t === "s" && pk === sk) prev.v += s.v;
       else out.push({ t: "s", v: s.v, style: s.style });
     } else {
-      out.push({ t: "f", k: s.k });
+      out.push({ t: "f", k: s.k, style: s.style });
     }
   }
   return out.length ? out : [{ t: "s", v: "" }];
@@ -131,7 +131,7 @@ export function resolveSegments(
   for (const s of segs) {
     if (s.t === "f") {
       const val = fieldValues[s.k] ?? "";
-      out.push({ text: val, style: undefined });
+      out.push({ text: val, style: s.style });
     } else {
       out.push({ text: s.v, style: s.style });
     }
@@ -387,36 +387,6 @@ export function createDefaultRecord(template: CertificateTemplate, submissionId?
   };
 }
 
-/* ── localStorage persistence ── */
-
-export function loadTemplates(): CertificateTemplate[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.templates);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return (Array.isArray(parsed) ? parsed : []).map((t: CertificateTemplate) => ({
-      ...t,
-      pages: Array.isArray(t.pages) ? t.pages : [],
-      blocks: Array.isArray(t.blocks) ? t.blocks : [],
-      fields: Array.isArray(t.fields) && t.fields.length ? t.fields : [...DEFAULT_FIELDS],
-    }));
-  } catch { return []; }
-}
-
-export function saveTemplates(templates: CertificateTemplate[]): void {
-  localStorage.setItem(STORAGE_KEYS.templates, JSON.stringify(templates));
-}
-
-export function loadRecords(): CertificateRecord[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.records);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-export function saveRecords(records: CertificateRecord[]): void {
-  localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(records));
-}
 
 /* ── Block helpers ── */
 

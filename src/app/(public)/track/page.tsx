@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import { FileCheck2, FileText, PenLine, Sparkles } from "lucide-react";
 import { SITE_NAME } from "@/lib/site";
 
-export const metadata: Metadata = { title: "Track your submission", description: `Securely check the progress of a submission to ${SITE_NAME}.`, robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Track your submission", description: `Check the progress of a submission to ${SITE_NAME} with its reference number.`, robots: { index: false, follow: false } };
 
 const TrackingForm = dynamic(() => import("@/components/tracking-form").then((mod) => ({ default: mod.TrackingForm })));
 

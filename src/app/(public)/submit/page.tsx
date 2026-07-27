@@ -6,25 +6,35 @@ import { isSubmissionsEnabled } from "@/lib/launch";
 import { SITE_NAME } from "@/lib/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { hasAdminSupabaseConfig } from "@/lib/supabase/config";
+import { synchronizeJournalLifecycles } from "@/lib/journal-lifecycle";
 
 export const metadata: Metadata = { title: "Submit your work", description: `Submit research, essays, poetry, fiction, or book manuscripts securely to ${SITE_NAME}.`, alternates: { canonical: "/submit" } };
 export const dynamic = "force-dynamic";
 
 const LocalSubmissionForm = nextDynamic(() => import("@/components/local-submission-form").then((mod) => ({ default: mod.LocalSubmissionForm })));
 
-type ServerJournal = { slug: string; id: string; issueId: string };
+type ServerJournal = { slug: string; id: string; issueId: string; title: string; description: string; scope: string; volume: string; issue: string; status: "Accepting submissions" | "Accepting advance submissions" };
 
 async function getSubmissionJournals(): Promise<ServerJournal[]> {
   const admin = getSupabaseAdmin();
   if (!admin) return [];
+  await synchronizeJournalLifecycles(admin);
   const { data, error } = await admin
     .from("journals")
-    .select("id, slug, current_issue_id")
+    .select("id, slug, title, description, scope, current_issue_id, submission_issue_id")
     .eq("status", "published")
-    .not("current_issue_id", "is", null)
+    .not("submission_issue_id", "is", null)
     .order("title");
   if (error || !data?.length) return [];
-  return data.flatMap((j) => (j.current_issue_id ? [{ slug: j.slug, id: j.id, issueId: j.current_issue_id }] : []));
+  const issueIds = data.map((journal) => journal.submission_issue_id).filter((id): id is string => Boolean(id));
+  const { data: issues } = await admin.from("issues").select("id,volume,issue_number").in("id", issueIds);
+  const issueById = new Map((issues || []).map((issue) => [issue.id, issue]));
+  return data.flatMap((j) => {
+    if (!j.submission_issue_id) return [];
+    const issue = issueById.get(j.submission_issue_id);
+    if (!issue) return [];
+    return [{ slug: j.slug, id: j.id, issueId: j.submission_issue_id, title: j.title, description: j.description || "", scope: j.scope || "", volume: String(issue.volume), issue: String(issue.issue_number), status: j.submission_issue_id === j.current_issue_id ? "Accepting submissions" as const : "Accepting advance submissions" as const }];
+  });
 }
 
 export default async function SubmitPage() {

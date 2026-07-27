@@ -5,7 +5,7 @@ async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   const response = NextResponse.next({ request });
-  if (!url || !anonKey) return response;
+  if (!url || !anonKey) return { response, user: null };
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -21,14 +21,20 @@ async function updateSession(request: NextRequest) {
     }
   });
 
-  await supabase.auth.getUser();
-  return response;
+  const { data } = await supabase.auth.getUser();
+  return { response, user: data.user };
 }
 
 export async function proxy(request: NextRequest) {
-  const response = await updateSession(request);
+  const { response, user } = await updateSession(request);
 
   if (request.nextUrl.pathname.startsWith("/admin")) {
+    const isLoginRoute = request.nextUrl.pathname === "/admin/login" || request.nextUrl.pathname === "/admin/welcome";
+    if (!isLoginRoute && !user) {
+      const loginUrl = new URL("/admin/login", request.url);
+      loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(loginUrl);
+    }
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
     response.headers.set("Cache-Control", "private, no-store");
   }

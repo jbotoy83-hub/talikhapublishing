@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { CheckCircle2, LoaderCircle, Search, ShieldCheck } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { CheckCircle2, LoaderCircle, Search } from "lucide-react";
 
 type AuthorRequest = {
   id: string;
@@ -24,7 +24,7 @@ type TrackingResult = {
   requests: AuthorRequest[];
 };
 
-type Lookup = { reference: string; email: string };
+type Lookup = { reference: string };
 
 export function TrackingForm() {
   const [result, setResult] = useState<TrackingResult | null>(null);
@@ -32,18 +32,18 @@ export function TrackingForm() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [reference, setReference] = useState("");
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const nextLookup = { reference: String(form.get("reference") || ""), email: String(form.get("email") || "") };
+  async function trackReference(nextReference: string) {
+    const cleanedReference = nextReference.trim();
+    if (!cleanedReference) return;
     setPending(true);
     setError("");
     setResult(null);
     const response = await fetch("/api/track", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nextLookup)
+      body: JSON.stringify({ reference: cleanedReference })
     }).catch(() => null);
     const body = await response?.json().catch(() => null);
     setPending(false);
@@ -51,9 +51,23 @@ export function TrackingForm() {
       setError(body?.error || "Tracking is temporarily unavailable. Please try again.");
       return;
     }
-    setLookup(nextLookup);
+    setLookup({ reference: cleanedReference });
     setResult(body as TrackingResult);
   }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextReference = reference.trim();
+    window.history.replaceState(null, "", `/track?reference=${encodeURIComponent(nextReference)}`);
+    await trackReference(nextReference);
+  }
+
+  useEffect(() => {
+    const suppliedReference = new URLSearchParams(window.location.search).get("reference")?.trim();
+    if (!suppliedReference) return;
+    setReference(suppliedReference);
+    void trackReference(suppliedReference);
+  }, []);
 
   async function respondToRequest(requestId: string, choice: "yes" | "no") {
     if (!lookup) return;
@@ -62,7 +76,7 @@ export function TrackingForm() {
     const response = await fetch("/api/track/requests/respond", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...lookup, requestId, choice })
+      body: JSON.stringify({ reference: lookup.reference, requestId, choice })
     }).catch(() => null);
     const body = await response?.json().catch(() => null);
     setRespondingId(null);
@@ -82,12 +96,11 @@ export function TrackingForm() {
   }
 
   return <div className="mx-auto max-w-3xl">
-    <form onSubmit={submit} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-      <label className="grid gap-2 text-sm font-medium text-slate-700">Tracking or receipt number<input required name="reference" placeholder="TAL-… or TAL-REC-…" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
-      <label className="grid gap-2 text-sm font-medium text-slate-700">Author email<input required name="email" type="email" placeholder="you@example.com" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
+    <form onSubmit={submit} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-[1fr_auto] sm:items-end">
+      <label className="grid gap-2 text-sm font-medium text-slate-700">Submission reference<input required name="reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="TAL-2026-XXXXXXXX" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
       <button disabled={pending} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70">{pending ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}{pending ? "Checking" : "Track study"}</button>
     </form>
-    <p className="mt-3 flex items-center gap-2 text-sm text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />Both details are required to protect your private submission record.</p>
+    <p className="mt-3 text-sm text-slate-500">Your submission reference is your tracking ticket. Open its link directly whenever you need to check your record.</p>
     {error ? <p role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-800">{error}</p> : null}
     {result ? <TrackingResultPanel result={result} respondingId={respondingId} onRespond={respondToRequest} /> : null}
   </div>;

@@ -43,4 +43,6 @@ export type Publication = {
   copyrightHolder: string;
   featured: boolean;
   contentType: "research" | "creative" | "commentary";
+  views: number;
+  downloads: number;
 };

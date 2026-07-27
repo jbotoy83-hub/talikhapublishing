@@ -4,8 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Icon } from "@/components/icon";
 import { JsonLd } from "@/components/json-ld";
-import { getJournalArchiveEntries, getJournals } from "@/lib/content";
-import { getJournalPresentation, groupJournalArchive } from "@/lib/journal-presentation";
+import { getJournalArchiveEntries, getJournalIssues, getJournals, type JournalIssueSummary } from "@/lib/content";
+import { getJournalPresentation, groupJournalArchive, type JournalVolumeGroup } from "@/lib/journal-presentation";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -22,11 +22,29 @@ export const metadata: Metadata = {
 
 export const revalidate = 300;
 
+function mergeIssueRecords(volumes: JournalVolumeGroup[], issues: JournalIssueSummary[]): JournalVolumeGroup[] {
+  const merged = new Map(volumes.map((volume) => [volume.volume, { ...volume, issues: [...volume.issues] }]));
+  for (const issue of issues.filter((item) => item.status === "published")) {
+    const volume = String(issue.volume);
+    const issueNumber = String(issue.issue);
+    const existingVolume = merged.get(volume) || { volume, issues: [], publicationCount: 0 };
+    const existingIssue = existingVolume.issues.find((item) => item.issue === issueNumber);
+    if (!existingIssue) {
+      existingVolume.issues.push({ issue: issueNumber, publications: [], cover: issue.cover });
+      existingVolume.issues.sort((a, b) => Number(b.issue) - Number(a.issue));
+    } else if (!existingIssue.cover && issue.cover) existingIssue.cover = issue.cover;
+    merged.set(volume, existingVolume);
+  }
+  return [...merged.values()].sort((a, b) => Number(b.volume) - Number(a.volume));
+}
+
 export default async function JournalsPage() {
   const [journals, archiveEntries] = await Promise.all([getJournals(), getJournalArchiveEntries()]);
+  const issueRecords = await Promise.all(journals.map(async (journal) => [journal.id, await getJournalIssues(journal.id, journal.slug)] as const));
+  const issueRecordsByJournal = new Map(issueRecords);
   const journalArchives = journals.map((journal) => {
     const journalPublications = archiveEntries.filter((publication) => publication.journalId === journal.id);
-    return { journal, publications: journalPublications, volumes: groupJournalArchive(journalPublications) };
+    return { journal, publications: journalPublications, volumes: mergeIssueRecords(groupJournalArchive(journalPublications), issueRecordsByJournal.get(journal.id) || []) };
   });
   const volumeCount = journalArchives.reduce((total, archive) => total + archive.volumes.length, 0);
   const issueCount = journalArchives.reduce((total, archive) => total + archive.volumes.reduce((sum, volume) => sum + volume.issues.length, 0), 0);
@@ -132,8 +150,8 @@ export default async function JournalsPage() {
               {volumes.map((volume, volumeIndex) => <details className="catalogue-volume" open={volumeIndex === 0} key={volume.volume}>
                 <summary><span><b>{volume.volume === "Unassigned" ? "—" : volume.volume}</b><span><small>Volume</small><strong>{volume.volume === "Unassigned" ? "Metadata pending" : `Volume ${volume.volume}`}</strong></span></span><span>{volume.publicationCount.toLocaleString("en-US")} publication{volume.publicationCount === 1 ? "" : "s"} <Icon name="chevron" className="h-4 w-4" /></span></summary>
                 <div className="catalogue-issue-grid">
-                  {volume.issues.map((issue) => <Link className={`catalogue-cover-slot catalogue-cover-${journal.slug}`} href={`/journals/${journal.slug}?volume=${encodeURIComponent(volume.volume)}&issue=${encodeURIComponent(issue.issue)}#archive`} key={issue.issue}>
-                    <div className="catalogue-cover-art"><span className="catalogue-cover-mark">{presentation.initials}</span><span className="catalogue-cover-rule" /><div><small>{journal.title}</small><strong>Issue {issue.issue === "Unassigned" ? "—" : issue.issue}</strong></div><p>Volume {volume.volume === "Unassigned" ? "—" : volume.volume}</p></div>
+                  {volume.issues.map((issue) => <Link className={`catalogue-cover-slot catalogue-cover-${journal.slug}`} href={`/journals/${journal.slug}/issues/${encodeURIComponent(volume.volume)}/${encodeURIComponent(issue.issue)}`} key={issue.issue}>
+                    <div className="catalogue-cover-art">{issue.cover ? <Image src={issue.cover} alt={`${journal.title} Volume ${volume.volume} Issue ${issue.issue} cover`} fill sizes="(max-width: 760px) 45vw, 220px" /> : <><span className="catalogue-cover-mark">{presentation.initials}</span><span className="catalogue-cover-rule" /><div><small>{journal.title}</small><strong>Issue {issue.issue === "Unassigned" ? "—" : issue.issue}</strong></div><p>Volume {volume.volume === "Unassigned" ? "—" : volume.volume}</p></>}</div>
                     <div className="catalogue-cover-meta"><span>Issue {issue.issue === "Unassigned" ? "metadata pending" : issue.issue}</span><small>{issue.publications.length.toLocaleString("en-US")} publication{issue.publications.length === 1 ? "" : "s"}</small></div>
                   </Link>)}
                 </div>

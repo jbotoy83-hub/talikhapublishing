@@ -1,13 +1,37 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { Brand } from "@/components/brand";
+import { LoginDotField } from "@/components/login-dot-field";
+import { TalikhaBoardTour } from "@/components/talikha-board-tour";
 import { getAdminUser } from "@/lib/auth";
 import { hasAdminSupabaseConfig } from "@/lib/supabase/config";
 
 export const metadata: Metadata = { title: "Admin sign in", robots: { index: false, follow: false, noarchive: true } };
 
 export default async function AdminLoginPage() {
-  if (await getAdminUser()) redirect(process.env.NODE_ENV === "development" ? "http://localhost:5173/admin" : "/admin"); const configured = hasAdminSupabaseConfig();
-  return <main id="main-content" className="grid min-h-screen place-items-center bg-forest-900 p-5"><section className="w-full max-w-md rounded-3xl bg-parchment p-8 shadow-2xl"><Brand/><p className="eyebrow mt-8">Protected workspace</p><h1 className="mt-2 font-serif text-3xl font-bold text-forest-900">Publisher admin</h1><p className="mt-3 text-sm leading-7 text-gray-600">Only authenticated accounts listed in <code>ADMIN_EMAILS</code> or assigned an editor role can enter.</p>{configured ? <AdminLoginForm/> : <div className="mt-7 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900">Supabase environment variables are not connected. Public visitors cannot enter the admin workspace.</div>}</section></main>;
+  if (await getAdminUser()) redirect("/admin/welcome");
+  const configured = hasAdminSupabaseConfig();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const loginWallpaper = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/editorial-media/site-assets/talikha-login-grain.png` : "/admin/assets/talikha-login-grain.png";
+
+  return <main id="main-content" className="grid min-h-[100dvh] w-full bg-[#1c1c1c] text-white lg:grid-cols-[.92fr_1.08fr]">
+    <section className="relative flex min-h-[100dvh] items-center overflow-hidden px-6 py-12 sm:px-12 lg:px-16 xl:px-20">
+      <LoginDotField/>
+      <div data-login-panel className="relative z-10 mx-auto w-full max-w-[430px] rounded-2xl border border-white/[.06] bg-[#242424] p-8 shadow-[0_12px_32px_rgba(0,0,0,.18)] sm:p-10">
+        <Brand inverse staticLogo/>
+        <p className="mt-16 text-xs font-bold uppercase tracking-[.18em] text-clay-500">Protected workspace</p>
+        <h1 className="mt-3 text-4xl font-semibold tracking-[-.045em] text-white sm:text-5xl">Editorial Board</h1>
+        <p className="mt-4 max-w-sm text-base leading-7 text-white/55">Sign in with your Talikha Publishing team credentials to access the editorial workspace.</p>
+        {configured ? <AdminLoginForm/> : <div className="mt-8 rounded-xl border border-amber-400/35 bg-[#18130d] p-4 text-sm leading-6 text-amber-100">Supabase environment variables are not connected. Public visitors cannot enter the admin workspace.</div>}
+      </div>
+    </section>
+    <aside aria-label="Talikha Publishing" className="relative hidden min-h-[100dvh] overflow-hidden bg-[#1c1c1c] xl:flex xl:flex-col">
+      <Image src={loginWallpaper} alt="" fill priority sizes="54vw" className="object-cover object-center"/>
+      <div className="absolute inset-0 bg-black/10"/>
+      <div className="relative z-10 px-14 pt-20 xl:px-20 xl:pt-24"><p className="max-w-xl text-5xl font-semibold leading-[.98] tracking-[-.055em] text-white xl:text-7xl">Advancing Knowledge.<br/>Honoring Expression.</p></div>
+      <div className="relative z-10 mt-32 px-14 pb-12 xl:px-20"><TalikhaBoardTour/></div>
+    </aside>
+  </main>;
 }

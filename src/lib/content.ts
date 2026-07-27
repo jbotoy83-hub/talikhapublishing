@@ -6,6 +6,8 @@ import { demoAuthors, demoJournals, demoPublications } from "@/data/demo-content
 import { isDemoContentEnabled } from "@/lib/launch";
 import type { Author, Journal, Publication } from "@/lib/types";
 import { getPublicSupabase } from "@/lib/supabase/public";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { synchronizeJournalLifecycles } from "@/lib/journal-lifecycle";
 type StoreJournal = { id: string; slug: string; title: string; description?: string; scope?: string; issnOnline?: string; issn?: string; hero?: string; hero_image_url?: string; accent?: string; status?: string; deleted?: boolean; [k: string]: unknown };
 type StoreIssue = { id: string; journalId: string; volume: string; issue: string; title?: string; status?: string; isCurrent?: boolean; publicationDate?: string; cover?: string; deleted?: boolean; [k: string]: unknown };
 export type JournalStore = { version?: number; journals: StoreJournal[]; issues: StoreIssue[] };
@@ -69,16 +71,55 @@ function withStoreJournals(publications: Publication[]): Publication[] {
   });
 }
 
-export function getCurrentIssueForJournal(journalId: string): JournalCurrentIssue | null {
-  const issues = readJournalStore().issues.filter((i) => i.journalId === journalId && !i.deleted);
-  const i = issues.find((x) => x.isCurrent) || issues.find((x) => (x.status || "") === "published");
-  if (!i) return null;
-  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: i.status || "", publicationDate: i.publicationDate || "", cover: i.cover || "" };
+type IssueRow = { id: string; volume: string; issue_number: string; title: string | null; status: string | null; publication_date: string | null; cover_image_url: string | null };
+
+function storeIssuesFor(journalId: string, slug?: string): StoreIssue[] {
+  const store = readJournalStore();
+  const match = store.journals.find((j) => j.id === journalId || (Boolean(slug) && j.slug === slug));
+  const key = match?.id ?? journalId;
+  return store.issues.filter((i) => i.journalId === key && !i.deleted);
 }
 
-export function getJournalIssues(journalId: string): JournalIssueSummary[] {
-  return readJournalStore().issues.filter((i) => i.journalId === journalId && !i.deleted).map((i) => ({ id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: i.status || "", isCurrent: Boolean(i.isCurrent), publicationDate: i.publicationDate || "", cover: i.cover || "" }));
+function mapStoreIssueSummary(i: StoreIssue, isCurrent: boolean): JournalIssueSummary {
+  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent, publicationDate: i.publicationDate || "", cover: i.cover || "" };
 }
+
+export const getCurrentIssueForJournal = cache(async (journalId: string, slug?: string): Promise<JournalCurrentIssue | null> => {
+  const admin = getSupabaseAdmin();
+  if (admin) {
+    await synchronizeJournalLifecycles(admin, journalId);
+    const [{ data: journalRow }, { data, error }] = await Promise.all([
+      admin.from("journals").select("current_issue_id").eq("id", journalId).maybeSingle(),
+      admin.from("issues").select("id, volume, issue_number, title, status, publication_date, cover_image_url").eq("journal_id", journalId)
+    ]);
+    if (!error && data) {
+      const currentId = journalRow?.current_issue_id ?? null;
+      const current = (currentId && data.find((i) => i.id === currentId)) || data.find((i) => (i.status || "") === "published");
+      if (current) return { id: current.id, volume: current.volume, issue: current.issue_number, title: current.title || "", status: (current.status || "").toLowerCase(), publicationDate: current.publication_date || "", cover: current.cover_image_url || "" };
+      return null;
+    }
+  }
+  const issues = storeIssuesFor(journalId, slug);
+  const i = issues.find((x) => x.isCurrent) || issues.find((x) => (x.status || "") === "published");
+  if (!i) return null;
+  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), publicationDate: i.publicationDate || "", cover: i.cover || "" };
+});
+
+export const getJournalIssues = cache(async (journalId: string, slug?: string): Promise<JournalIssueSummary[]> => {
+  const admin = getSupabaseAdmin();
+  if (admin) {
+    await synchronizeJournalLifecycles(admin, journalId);
+    const [{ data: journalRow }, { data, error }] = await Promise.all([
+      admin.from("journals").select("current_issue_id").eq("id", journalId).maybeSingle(),
+      admin.from("issues").select("id, volume, issue_number, title, status, publication_date, cover_image_url").eq("journal_id", journalId)
+    ]);
+    if (!error && data) {
+      const currentId = journalRow?.current_issue_id ?? null;
+      return data.map((i) => ({ id: i.id, volume: i.volume, issue: i.issue_number, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent: i.id === currentId, publicationDate: i.publication_date || "", cover: i.cover_image_url || "" }));
+    }
+  }
+  return storeIssuesFor(journalId, slug).map((i) => mapStoreIssueSummary(i, Boolean(i.isCurrent)));
+});
 
 
 type JournalRow = {
@@ -123,6 +164,8 @@ type PublicationRow = {
   featured: boolean | null;
   content_type: "research" | "creative" | "commentary" | null;
   author_display: string | null;
+  views: number;
+  downloads: number;
   journal: JournalRow | JournalRow[] | null;
   publication_authors:
     | Array<{ position: number; author: AuthorRow | AuthorRow[] | null }>
@@ -190,14 +233,16 @@ function mapPublication(row: PublicationRow): Publication | null {
     licenseUrl: row.license_url || "",
     copyrightHolder: row.copyright_holder || "The authors",
     featured: Boolean(row.featured),
-    contentType: row.content_type || "research"
+    contentType: row.content_type || "research",
+    views: row.views ?? 0,
+    downloads: row.downloads ?? 0
   };
 }
 
 const publicationSelect = `
   id, slug, title, abstract, keywords, publication_date, updated_at,
   volume, issue_number, pages, doi, pdf_url, recommended_citation,
-  license_name, license_url, copyright_holder, featured, content_type, author_display,
+  license_name, license_url, copyright_holder, featured, content_type, author_display, views, downloads,
   journal:journals(id, slug, title, description, scope, issn, hero_image_url, accent),
   publication_authors(position, author:authors(id, slug, name, bio, affiliation, credentials, orcid, image_url))
 `;
@@ -205,7 +250,7 @@ const publicationSelect = `
 const homePublicationSelect = `
   id, slug, title, abstract, keywords, publication_date, updated_at,
   volume, issue_number, pages, doi, pdf_url, recommended_citation,
-  license_name, license_url, copyright_holder, featured, content_type, author_display,
+  license_name, license_url, copyright_holder, featured, content_type, author_display, views, downloads,
   journal:journals(id, slug, title, description, scope, issn, hero_image_url, accent),
   publication_authors(position, author:authors(id, slug, name))
 `;
@@ -376,6 +421,8 @@ export async function getPublication(slug: string) {
 export const getJournals = cache(async (): Promise<Journal[]> => {
   const supabase = getPublicSupabase();
   if (!supabase) return fallbackJournals();
+  const admin = getSupabaseAdmin();
+  if (admin) await synchronizeJournalLifecycles(admin);
   const { data, error } = await supabase
     .from("journals")
     .select("id, slug, title, description, scope, issn, hero_image_url, accent")
@@ -392,6 +439,8 @@ export const getJournals = cache(async (): Promise<Journal[]> => {
 export async function getJournal(slug: string) {
   const supabase = getPublicSupabase();
   if (!supabase) return fallbackJournals().find((journal) => journal.slug === slug) || null;
+  const admin = getSupabaseAdmin();
+  if (admin) await synchronizeJournalLifecycles(admin);
   const { data, error } = await supabase
     .from("journals")
     .select("id, slug, title, description, scope, issn, hero_image_url, accent")

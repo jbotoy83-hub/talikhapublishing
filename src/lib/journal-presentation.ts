@@ -34,6 +34,7 @@ export function getJournalPresentation(journal: Journal): JournalPresentation {
 type JournalIssueGroup = {
   issue: string;
   publications: Array<Pick<Publication, "id" | "volume" | "issue">>;
+  cover?: string;
 };
 
 export type JournalVolumeGroup = {

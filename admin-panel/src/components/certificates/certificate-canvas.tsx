@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import type { CertificatePage, CertificateBlock, CertificateField, WorkspaceMode } from "./types";
-import { resolveText, measureTextFit, contentToSegments, segmentsToBuilderText, resolveSegments } from "./field-engine";
+import { resolveText, measureTextFit, contentToSegments, segmentsToBuilderText } from "./field-engine";
 import { InlineTextEditor } from "./inline-text-editor";
 
 interface CanvasProps {
@@ -22,7 +22,9 @@ interface CanvasProps {
   pdfDataUrl?: string | null;
 }
 
-const HANDLE_SIZE = 8;
+// Large enough to grab confidently with a mouse or touch, while still keeping
+// the selected object readable underneath.
+const HANDLE_SIZE = 22;
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type HandleDir = (typeof HANDLES)[number];
 
@@ -47,6 +49,37 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [resize, setResize] = useState<{ blockId: string; handle: HandleDir; startX: number; startY: number; origX: number; origY: number; origW: number; origH: number; aspectRatio: number } | null>(null);
   const [fitZoom, setFitZoom] = useState(1);
+  // Pointer devices can produce 120–240 move events per second. Committing each
+  // one made the whole workspace (inspector, validation, layers) re-render and
+  // was also happening twice because block events bubbled to the canvas. Keep
+  // the editor in step with the screen refresh instead.
+  const pendingUpdateRef = useRef<{ id: string; updates: Partial<CertificateBlock> } | null>(null);
+  const updateFrameRef = useRef<number | null>(null);
+
+  const flushPendingUpdate = useCallback(() => {
+    if (updateFrameRef.current !== null) {
+      cancelAnimationFrame(updateFrameRef.current);
+      updateFrameRef.current = null;
+    }
+    const pending = pendingUpdateRef.current;
+    pendingUpdateRef.current = null;
+    if (pending) onUpdateBlock(pending.id, pending.updates, true);
+  }, [onUpdateBlock]);
+
+  const queueBlockUpdate = useCallback((id: string, updates: Partial<CertificateBlock>) => {
+    pendingUpdateRef.current = { id, updates };
+    if (updateFrameRef.current !== null) return;
+    updateFrameRef.current = requestAnimationFrame(() => {
+      updateFrameRef.current = null;
+      const pending = pendingUpdateRef.current;
+      pendingUpdateRef.current = null;
+      if (pending) onUpdateBlock(pending.id, pending.updates, true);
+    });
+  }, [onUpdateBlock]);
+
+  useEffect(() => () => {
+    if (updateFrameRef.current !== null) cancelAnimationFrame(updateFrameRef.current);
+  }, []);
 
   const pageBlocks = useMemo(() => blocks.filter((b) => b.pageId === page.id && !b.hidden), [blocks, page.id]);
   const sortedBlocks = useMemo(() => pageBlocks.slice().sort((a, b) => a.zIndex - b.zIndex), [pageBlocks]);
@@ -107,7 +140,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       let nx = drag.origX + dx;
       let ny = drag.origY + dy;
       if (e.shiftKey) { nx = Math.round(nx / 10) * 10; ny = Math.round(ny / 10) * 10; }
-      onUpdateBlock(drag.blockId, { x: Math.max(0, nx), y: Math.max(0, ny) }, true);
+      queueBlockUpdate(drag.blockId, { x: Math.max(0, nx), y: Math.max(0, ny) });
     }
     if (resize) {
       const dx = (e.clientX - resize.startX) / scale;
@@ -116,7 +149,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       const minS = 20;
       const block = blocks.find((b) => b.id === resize.blockId);
       const isImage = block?.type === "image";
-      const constrain = e.shiftKey;
+      const constrain = e.shiftKey || block?.imageShape === "circle";
 
       if (constrain && isImage) {
         const ar = resize.aspectRatio;
@@ -138,11 +171,11 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
         if (resize.handle.includes("n")) { h = Math.max(minS, h - dy); y = y + dy; }
         if (e.shiftKey && !isImage) { x = Math.round(x / 10) * 10; y = Math.round(y / 10) * 10; w = Math.round(w / 10) * 10; h = Math.round(h / 10) * 10; }
       }
-      onUpdateBlock(resize.blockId, { x: Math.max(0, x), y: Math.max(0, y), width: w, height: h }, true);
+      queueBlockUpdate(resize.blockId, { x: Math.max(0, x), y: Math.max(0, y), width: w, height: h });
     }
-  }, [drag, resize, effectiveZoom, onUpdateBlock, blocks]);
+  }, [drag, resize, effectiveZoom, queueBlockUpdate, blocks]);
 
-  const onPointerUp = useCallback(() => { setDrag(null); setResize(null); }, []);
+  const onPointerUp = useCallback(() => { flushPendingUpdate(); setDrag(null); setResize(null); }, [flushPendingUpdate]);
 
   const onCanvasClick = useCallback((e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
@@ -218,8 +251,12 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       textJustify: block.style.textAlign === "justify" ? "inter-word" : undefined,
       padding: block.style.padding,
       overflow: "hidden",
+      display: "block",
+      minWidth: 0,
+      overflowWrap: "anywhere",
       wordBreak: "break-word",
       whiteSpace: "pre-wrap",
+      hyphens: "auto",
       width: "100%",
       height: "100%",
       boxSizing: "border-box",
@@ -232,6 +269,8 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       objectFit: block.style.objectFit || "contain",
       pointerEvents: "none",
       display: "block",
+      transform: `translate(${block.style.cropX || 0}%, ${block.style.cropY || 0}%) scale(${block.style.cropZoom || 1})`,
+      transformOrigin: "center",
       borderRadius: block.style.borderRadius ? Math.max(0, block.style.borderRadius - (block.style.borderWidth || 0)) : 0,
     } : {};
 
@@ -241,8 +280,6 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
         style={blockStyle}
         onPointerDown={(e) => onPointerDownBlock(e, block)}
         onDoubleClick={(e) => onDoubleClickBlock(e, block)}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
         className={`cert-block${isEditing ? " is-editing" : ""}`}
       >
         {block.type === "text" && isEditing && (
@@ -260,16 +297,17 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
               ? (s.style && Object.keys(s.style).length > 0
                 ? <span key={i} style={runCSS(s.style)}>{s.v}</span>
                 : <React.Fragment key={i}>{s.v}</React.Fragment>)
-              : <span key={i} className="cert-chip cert-chip--static" contentEditable={false}>{labelOf(s.k)}</span>)}
+              : <span key={i} className="cert-chip cert-chip--static" style={runCSS(s.style || {})} contentEditable={false}>{labelOf(s.k)}</span>)}
             {builderText === "" && <span style={{ color: "#9ca3af", fontStyle: "italic" }}>Double-click to edit text</span>}
           </div>
         )}
         {block.type === "text" && !isEditing && mode === "generator" && (
           <div style={textStyle}>
-            {segs.length > 0 ? resolveSegments(segs, fieldValues).map((r, i) =>
-              r.style && Object.keys(r.style).length > 0
-                ? <span key={i} style={runCSS(r.style)}>{r.text}</span>
-                : <React.Fragment key={i}>{r.text}</React.Fragment>
+            {segs.length > 0 ? segs.map((segment, i) => segment.t === "f"
+              ? <span key={i} style={runCSS(segment.style?.fontWeight ? segment.style : (block.style.linkedFieldBold ? { fontWeight: 700 } : {}))}>{fieldValues[segment.k] || ""}</span>
+              : (segment.style && Object.keys(segment.style).length > 0
+                ? <span key={i} style={runCSS(segment.style)}>{segment.v}</span>
+                : <React.Fragment key={i}>{segment.v}</React.Fragment>)
             ) : <span style={{ color: "#9ca3af", fontStyle: "italic" }}>{isLinked ? "{{" + (block.linkedFieldKey || "") + "}}" : ""}</span>}
           </div>
         )}
@@ -298,7 +336,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
         )}
 
         {isSelected && !block.locked && !isEditing && HANDLES.map((h) => {
-          const hs: React.CSSProperties = { position: "absolute", width: HANDLE_SIZE, height: HANDLE_SIZE, background: "#fff", border: "2px solid #2563eb", borderRadius: 2, zIndex: 10 };
+          const hs: React.CSSProperties = { position: "absolute", width: HANDLE_SIZE, height: HANDLE_SIZE, background: "#fff", border: "3px solid #2563eb", borderRadius: 5, zIndex: 10, boxShadow: "0 1px 4px rgba(37,99,235,.28)" };
           if (h.includes("n")) hs.top = -HANDLE_SIZE / 2;
           if (h.includes("s")) hs.bottom = -HANDLE_SIZE / 2;
           if (h.includes("w")) hs.left = -HANDLE_SIZE / 2;
@@ -307,7 +345,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
           if (h === "w" || h === "e") { hs.top = "50%"; hs.transform = "translateY(-50%)"; }
           const cursors: Record<HandleDir, string> = { nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize", se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize" };
           hs.cursor = cursors[h];
-          return <div key={h} style={hs} onPointerDown={(e) => onPointerDownResize(e, block, h)} onPointerMove={onPointerMove} onPointerUp={onPointerUp} />;
+          return <div key={h} style={hs} onPointerDown={(e) => onPointerDownResize(e, block, h)} />;
         })}
       </div>
     );
@@ -323,7 +361,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
         <button onClick={() => onZoomChange(1)} title="100%" className={zoom === 1 ? "active" : ""}>1:1</button>
       </div>
 
-      <div className="cert-canvas-scroll" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onClick={onCanvasClick}>
+      <div className={`cert-canvas-scroll ${zoom === 0 ? "is-fit" : ""}`} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onClick={onCanvasClick}>
         <div
           className="cert-canvas-page"
           style={{ width: page.width, height: page.height, transform: `scale(${effectiveZoom})`, transformOrigin: "top center" }}

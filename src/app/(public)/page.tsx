@@ -18,12 +18,12 @@ const journalColors = ["from-emerald-900 via-emerald-700 to-amber-600","from-ros
 
 export default async function HomePage() {
   const [publishedJournals, publications, counts] = await Promise.all([getJournals(), getHomePublications(), getPublicContentCounts()]);
-  const journalCards = publishedJournals.slice(0, 3).map((journal) => {
+  const journalCards = await Promise.all(publishedJournals.slice(0, 3).map(async (journal) => {
     const presentation = getJournalPresentation(journal);
-    const records = publications.filter((publication) => publication.journal.id === journal.id);
-    const cur = getCurrentIssueForJournal(journal.id);
+    const records = publications.filter((publication) => publication.journal.slug === journal.slug);
+    const cur = await getCurrentIssueForJournal(journal.id, journal.slug);
     return { ...journal, type: presentation.type, cadence: presentation.cadence, issue: cur ? "Vol. " + cur.volume + ", No. " + cur.issue : archiveIssueLabel(records[0]) };
-  });
+  }));
   return <main id="main-content">
     <section className="hero home-hero flex items-center">
       <Image src="/assets/home-eagle-researcher-3d.webp" alt="Illustrated Philippine eagle researcher studying botanical specimens in a warm library" className="hero-background" width={1680} height={945} sizes="100vw" fetchPriority="high" priority/>

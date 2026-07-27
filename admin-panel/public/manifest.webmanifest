@@ -1,0 +1,19 @@
+{
+  "id": "/admin/",
+  "name": "Talikha Publishing Admin",
+  "short_name": "Talikha Admin",
+  "description": "Secure editorial workspace for Talikha Publishing.",
+  "start_url": "/admin?view=overview",
+  "scope": "/admin/",
+  "display": "standalone",
+  "background_color": "#f7f8f7",
+  "theme_color": "#123125",
+  "icons": [
+    {
+      "src": "/admin/admin-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

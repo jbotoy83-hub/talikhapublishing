@@ -1162,6 +1162,7 @@ export type Database = {
           copyright_holder: string
           created_at: string
           doi: string | null
+          downloads: number
           featured: boolean
           id: string
           issue_id: string | null
@@ -1182,6 +1183,7 @@ export type Database = {
           status: string
           title: string
           updated_at: string
+          views: number
           volume: string | null
         }
         Insert: {
@@ -1191,6 +1193,7 @@ export type Database = {
           copyright_holder?: string
           created_at?: string
           doi?: string | null
+          downloads?: number
           featured?: boolean
           id?: string
           issue_id?: string | null
@@ -1211,6 +1214,7 @@ export type Database = {
           status?: string
           title: string
           updated_at?: string
+          views?: number
           volume?: string | null
         }
         Update: {
@@ -1220,6 +1224,7 @@ export type Database = {
           copyright_holder?: string
           created_at?: string
           doi?: string | null
+          downloads?: number
           featured?: boolean
           id?: string
           issue_id?: string | null
@@ -1240,6 +1245,7 @@ export type Database = {
           status?: string
           title?: string
           updated_at?: string
+          views?: number
           volume?: string | null
         }
         Relationships: [
@@ -1783,6 +1789,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      increment_publication_metric: {
+        Args: { p_field: string; p_publication_id: string }
+        Returns: undefined
       }
       respond_to_author_request: {
         Args: {

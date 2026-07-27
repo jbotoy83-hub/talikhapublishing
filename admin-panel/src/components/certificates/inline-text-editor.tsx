@@ -11,11 +11,12 @@ interface InlineTextEditorProps {
   onCommit: (segs: TextSegment[]) => void;
 }
 
-function makeChipEl(key: string, label: string): HTMLSpanElement {
+function makeChipEl(key: string, label: string, style?: Partial<BlockStyle>): HTMLSpanElement {
   const span = document.createElement("span");
   span.className = "cert-chip";
   span.contentEditable = "false";
   span.setAttribute("data-key", key);
+  if (style && Object.keys(style).length) { span.setAttribute("data-style", JSON.stringify(style)); applyInlineStyle(span, style); }
   span.textContent = label;
   return span;
 }
@@ -49,6 +50,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastSerialized = useRef<string>("");
   const focusedRef = useRef(false);
+  const selectionDraggingRef = useRef(false);
   const committedRef = useRef(false);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const savedRange = useRef<Range | null>(null);
@@ -71,7 +73,11 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
         const e = node as HTMLElement;
         if (e.classList.contains("cert-chip")) {
           const k = e.getAttribute("data-key");
-          if (k) out.push({ t: "f", k });
+          if (k) {
+            let style: Partial<BlockStyle> | undefined;
+            try { const raw = e.getAttribute("data-style"); if (raw) style = JSON.parse(raw) as Partial<BlockStyle>; } catch { /* no local field style */ }
+            out.push({ t: "f", k, style });
+          }
         } else if (e.classList.contains("cert-run")) {
           const styleStr = e.getAttribute("data-style");
           let runStyle: Partial<BlockStyle> | undefined;
@@ -136,7 +142,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           el.appendChild(document.createTextNode(s.v));
         }
       } else {
-        el.appendChild(makeChipEl(s.k, labelOf(s.k)));
+        el.appendChild(makeChipEl(s.k, labelOf(s.k), s.style));
       }
     }
     lastSerialized.current = JSON.stringify(segs);
@@ -223,18 +229,20 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     const top = (rr.top - wr.top) / z - 48;
     left = Math.max(4, Math.min(left, wr.width / z - 4));
     savedRange.current = range.cloneRange();
-    setPopover((prev) => ({ x: left, y: Math.max(4, top), mode: prev?.mode || "toolbar" }));
+    // Formatting lives in the main editor toolbar. Keep the saved selection
+    // quietly, and only position a panel when the user explicitly opens Link.
+    setPopover((prev) => prev ? { ...prev, x: left, y: Math.max(4, top) } : null);
   }, [zoom]);
 
   useEffect(() => {
-    const handler = () => { if (focusedRef.current) updatePopover(); };
+    const handler = () => { if (focusedRef.current && !selectionDraggingRef.current) updatePopover(); };
     document.addEventListener("selectionchange", handler);
     return () => document.removeEventListener("selectionchange", handler);
   }, [updatePopover]);
 
   const openPanel = useCallback((mode: "link" | "style") => {
     saveSelection();
-    setPopover((prev) => prev ? { ...prev, mode } : null);
+    setPopover((prev) => prev ? { ...prev, mode } : { x: 50, y: 4, mode });
     if (mode === "style") {
       setCustomStyle({});
     }
@@ -242,6 +250,12 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
       setLinkSearch("");
     }
   }, [saveSelection]);
+
+  useEffect(() => {
+    const handler = () => { if (focusedRef.current && savedRange.current) openPanel("link"); };
+    window.addEventListener("cert-open-link-panel", handler);
+    return () => window.removeEventListener("cert-open-link-panel", handler);
+  }, [openPanel]);
 
   const closePopover = useCallback(() => {
     setPopover(null);
@@ -281,12 +295,42 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ style: Partial<BlockStyle>; toggleProp?: string }>).detail;
+      const detail = (e as CustomEvent<{ style: Partial<BlockStyle>; toggleProp?: string; fontSizeDelta?: number }>).detail;
       if (!detail || !detail.style) return;
       restoreSelection();
       const sel = window.getSelection();
       const el = editorRef.current;
       if (!sel || !sel.rangeCount || sel.isCollapsed || !el) return;
+      if (detail.fontSizeDelta) {
+        const delta = detail.fontSizeDelta;
+        const range = sel.getRangeAt(0);
+        const wholeEditor = document.createRange();
+        wholeEditor.selectNodeContents(el);
+        const selectsWholeEditor = range.compareBoundaryPoints(Range.START_TO_START, wholeEditor) === 0
+          && range.compareBoundaryPoints(Range.END_TO_END, wholeEditor) === 0;
+        if (selectsWholeEditor) {
+          window.dispatchEvent(new CustomEvent("cert-change-block-font-size", { detail: { delta } }));
+          setPopover(null);
+          return;
+        }
+        const styledRuns = [...el.querySelectorAll<HTMLElement>(".cert-run")].filter((run) => range.intersectsNode(run));
+        // Apply a size to ordinary text, then adjust existing styled runs so a
+        // select-all operation never leaves part of the paragraph unchanged.
+        const baseSize = Math.max(1, style.fontSize + delta);
+        applyStyleToSelection({ fontSize: baseSize });
+        styledRuns.forEach((run) => {
+          let runStyle: Partial<BlockStyle> = {};
+          try { runStyle = JSON.parse(run.getAttribute("data-style") || "{}") as Partial<BlockStyle>; } catch { /* use inherited size */ }
+          const current = runStyle.fontSize || style.fontSize;
+          runStyle.fontSize = Math.max(1, current + delta);
+          run.setAttribute("data-style", JSON.stringify(runStyle));
+          run.removeAttribute("style");
+          applyInlineStyle(run, runStyle);
+        });
+        handleInput();
+        setPopover(null);
+        return;
+      }
       if (detail.toggleProp) {
         const anchor = sel.anchorNode;
         const runEl = anchor && anchor.nodeType === Node.TEXT_NODE
@@ -321,7 +365,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     };
     window.addEventListener("cert-apply-format", handler);
     return () => window.removeEventListener("cert-apply-format", handler);
-  }, [restoreSelection, applyStyleToSelection, handleInput]);
+  }, [restoreSelection, applyStyleToSelection, handleInput, style.fontSize]);
 
   const clearStyleFromSelection = useCallback(() => {
     const el = editorRef.current;
@@ -366,6 +410,25 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     setPopover(null);
     handleInput();
   }, [labelOf, handleInput, restoreSelection]);
+
+  const removeFieldLink = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    restoreSelection();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const fragment = range.cloneContents();
+    const chip = fragment.querySelector?.(".cert-chip") as HTMLElement | null;
+    const replacement = chip?.textContent || range.toString() || "Linked field";
+    range.deleteContents();
+    const text = document.createTextNode(replacement);
+    range.insertNode(text);
+    const after = document.createRange(); after.setStartAfter(text); after.collapse(true);
+    sel.removeAllRanges(); sel.addRange(after);
+    closePopover();
+    handleInput();
+  }, [restoreSelection, closePopover, handleInput]);
 
   const filteredFields = fields.filter((f) =>
     !linkSearch || f.label.toLowerCase().includes(linkSearch.toLowerCase()) || f.key.includes(linkSearch.toLowerCase())
@@ -418,7 +481,9 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           commit();
         }}
         onFocus={() => { focusedRef.current = true; }}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => { e.stopPropagation(); selectionDraggingRef.current = true; setPopover(null); }}
+        onPointerUp={(e) => { e.stopPropagation(); selectionDraggingRef.current = false; requestAnimationFrame(updatePopover); }}
+        onKeyUp={() => updatePopover()}
         onMouseDown={(e) => e.stopPropagation()}
       />
       {popover && (
@@ -445,7 +510,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
             <div className="cert-sel-link-panel">
               <div className="cert-sel-panel-head">
                 <span className="cert-sel-panel-title">Link to field</span>
-                <button type="button" className="cert-sel-panel-back" onMouseDown={(e) => { e.preventDefault(); setPopover((p) => p ? { ...p, mode: "toolbar" } : null); }}>Back</button>
+                <button type="button" className="cert-sel-panel-back" onMouseDown={(e) => { e.preventDefault(); closePopover(); }}>Close</button>
               </div>
               <input
                 className="cert-sel-search"
@@ -464,6 +529,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
                 ))}
                 {filteredFields.length === 0 && <p className="cert-sel-empty">No matching fields</p>}
               </div>
+              <button type="button" className="cert-sel-style-clear" onMouseDown={(e) => { e.preventDefault(); removeFieldLink(); }}>Remove link</button>
             </div>
           )}
 

@@ -178,7 +178,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The authors",
     featured: true,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "b2222222-2222-4222-8222-222222222222",
@@ -202,7 +204,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The authors",
     featured: true,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "b3333333-3333-4333-8333-333333333333",
@@ -226,7 +230,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: true,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   },
   {
     id: "c1111111-1111-4111-8111-111111111111",
@@ -248,7 +254,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The authors",
     featured: true,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "c2222222-2222-4222-8222-222222222222",
@@ -270,7 +278,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: false,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "c3333333-3333-4333-8333-333333333333",
@@ -292,7 +302,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The authors",
     featured: true,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "c4444444-4444-4444-8444-444444444444",
@@ -314,7 +326,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: false,
-    contentType: "research"
+    contentType: "research",
+    views: 0,
+    downloads: 0
   },
   {
     id: "c5555555-5555-4555-8555-555555555555",
@@ -336,7 +350,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: true,
-    contentType: "commentary"
+    contentType: "commentary",
+    views: 0,
+    downloads: 0
   },
   {
     id: "d1111111-1111-4111-8111-111111111111",
@@ -358,7 +374,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: true,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   },
   {
     id: "d2222222-2222-4222-8222-222222222222",
@@ -380,7 +398,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: false,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   },
   {
     id: "d3333333-3333-4333-8333-333333333333",
@@ -402,7 +422,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: true,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   },
   {
     id: "d4444444-4444-4444-8444-444444444444",
@@ -424,7 +446,9 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: false,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   },
   {
     id: "d5555555-5555-4555-8555-555555555555",
@@ -446,6 +470,8 @@ export const demoPublications: Publication[] = [
     licenseUrl: ccByUrl,
     copyrightHolder: "The author",
     featured: true,
-    contentType: "creative"
+    contentType: "creative",
+    views: 0,
+    downloads: 0
   }
 ];

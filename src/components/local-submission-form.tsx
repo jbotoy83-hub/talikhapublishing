@@ -215,7 +215,13 @@ function QrSvg({ modules, className }: { modules: boolean[][]; className?: strin
   );
 }
 
-export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: { slug: string; id: string; issueId: string }[] } = {}) {
+export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: { slug: string; id: string; issueId: string; title: string; description: string; scope: string; volume: string; issue: string; status: "Accepting submissions" | "Accepting advance submissions" }[] } = {}) {
+  const JOURNAL_OPTIONS: JournalOption[] = serverJournals.length > 0
+    ? serverJournals.map((sj) => {
+        const known = TEMP_JOURNALS.find((t) => t.slug === sj.slug);
+        return known ?? { slug: sj.slug, title: sj.title, longTitle: sj.title, scope: sj.scope || sj.description, blurb: sj.description || sj.scope, icon: "book" as const, summaryField: "Abstract", summaryHint: "Summarize the study — its purpose, method, and key findings." };
+      })
+    : TEMP_JOURNALS;
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -541,7 +547,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       author: fullName(form) || "Unnamed author",
       email: form.email,
       affiliation: form.affiliation,
-      journal: TEMP_JOURNALS.find((j) => j.slug === form.journal)?.title || form.journal,
+      journal: JOURNAL_OPTIONS.find((j) => j.slug === form.journal)?.title || form.journal,
       status: "New",
       submittedAt: now.toISOString().slice(0, 10),
       displayDate: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
@@ -586,13 +592,13 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       <p className="eyebrow">{serverSubmitted ? "Submission received" : "Submission saved"}</p>
       <h2>{serverSubmitted ? "Your work is now in editorial hands." : "Your local editorial record is ready."}</h2>
       <p className="submission-success-lead">{serverSubmitted ? "Your manuscript and payment proof have been delivered to the protected editorial desk. We will review them and be in touch by email." : message}</p>
-      <aside className="submission-receipt"><p>Submission reference</p><strong>{reference}</strong><span>{serverSubmitted ? "Keep this reference number. Use Track Submission to follow your progress at any time." : "Copy or screenshot this reference. Use it in Track Submission to follow progress on this device."}</span>{serverSubmitted ? null : <small>Email receipts will be available once an email service is connected.</small>}</aside>
+      <aside className="submission-receipt"><p>Submission reference</p><strong><Link href={`/track?reference=${encodeURIComponent(reference)}`}>{reference}</Link></strong><span>{serverSubmitted ? "Use this reference as your tracking ticket. Select it to open your progress at any time." : "Copy or screenshot this reference. Use it in Track Submission to follow progress on this device."}</span>{serverSubmitted ? null : <small>Email receipts will be available once an email service is connected.</small>}</aside>
       <div className="submission-success-actions"><button type="button" className="submission-primary" onClick={() => router.push(`/track?reference=${encodeURIComponent(reference)}`)}>Track Submission <Icon name="arrow" className="h-4 w-4" /></button><button type="button" className="submission-secondary" onClick={() => { setReference(""); setServerSubmitted(false); setSubmitError(""); setStep(0); setForm(emptyForm); setErrors({}); }}>Submit another work</button></div>
     </section>;
   }
 
   const abstractWords = wordCount(form.summary);
-  const journalMeta = TEMP_JOURNALS.find((j) => j.slug === form.journal);
+  const journalMeta = JOURNAL_OPTIONS.find((j) => j.slug === form.journal);
   const summaryField = journalMeta?.summaryField ?? "Abstract";
   const summaryHint = journalMeta?.summaryHint ?? "Summarize the study — its purpose, method, and key findings.";
   const summaryPlaceholder = `Enter your ${summaryField.toLowerCase()}…`;
@@ -605,7 +611,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   ];
   const multipleAuthors = reviewAuthors.length > 1;
 
-  const selectedJournal = TEMP_JOURNALS.find((j) => j.slug === form.journal);
+  const selectedJournal = JOURNAL_OPTIONS.find((j) => j.slug === form.journal);
+  const selectedServerJournal = serverJournals.find((journal) => journal.slug === form.journal);
   const selectedPlan = PUBLICATION_PLANS.find((p) => p.id === plan);
   const selectedMethod = PAYMENT_METHODS.find((m) => m.id === paymentMethod);
   const subtotal = selectedPlan ? selectedPlan.price : 0;
@@ -709,7 +716,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
           <label htmlFor="journal">Journal</label>
           <select id="journal" value={form.journal} onChange={(e) => update("journal", e.target.value)} className={form.journal ? "" : "is-placeholder"} required>
             <option value="">Select journal</option>
-            {TEMP_JOURNALS.map((j) => <option key={j.slug} value={j.slug}>{j.title}</option>)}
+            {JOURNAL_OPTIONS.map((j) => <option key={j.slug} value={j.slug}>{j.title}</option>)}
           </select>
           {errors.journal && <small className="field-error">{errors.journal}</small>}
         </div>
@@ -721,6 +728,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
           </select>
         </div>
         <div className={`floating-field full ${errors.title ? "has-error" : ""}`}>
+          {selectedServerJournal && <div className="submission-issue-assignment" role="status"><strong>{selectedServerJournal.title} · Volume {selectedServerJournal.volume}, Issue {selectedServerJournal.issue}</strong><span>{selectedServerJournal.status} · This assignment is managed by the editorial team.</span></div>}
           <label htmlFor="title">Manuscript title</label>
           <input id="title" type="text" value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="Enter the full title of your manuscript" required />
           {errors.title && <small className="field-error">{errors.title}</small>}
@@ -980,7 +988,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                   <AnimatePresence>
                     {journalOpen && (
                       <motion.ul className="bill-select-menu" role="listbox" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}>
-                        {TEMP_JOURNALS.map((j) => (
+                        {JOURNAL_OPTIONS.map((j) => (
                           <li key={j.slug}>
                             <button type="button" role="option" aria-selected={form.journal === j.slug} className={`bill-select-option ${form.journal === j.slug ? "is-selected" : ""}`} onClick={() => selectJournal(j.slug)}>
                               <span className="opt-ico"><Icon name={j.icon} className="h-5 w-5" /></span>

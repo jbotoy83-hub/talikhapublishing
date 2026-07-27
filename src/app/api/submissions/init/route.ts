@@ -5,6 +5,7 @@ import { submissionInitSchema } from "@/lib/submission";
 import { isSubmissionsEnabled } from "@/lib/launch";
 import { allowRequest, getRequestRateLimitKey } from "@/lib/rate-limit";
 import { verifyTurnstileToken } from "@/lib/turnstile";
+import { synchronizeJournalLifecycles } from "@/lib/journal-lifecycle";
 
 const MAX_INIT_BODY_BYTES = 32 * 1024;
 
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
   if (!allowRequest(`submission:${ip}`)) return NextResponse.json({ error: "Too many submission attempts. Please wait before trying again." }, { status: 429 });
   const admin = getSupabaseAdmin();
   if (!admin) return NextResponse.json({ error: "Secure submissions are not configured yet." }, { status: 503 });
+  await synchronizeJournalLifecycles(admin);
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_INIT_BODY_BYTES) return NextResponse.json({ error: "Submission details are too large." }, { status: 413 });
   const parsed = submissionInitSchema.safeParse(await request.json().catch(() => null));
@@ -35,39 +37,43 @@ export async function POST(request: NextRequest) {
   }
   const { data: journal } = await admin
     .from("journals")
-    .select("id, title, slug, current_issue_id")
+    .select("id, title, slug, current_issue_id, submission_issue_id")
     .eq("id", input.journalId)
     .eq("slug", input.preferredJournal)
     .maybeSingle();
-  if (!journal || journal.current_issue_id !== input.issueId) {
-    return NextResponse.json({ error: "That journal's current issue has changed. Refresh the form and choose it again." }, { status: 409 });
+  if (!journal || journal.submission_issue_id !== input.issueId) {
+    return NextResponse.json({ error: "That journal's submission target has changed. Refresh the form and choose it again." }, { status: 409 });
   }
   const { data: issue } = await admin
     .from("issues")
-    .select("id, journal_id, volume, issue_number")
+    .select("id, journal_id, volume, issue_number, editorial_metadata, status")
     .eq("id", input.issueId)
     .maybeSingle();
-  if (!issue || issue.journal_id !== journal.id) {
-    return NextResponse.json({ error: "The selected issue does not belong to that journal." }, { status: 400 });
+  const today = new Date().toISOString().slice(0, 10);
+  const issueMetadata = issue?.editorial_metadata && typeof issue.editorial_metadata === "object" ? issue.editorial_metadata as { submissionDeadline?: string } : {};
+  if (!issue || issue.journal_id !== journal.id || issue.status === "archived" || (issueMetadata.submissionDeadline && issueMetadata.submissionDeadline < today)) {
+    return NextResponse.json({ error: "That issue is no longer accepting submissions. Please refresh the form." }, { status: 409 });
   }
   const reference = `TAL-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
   const { data: submission, error } = await admin.from("submissions").insert({ reference, title: input.workingTitle, publication_type: input.publicationType, preferred_journal_id: journal.id, assigned_issue_id: issue.id, journal_title_snapshot: journal.title, volume_snapshot: issue.volume, issue_snapshot: issue.issue_number, abstract: "", author_name: input.authorName, author_email: input.authorEmail, affiliation: input.affiliation || null, phone: input.phone || null, author_notes: input.notes || null, author_details: input.authorDetails, status: "uploading", consent_at: new Date().toISOString(), source_ip_hash: null }).select("id").single();
   if (error || !submission) return NextResponse.json({ error: "Could not create the protected submission record." }, { status: 500 });
 
-  if (input.paymentMethod || input.paymentReference || input.publicationPlan) {
-    await admin.from("payments").insert({
-      submission_id: submission.id,
-      payment_reference: input.paymentReference || null,
-      provider: input.paymentMethod || null,
-      amount: input.paymentTotal ?? 0,
-      currency: "PHP",
-      status: "pending",
-      metadata: {
-        publication_plan: input.publicationPlan || null,
-        promo_code: input.promoCode || null,
-        source: "public_submission"
-      }
-    });
+  const { error: paymentError } = await admin.from("payments").insert({
+    submission_id: submission.id,
+    payment_reference: input.paymentReference,
+    provider: input.paymentMethod,
+    amount: input.paymentTotal ?? 0,
+    currency: "PHP",
+    status: "pending",
+    metadata: {
+      publication_plan: input.publicationPlan || null,
+      promo_code: input.promoCode || null,
+      source: "public_submission"
+    }
+  });
+  if (paymentError) {
+    await admin.from("submissions").delete().eq("id", submission.id);
+    return NextResponse.json({ error: "Could not create the payment record." }, { status: 500 });
   }
 
   const uploads = [];

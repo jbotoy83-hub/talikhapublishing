@@ -46,9 +46,14 @@ export interface BlockStyle {
   borderColor?: string;
   borderStyle?: "none" | "solid" | "dashed" | "dotted";
   shadow?: string;
+  imageShape?: "rectangle" | "circle";
+  linkedFieldBold?: boolean;
+  cropX?: number;
+  cropY?: number;
+  cropZoom?: number;
 }
 
-export type TextSegment = { t: "s"; v: string; style?: Partial<BlockStyle> } | { t: "f"; k: string };
+export type TextSegment = { t: "s"; v: string; style?: Partial<BlockStyle> } | { t: "f"; k: string; style?: Partial<BlockStyle> };
 
 export interface CertificateBlock {
   id: string;
@@ -69,6 +74,9 @@ export interface CertificateBlock {
   hidden: boolean;
   name: string;
   assetUrl?: string;
+  assetBucket?: string | null;
+  assetPath?: string | null;
+  imageShape?: "rectangle" | "circle";
   prefix?: string;
   suffix?: string;
   minFontSize?: number;
@@ -101,12 +109,15 @@ export interface CertificateTemplate {
   certificateNumberPrefix: string;
   certificateNumberSequence: number;
   certificateNumberYear: number;
+  fonts?: Array<{ family: string; weight: number; style: string; url: string }>;
 }
 
 export interface CertificateRecord {
   id: string;
   templateId: string;
   templateVersion: number;
+  publicationId?: string;
+  authorId?: string;
   submissionId?: string;
   reference?: string;
   fieldValues: Record<string, string>;
@@ -144,18 +155,22 @@ export interface ValidationResult {
 }
 
 export const DEFAULT_FIELDS: CertificateField[] = [
-  { key: "author_name", label: "Author Name", type: "text", required: true, section: "author", placeholder: "Full name with credentials" },
-  { key: "position", label: "Position", type: "text", required: false, section: "author", placeholder: "Assistant Professor IV" },
-  { key: "institution", label: "Institution", type: "text", required: false, section: "author", placeholder: "University or organization name" },
-  { key: "location", label: "Address", type: "text", required: false, section: "author", placeholder: "City, Province, Country" },
+  { key: "author_name", label: "Author Name", type: "text", required: true, section: "author", placeholder: "First name, middle initial, surname" },
+  { key: "author_academic_title", label: "Academic Title", type: "text", required: false, section: "author", placeholder: "LPT, PhD, MAEd" },
+  { key: "author_role", label: "Role or Occupation", type: "text", required: false, section: "author", placeholder: "Faculty, Teacher, Assistant Professor" },
+  { key: "author_affiliation", label: "Affiliation", type: "text", required: false, section: "author", placeholder: "University or organization" },
   { key: "work_title", label: "Article Title", type: "text", required: true, section: "publication", placeholder: "The full title of the article" },
   { key: "doi", label: "DOI", type: "doi", required: false, section: "publication", placeholder: "10.5281/zenodo.XXXXXXXX", validationRule: "doi" },
   { key: "publication_name", label: "Publication Name", type: "text", required: true, section: "publication", placeholder: "Journal or magazine name" },
-  { key: "volume", label: "Volume", type: "text", required: false, section: "publication" },
-  { key: "issue", label: "Issue", type: "text", required: false, section: "publication" },
-  { key: "pub_month", label: "Publication Month", type: "text", required: false, section: "publication", placeholder: "e.g. January 2026" },
+  { key: "volume_number", label: "Volume", type: "text", required: false, section: "publication" },
+  { key: "issue_number", label: "Issue", type: "text", required: false, section: "publication" },
+  { key: "issue_date", label: "Issue Date", type: "text", required: false, section: "publication" },
+  { key: "issn_online", label: "ISSN Online", type: "text", required: false, section: "publication" },
+  { key: "issn_print", label: "ISSN Print", type: "text", required: false, section: "publication" },
   { key: "date_issued", label: "Date Issued", type: "date", required: true, section: "certificate" },
   { key: "certificate_number", label: "Certificate Number", type: "text", required: true, section: "certificate" },
+  { key: "publisher_name", label: "Publisher", type: "text", required: true, section: "certificate" },
+  { key: "issuing_city", label: "Issuing City", type: "text", required: false, section: "certificate" },
 ];
 
 export const DEFAULT_PAGE_NAMES: { name: string; type: PageType }[] = [
@@ -190,19 +205,11 @@ export const DEFAULT_BLOCK_STYLE: BlockStyle = {
 };
 
 export const CERT_FONTS: { label: string; value: string }[] = [
-  { label: "Glacial Indifference", value: "'Glacial Indifference', 'Helvetica Neue', sans-serif" },
-  { label: "Georgia", value: "Georgia, serif" },
-  { label: "Times New Roman", value: "'Times New Roman', serif" },
-  { label: "Playfair Display", value: "'Playfair Display', serif" },
-  { label: "Lora", value: "Lora, serif" },
-  { label: "Cormorant Garamond", value: "'Cormorant Garamond', serif" },
-  { label: "Arial", value: "Arial, sans-serif" },
-  { label: "Helvetica", value: "Helvetica, sans-serif" },
-  { label: "Montserrat", value: "Montserrat, sans-serif" },
-  { label: "Raleway", value: "Raleway, sans-serif" },
-  { label: "Open Sans", value: "'Open Sans', sans-serif" },
-  { label: "Oswald", value: "Oswald, sans-serif" },
-  { label: "Courier New", value: "'Courier New', monospace" },
+  { label: "Helvetica", value: "Helvetica" },
+  { label: "Times Roman", value: "Times-Roman" },
+  { label: "Courier", value: "Courier" },
+  { label: "Oswald", value: "Oswald" },
+  { label: "Glacial Indifference", value: "Glacial Indifference" },
 ];
 
 export const FONT_SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 42, 48, 56, 64, 72, 84, 96, 108, 120, 144];
@@ -220,10 +227,3 @@ export const CANVAS_PRESETS: { label: string; width: number; height: number }[] 
 
 export const A4_LANDSCAPE = { width: 841.89, height: 595.28 };
 export const A4_PORTRAIT = { width: 595.28, height: 841.89 };
-
-export const STORAGE_KEYS = {
-  templates: "talikha-cert-templates-v2",
-  records: "talikha-cert-records-v2",
-  layout: (id: string) => `talikha-cert-layout-${id}-v2`,
-  assets: "talikha-cert-assets-v2",
-};

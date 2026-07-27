@@ -9,8 +9,7 @@ import {
   uid, validateCertificate, generateCertificateNumber,
   getFieldUsage, createDefaultTemplate, createDefaultRecord,
   createTextBlock, createLinkedBlock, createImageBlock, duplicateBlock, getMaxZIndex,
-  loadTemplates, saveTemplates, loadRecords, saveRecords,
-  readFileAsDataUrl, getImageDimensions, segmentsToContent, normalizeSegments,
+  getImageDimensions, segmentsToContent, normalizeSegments,
   resolveAllBlocks,
 } from "./field-engine";
 import { CertificateCanvas } from "./certificate-canvas";
@@ -20,9 +19,20 @@ interface WorkspaceProps {
   submissions?: Array<{ id: string; reference?: string; title?: string; author?: string }>;
 }
 
+type ImportCandidate = { publicationId: string; submissionId: string; title: string; journal: string; volume: string; issue: string; authorCount: number; ready: boolean; missing: string[] };
+type ServerRecord = { id: string; template_id: string; publication_id?: string; author_id?: string; submission_id?: string; status: CertificateRecord["status"]; field_values: Record<string, string>; certificate_number: string; created_at: string; updated_at: string };
+
+function mapServerRecord(record: ServerRecord): CertificateRecord {
+  return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
+}
+
 export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [records, setRecords] = useState<CertificateRecord[]>([]);
+  const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
+  const [importSearch, setImportSearch] = useState("");
+  const [importState, setImportState] = useState<"idle" | "loading" | "importing" | "error">("idle");
+  const [previewValues, setPreviewValues] = useState<Record<string, string>>({ publisher_name: "Talikha Publishing", issuing_city: "Butuan City" });
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
@@ -35,12 +45,18 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [showThumbnails, setShowThumbnails] = useState(false);
   const [showMargins, setShowMargins] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplatePub, setNewTemplatePub] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [cropDraft, setCropDraft] = useState<{ blockId: string; url: string; x: number; y: number; zoom: number } | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
+  const [leftToolOpen, setLeftToolOpen] = useState({ fields: false, layers: false, validation: false });
+  const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
+  const launchSubmissionId = useMemo(() => new URLSearchParams(window.location.search).get("certificateSubmission") || "", []);
+  const [launchState, setLaunchState] = useState<"idle" | "loading" | "error">(launchSubmissionId ? "loading" : "idle");
   const lastUndoRef = useRef(0);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const bgImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -50,29 +66,134 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const editingRef = useRef<string | null>(null);
   const prevEditingRef = useRef<string | null>(null);
   const templateRef = useRef<CertificateTemplate | null>(null);
+  const cropPointerRef = useRef<{ x: number; y: number; cropX: number; cropY: number; width: number; height: number } | null>(null);
 
   const template = templates.find((t) => t.id === activeTemplateId) || null;
   const record = records.find((r) => r.id === activeRecordId) || null;
   const currentPage = (template?.pages || [])[currentPageIdx] || null;
-  const activeBlocks = mode === "generator" && record?.blocks ? record.blocks : (template?.blocks || []);
+  const activeBlocks = template?.blocks || [];
   const currentBlocks = activeBlocks.filter((b) => b.pageId === currentPage?.id);
-  const fieldValues = useMemo(() => record?.fieldValues || {}, [record]);
+  const fieldValues = useMemo(() => record?.fieldValues || previewValues, [record, previewValues]);
   const selectedBlock = activeBlocks.find((b) => b.id === selectedBlockId) || null;
   templateRef.current = template;
   editingRef.current = editingBlockId;
 
-  useEffect(() => {
-    const loaded = loadTemplates();
-    setTemplates(loaded);
-    saveTemplates(loaded);
-    setRecords(loadRecords());
+  const handleApiState = useCallback((response: Response) => {
+    if (response.status === 401) {
+      window.location.assign(`/admin/login?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
+      return false;
+    }
+    if (response.status === 403) { setServiceState("forbidden"); return false; }
+    if (response.status === 503) { setServiceState("unavailable"); return false; }
+    return response.ok;
   }, []);
 
-  const persist = useCallback((t: CertificateTemplate[], r: CertificateRecord[]) => {
-    saveTemplates(t);
-    saveRecords(r);
-    setDirty(false);
-  }, []);
+  const loadFromServer = useCallback(async () => {
+    setServiceState("loading");
+    try {
+      const response = await fetch("/api/admin/certificates", { credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      const items: Array<Record<string, unknown>> = payload.templates || [];
+      const summaries: CertificateTemplate[] = items.map((item) => ({
+        id: String(item.id || ""), name: String(item.name || "Certificate template"), version: Number(item.version || 1), status: (item.status || "draft") as CertificateTemplate["status"], updatedAt: String(item.updatedAt || new Date().toISOString()),
+        pages: [], fields: [], blocks: [], publication: "", createdAt: "", certificateNumberPrefix: "TP-CERT", certificateNumberSequence: 0, certificateNumberYear: new Date().getFullYear(),
+      }));
+      if (items[0]?.id) {
+        const detailResponse = await fetch(`/api/admin/certificates/${items[0].id}`, { credentials: "same-origin" });
+        if (!handleApiState(detailResponse)) return;
+        const detail = (await detailResponse.json()).template as CertificateTemplate;
+        setTemplates(summaries.map((item) => item.id === detail.id ? { ...item, ...detail } : item));
+        setActiveTemplateId(detail.id);
+      } else setTemplates(summaries);
+      setServiceState("ready");
+    } catch { setServiceState("unavailable"); }
+  }, [handleApiState]);
+
+  useEffect(() => { void loadFromServer(); }, [loadFromServer]);
+
+  const loadRecords = useCallback(async (templateId: string) => {
+    try {
+      const response = await fetch(`/api/admin/certificates/records?templateId=${encodeURIComponent(templateId)}`, { credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setRecords((payload.records || []).map((row: ServerRecord) => mapServerRecord(row)));
+    } catch { setServiceState("unavailable"); }
+  }, [handleApiState]);
+
+  useEffect(() => { if (activeTemplateId) void loadRecords(activeTemplateId); }, [activeTemplateId, loadRecords]);
+
+  useEffect(() => {
+    if (!launchSubmissionId || !activeTemplateId || activeRecordId) return;
+    void (async () => {
+      setLaunchState("loading");
+      try {
+        const response = await fetch("/api/admin/certificates/from-submission", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: launchSubmissionId }) });
+        if (!handleApiState(response)) { setLaunchState("error"); return; }
+        const payload = await response.json();
+        const imported = (payload.records || []).map((row: ServerRecord) => mapServerRecord(row));
+        setRecords((current) => [...current.filter((item) => !imported.some((next: CertificateRecord) => next.id === item.id)), ...imported]);
+        if (payload.templateId) setActiveTemplateId(payload.templateId);
+        if (imported[0]) { setActiveRecordId(imported[0].id); setMode("generator"); setRightTab("data"); }
+        setLaunchState("idle");
+      } catch { setLaunchState("error"); }
+    })();
+  }, [launchSubmissionId, activeTemplateId, activeRecordId, handleApiState]);
+
+  const loadImportCandidates = useCallback(async () => {
+    setImportState("loading");
+    try {
+      const response = await fetch("/api/admin/certificates/imports", { credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setImportCandidates(payload.candidates || []); setImportState("idle");
+    } catch { setImportState("error"); }
+  }, [handleApiState]);
+
+  useEffect(() => {
+    if (!activeTemplateId || template?.pages.length) return;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/admin/certificates/${activeTemplateId}`, { credentials: "same-origin" });
+        if (!handleApiState(response)) return;
+        const payload = await response.json();
+        const next = payload.template as CertificateTemplate;
+        setTemplates((previous) => previous.map((item) => item.id === next.id ? { ...item, ...next } : item));
+      } catch { setServiceState("unavailable"); }
+    })();
+  }, [activeTemplateId, handleApiState, template?.pages.length]);
+
+  useEffect(() => {
+    const faces = template?.fonts || [];
+    if (!faces.length) return;
+    const style = document.createElement("style");
+    style.dataset.certificateFonts = "true";
+    style.textContent = faces.map((font) => `@font-face{font-family:"${font.family}";font-style:${font.style};font-weight:${font.weight};font-display:swap;src:url("${font.url}") format("${font.url.includes(".otf") ? "opentype" : "truetype"}");}`).join("\n");
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, [template?.fonts]);
+
+  useEffect(() => {
+    if (!template?.fields.length) return;
+    setPreviewValues((current) => {
+      const next = { ...current };
+      template.fields.forEach((field) => { if (next[field.key] === undefined) next[field.key] = field.defaultValue || ""; });
+      return next;
+    });
+  }, [template?.id, template?.fields]);
+
+  const persist = useCallback(async (t: CertificateTemplate[]) => {
+    const active = t.find((item) => item.id === activeTemplateId);
+    if (!active || !active.pages.length) return;
+    setSaveState("saving");
+    try {
+      const response = await fetch(`/api/admin/certificates/${active.id}`, { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: active.name, pages: active.pages.map((page) => ({ id: page.id, width: page.width, height: page.height })), blocks: active.blocks.map((block) => ({ id: block.id.startsWith("cb-") ? undefined : block.id, pageId: block.pageId, type: block.type === "image" ? "image" : "text", content: block.segments ? { type: "rich_text", segments: block.segments } : block.content, x: block.x, y: block.y, width: block.width, height: block.height, rotation: block.rotation, zIndex: block.zIndex, style: block.style, overflowBehavior: block.overflowBehavior === "keep" ? "manual" : block.overflowBehavior, locked: block.locked, assetBucket: block.assetBucket || null, assetPath: block.assetPath || null })) }) });
+      if (!handleApiState(response)) { setSaveState("error"); return; }
+      const payload = await response.json();
+      setTemplates((items) => items.map((item) => item.id === active.id ? { ...item, ...payload.template } : item));
+      setDirty(false); setSaveState("saved");
+    } catch { setSaveState("error"); setServiceState("unavailable"); }
+  }, [activeTemplateId, handleApiState]);
 
   const pushUndo = useCallback(() => {
     const t = templateRef.current;
@@ -93,6 +214,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     }
     setTemplates((prev) => prev.map((x) => x.id === t.id ? { ...updater(x), updatedAt: new Date().toISOString() } : x));
     setDirty(true);
+    setSaveState("saved");
   }, [pushUndo]);
 
   const updateRecord = useCallback((updater: (r: CertificateRecord) => CertificateRecord) => {
@@ -102,8 +224,51 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   }, [record]);
 
   const setFieldValue = useCallback((key: string, value: string) => {
-    updateRecord((r) => ({ ...r, fieldValues: { ...r.fieldValues, [key]: value } }));
+    if (record) updateRecord((r) => ({ ...r, fieldValues: { ...r.fieldValues, [key]: value } }));
+    else setPreviewValues((values) => ({ ...values, [key]: value }));
   }, [updateRecord]);
+
+  const importManuscript = useCallback(async (publicationId: string) => {
+    if (!template) return;
+    setImportState("importing");
+    try {
+      const response = await fetch("/api/admin/certificates/records", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ templateId: template.id, publicationId }) });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      const imported = (payload.records || []).map((row: ServerRecord) => mapServerRecord(row));
+      setRecords((current) => [...current.filter((item) => !imported.some((next: CertificateRecord) => next.id === item.id)), ...imported]);
+      if (imported[0]) setActiveRecordId(imported[0].id);
+      setImportState("idle");
+    } catch { setImportState("error"); }
+  }, [template, handleApiState]);
+
+  const saveRecord = useCallback(async () => {
+    if (!record) return true;
+    const fieldValues = { ...record.fieldValues } as Record<string, unknown>;
+    delete fieldValues._import_warnings;
+    const response = await fetch(`/api/admin/certificates/records/${record.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldValues }) });
+    if (!handleApiState(response)) return false;
+    const payload = await response.json();
+    const saved = mapServerRecord(payload.record);
+    setRecords((current) => current.map((item) => item.id === saved.id ? saved : item));
+    return true;
+  }, [record, handleApiState]);
+
+  const refreshRecord = useCallback(async () => {
+    if (!record) return;
+    try {
+      const response = await fetch(`/api/admin/certificates/records/${record.id}`, { method: "POST", credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json(); const refreshed = mapServerRecord(payload.record);
+      setRecords((current) => current.map((item) => item.id === refreshed.id ? refreshed : item));
+    } catch { setServiceState("unavailable"); }
+  }, [record, handleApiState]);
+
+  const saveWorkspace = useCallback(async () => {
+    await persist(templates);
+    const savedRecord = await saveRecord();
+    if (!savedRecord) setSaveState("error");
+  }, [persist, templates, saveRecord]);
 
   const undo = useCallback(() => {
     if (!undoStack.length || !template) return;
@@ -125,8 +290,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
 
   useEffect(() => {
     if (mode !== "builder") return;
-    if (selectedBlockId) setRightOpen(false);
-    else setRightOpen(true);
+    setRightOpen(true);
   }, [selectedBlockId, mode]);
 
   // Snapshot the template once when text editing begins, so a whole typing session
@@ -150,19 +314,20 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     return () => clearTimeout(id);
   }, [template, fieldValues]);
 
-  const createTemplate = () => {
-    if (!newTemplateName.trim()) return;
-    const t = createDefaultTemplate(newTemplateName.trim(), newTemplatePub.trim());
-    const next = [...templates, t];
-    setTemplates(next); saveTemplates(next);
-    setActiveTemplateId(t.id); setNewTemplateName(""); setNewTemplatePub(""); setShowCreateForm(false);
+  const createTemplate = async () => {
+    try {
+      const response = await fetch("/api/admin/certificates", { method: "POST", credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json(); const next = payload.template as CertificateTemplate;
+      setTemplates((items) => [...items, next]); setActiveTemplateId(next.id); setNewTemplateName(""); setNewTemplatePub(""); setShowCreateForm(false);
+    } catch { setServiceState("unavailable"); }
   };
 
   const createRecordForTemplate = () => {
     if (!template) return;
     const r = createDefaultRecord(template);
     const next = [...records, r];
-    setRecords(next); saveRecords(next);
+    setRecords(next); setDirty(true);
     setActiveRecordId(r.id); setMode("generator"); setRightTab("data");
   };
 
@@ -186,11 +351,11 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const before = records;
     const next = before.filter((r) => r.id !== id);
     setRecords(next);
-    saveRecords(next);
+    setDirty(true);
     if (activeRecordId === id) setActiveRecordId(null);
     showToast("Certificate record deleted", () => {
       setRecords(before);
-      saveRecords(before);
+      setDirty(true);
       if (activeRecordId === null) setActiveRecordId(id);
     });
   };
@@ -205,34 +370,27 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const before = templates;
     const next = before.filter((t) => t.id !== id);
     setTemplates(next);
-    saveTemplates(next);
+    setDirty(true);
     if (activeTemplateId === id) {
       setActiveTemplateId(null);
       setSelectedBlockId(null);
       setEditingBlockId(null);
     }
-    showToast('Template "' + target.name + '" deleted', () => { setTemplates(before); saveTemplates(before); });
+    showToast('Template "' + target.name + '" deleted', () => { setTemplates(before); setDirty(true); });
   };
 
   const ensureRecordBlocks = useCallback(() => {
     if (!record || !template) return;
     if (record.blocks) return;
-    const resolved = template.blocks.map((b) => {
-      if (b.type !== "text") return { ...b };
-      const segs = b.segments && b.segments.length ? b.segments : [];
-      const resolvedSegs: TextSegment[] = segs.map((s) => {
-        if (s.t === "f") {
-          const val = fieldValues[s.k] ?? "";
-          return { t: "s" as const, v: val };
-        }
-        return { ...s };
-      });
-      const content = resolvedSegs.map((s) => s.t === "f" ? "" : s.v).join("");
-      return { ...b, segments: resolvedSegs, content, linkedFieldKey: null };
-    });
-    const next = records.map((r) => r.id === record.id ? { ...r, blocks: resolved, updatedAt: new Date().toISOString() } : r);
+    // Preserve tokens in record overrides. They must resolve from the record's
+    // current values until official issuance freezes the PDF snapshot.
+    const copied = template.blocks.map((block) => ({
+      ...block,
+      segments: block.segments?.map((segment) => segment.t === "s" ? { ...segment, style: segment.style ? { ...segment.style } : undefined } : { ...segment }),
+    }));
+    const next = records.map((r) => r.id === record.id ? { ...r, blocks: copied, updatedAt: new Date().toISOString() } : r);
     setRecords(next);
-    saveRecords(next);
+    setDirty(true);
   }, [record, template, fieldValues, records]);
 
   useEffect(() => {
@@ -246,7 +404,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const current = record.blocks || [];
     const next = records.map((r) => r.id === record.id ? { ...r, blocks: updater(current), updatedAt: new Date().toISOString() } : r);
     setRecords(next);
-    saveRecords(next);
+    setDirty(true);
     setDirty(true);
   }, [record, records]);
 
@@ -270,6 +428,27 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     }
     updateTemplate((t) => ({ ...t, blocks: t.blocks.map((b) => b.id === id ? { ...b, ...updates } : b) }), transient ? { transient: true } : undefined);
   }, [updateTemplate, mode, updateRecordBlocks]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const delta = (event as CustomEvent<{ delta?: number }>).detail?.delta;
+      if (!delta || !selectedBlock || selectedBlock.type !== "text") return;
+      // A complete paragraph selection is a block-level decision: remove any
+      // old per-run size overrides so literal text and linked-field chips use
+      // exactly the same inherited font size.
+      const segments = selectedBlock.segments?.map((segment) => {
+        if (segment.t !== "s" || !segment.style?.fontSize) return segment;
+        const { fontSize: _fontSize, ...style } = segment.style;
+        return { ...segment, style: Object.keys(style).length ? style : undefined };
+      });
+      updateBlock(selectedBlock.id, {
+        style: { ...selectedBlock.style, fontSize: Math.max(1, selectedBlock.style.fontSize + delta) },
+        ...(segments ? { segments } : {}),
+      });
+    };
+    window.addEventListener("cert-change-block-font-size", handler);
+    return () => window.removeEventListener("cert-change-block-font-size", handler);
+  }, [selectedBlock, updateBlock]);
 
   const updateBlockStyle = (id: string, styleUpdates: Partial<BlockStyle>) => {
     if (mode === "generator") {
@@ -350,23 +529,34 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const handleSetBackground = async (file: File | undefined) => {
     if (!file || !currentPage) return;
     if (!file.type.startsWith("image/")) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    const dims = await getImageDimensions(dataUrl);
-    updateTemplate((t) => ({
-      ...t,
-      pages: t.pages.map((p) => p.id === currentPage.id ? { ...p, backgroundImageUrl: dataUrl, width: dims.width, height: dims.height } : p),
-    }));
+    try {
+      const form = new FormData(); form.set("image", file);
+      const response = await fetch(`/api/admin/certificates/${template?.id}/background/${currentPage.id}`, { method: "POST", credentials: "same-origin", body: form });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setTemplates((items) => items.map((item) => item.id === payload.template.id ? { ...item, ...payload.template } : item));
+      setDirty(false);
+    } catch { setServiceState("unavailable"); }
+  };
+
+  const uploadImageAsset = async (file: File) => {
+    if (!template) throw new Error("No template is open.");
+    const form = new FormData(); form.set("image", file);
+    const response = await fetch(`/api/admin/certificates/${template.id}/assets`, { method: "POST", credentials: "same-origin", body: form });
+    if (!handleApiState(response)) throw new Error("Image upload was not accepted.");
+    return response.json() as Promise<{ url: string; bucket: string; path: string }>;
   };
 
   const handleAddImage = async (file: File | undefined) => {
     if (!file || !currentPage) return;
     if (!file.type.startsWith("image/")) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    const dims = await getImageDimensions(dataUrl);
+    const dims = await getImageDimensions(URL.createObjectURL(file));
     let w = dims.width; let h = dims.height;
     const maxW = currentPage.width * 0.9; const maxH = currentPage.height * 0.9;
     if (w > maxW || h > maxH) { const s = Math.min(maxW / w, maxH / h); w = Math.round(w * s); h = Math.round(h * s); }
-    const block = createImageBlock(currentPage.id, Math.round((currentPage.width - w) / 2), Math.round((currentPage.height - h) / 2), dataUrl, w, h);
+    const asset = await uploadImageAsset(file);
+    const block = createImageBlock(currentPage.id, Math.round((currentPage.width - w) / 2), Math.round((currentPage.height - h) / 2), asset.url, w, h);
+    block.assetBucket = asset.bucket; block.assetPath = asset.path; block.style.objectFit = "cover";
     block.name = file.name.replace(/\.[^.]+$/, "");
     addBlock(block);
   };
@@ -374,9 +564,138 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const handleReplaceImage = async (file: File | undefined) => {
     if (!file || !selectedBlock) return;
     if (!file.type.startsWith("image/")) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    updateBlock(selectedBlock.id, { assetUrl: dataUrl, name: file.name.replace(/\.[^.]+$/, "") });
+    try { const asset = await uploadImageAsset(file); updateBlock(selectedBlock.id, { assetUrl: asset.url, assetBucket: asset.bucket, assetPath: asset.path, name: file.name.replace(/\.[^.]+$/, "") }); } catch { setServiceState("unavailable"); }
   };
+
+  const addQuickBlock = (kind: "author" | "title" | "citation" | "date" | "portrait") => {
+    if (!currentPage) return;
+    if (kind === "portrait") {
+      imageInputRef.current?.click();
+      return;
+    }
+    const field = kind === "author" ? "author_name" : kind === "title" ? "work_title" : kind === "date" ? "date_issued" : "doi";
+    const block = createLinkedBlock(currentPage.id, field, 60, 60);
+    if (kind === "author") Object.assign(block, { name: "Author name", width: Math.min(420, currentPage.width - 120), style: { ...block.style, fontSize: 24, fontWeight: 700, textAlign: "center" } });
+    if (kind === "title") Object.assign(block, { name: "Article title", width: Math.min(620, currentPage.width - 120), height: 110, style: { ...block.style, fontSize: 18, fontWeight: 700, textAlign: "center", lineHeight: 1.3 } });
+    if (kind === "date") Object.assign(block, { name: "Issue date", style: { ...block.style, fontSize: 14 } });
+    if (kind === "citation") {
+      block.name = "DOI";
+      block.segments = [{ t: "s", v: "DOI " }, { t: "f", k: "doi" }];
+      block.content = "DOI ";
+      block.width = Math.min(480, currentPage.width - 120);
+    }
+    addBlock(block);
+  };
+
+  const copySelectedToOtherPages = () => {
+    if (!selectedBlock || !currentPage || !template || mode !== "builder") return;
+    const copies = template.pages.filter((page) => page.id !== currentPage.id).map((page) => ({
+      ...duplicateBlock(selectedBlock),
+      pageId: page.id,
+      x: Math.round((selectedBlock.x / currentPage.width) * page.width),
+      y: Math.round((selectedBlock.y / currentPage.height) * page.height),
+      width: Math.min(page.width - 20, Math.round((selectedBlock.width / currentPage.width) * page.width)),
+      height: Math.min(page.height - 20, Math.round((selectedBlock.height / currentPage.height) * page.height)),
+      zIndex: getMaxZIndex(template.blocks, page.id) + 1,
+    }));
+    updateTemplate((t) => ({ ...t, blocks: [...t.blocks, ...copies] }));
+    showToast(`Copied “${selectedBlock.name}” to ${copies.length} other pages`, () => updateTemplate((t) => ({ ...t, blocks: t.blocks.filter((block) => !copies.some((copy) => copy.id === block.id)) })));
+  };
+
+  const exportCurrentPagePNG = useCallback(async () => {
+    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
+    if (!pageEl) return;
+    const html2canvas = (await import("html2canvas")).default;
+    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    const link = document.createElement("a");
+    link.download = (template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }, [template, currentPageIdx]);
+
+  const exportCurrentPagePDF = useCallback(async () => {
+    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
+    if (!pageEl || !currentPage) return;
+    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF = (await import("jspdf")).default;
+    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    const pw = currentPage.width; const ph = currentPage.height;
+    const pdf = new jsPDF({ orientation: pw > ph ? "landscape" : "portrait", unit: "px", format: [pw, ph], hotfixes: ["px_scaling"] });
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, pw, ph);
+    pdf.save((template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".pdf");
+  }, [template, currentPage, currentPageIdx]);
+
+  const exportAllPagesPDF = useCallback(async () => {
+    if (!template || !currentPage) return;
+    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF = (await import("jspdf")).default;
+    const firstPage = template.pages[0];
+    const pdf = new jsPDF({ orientation: firstPage.width > firstPage.height ? "landscape" : "portrait", unit: "px", format: [firstPage.width, firstPage.height], hotfixes: ["px_scaling"] });
+    const originalPage = currentPageIdx;
+    for (let index = 0; index < template.pages.length; index++) {
+      setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
+      if (!pageEl) continue;
+      const page = template.pages[index];
+      if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
+      pdf.addImage((await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" })).toDataURL("image/png"), "PNG", 0, 0, page.width, page.height);
+    }
+    setCurrentPageIdx(originalPage); pdf.save((template.name || "certificate") + ".pdf");
+  }, [template, currentPage, currentPageIdx]);
+
+  const downloadCertificatePackage = useCallback(async () => {
+    if (!template || !currentPage) return;
+    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF = (await import("jspdf")).default;
+    const originalPage = currentPageIdx;
+    const first = template.pages[0];
+    const pdf = new jsPDF({ orientation: first.width > first.height ? "landscape" : "portrait", unit: "px", format: [first.width, first.height], hotfixes: ["px_scaling"] });
+    for (let index = 0; index < 5; index++) {
+      setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
+      if (!pageEl) continue;
+      const page = template.pages[index];
+      if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
+      const image = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      pdf.addImage(image.toDataURL("image/png"), "PNG", 0, 0, page.width, page.height);
+    }
+    pdf.save(`${template.name || "certificate"}_pages_1-5.pdf`);
+    setCurrentPageIdx(5); setSelectedBlockId(null); setEditingBlockId(null);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const pageSix = document.querySelector(".cert-canvas-page") as HTMLElement | null;
+    if (pageSix) {
+      const image = await html2canvas(pageSix, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      const link = document.createElement("a"); link.download = `${template.name || "certificate"}_page_6.jpg`; link.href = image.toDataURL("image/jpeg", .95); link.click();
+    }
+    setCurrentPageIdx(originalPage);
+  }, [template, currentPage, currentPageIdx]);
+
+  const issueAndAttachCertificate = useCallback(async () => {
+    if (!record || !template || !currentPage) return;
+    if (!window.confirm("Issue this certificate, attach its official PDF and preview image to the manuscript record, then return to the publication record?")) return;
+    try {
+      const saved = await saveRecord();
+      if (!saved) return;
+      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
+      const form = new FormData();
+      if (pageEl) {
+        const html2canvas = (await import("html2canvas")).default;
+        const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+        const preview = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (preview) form.set("preview", new File([preview], `${template.name || "certificate"}-preview.png`, { type: "image/png" }));
+      }
+      const response = await fetch(`/api/admin/certificates/records/${record.id}/issue`, { method: "POST", credentials: "same-origin", body: form });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setRecords((current) => current.map((item) => item.id === record.id ? { ...item, status: "issued", issuedAt: new Date().toISOString() } : item));
+      if (payload.submissionId) {
+        setToast({ msg: "Certificate attached to the publication record.", undo: () => undefined });
+        window.setTimeout(() => window.location.assign(`/admin?view=submissions&submission=${encodeURIComponent(payload.submissionId)}`), 650);
+      }
+    } catch { setServiceState("unavailable"); }
+  }, [record, template, currentPage, saveRecord, handleApiState]);
 
   if (!template) {
     return (
@@ -396,6 +715,9 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
           </div>
         )}
         <div className="cert-template-grid">
+          {serviceState === "loading" && <div className="cert-empty-state"><p>Loading certificate workspace…</p></div>}
+          {serviceState === "forbidden" && <div className="cert-empty-state"><p>You do not have permission to edit certificates.</p></div>}
+          {serviceState === "unavailable" && <div className="cert-empty-state"><p>The certificate service is temporarily unavailable.</p><button className="cert-btn" onClick={() => void loadFromServer()}>Retry</button></div>}
           {templates.map((t) => (
             <div key={t.id} className="cert-template-card" onClick={() => { setActiveTemplateId(t.id); setCurrentPageIdx(0); setSelectedBlockId(null); setEditingBlockId(null); }}>
               <button type="button" className="cert-card-del" onClick={(e) => { e.stopPropagation(); deleteTemplate(t.id); }} title="Delete template" aria-label={"Delete template " + t.name}><Trash2 size={13} strokeWidth={2} /></button>
@@ -448,69 +770,19 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     );
   }
 
-  const builderTabs: RightTab[] = ["data", "fields", "layers", "page"];
-  const generatorTabs: RightTab[] = ["data", "validation", "export"];
-  const tabs = mode === "builder" ? builderTabs : generatorTabs;
+  const tabs: RightTab[] = ["data", "page", "export"];
   const tabLabels: Record<RightTab, string> = { data: "Data", fields: "Linked Fields", layers: "Layers", page: "Page", validation: "Validation", export: "Export" };
-  const authorFields = (template.fields || []).filter((f) => f.section === "author");
-  const pubFields = (template.fields || []).filter((f) => f.section === "publication");
-  const certFields = (template.fields || []).filter((f) => f.section === "certificate");
+  const fieldOrder = ["author_name", "author_academic_title", "author_role", "author_affiliation", "work_title", "doi", "publication_name", "volume_number", "issue_number", "issue_date", "issn_online", "issn_print", "certificate_number", "date_issued", "issuing_city", "publisher_name"];
+  const orderedFields = (section: "author" | "publication" | "certificate") => (template.fields || [])
+    .filter((field) => field.section === section && fieldOrder.includes(field.key))
+    .sort((a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key));
+  const authorFields = orderedFields("author");
+  const pubFields = orderedFields("publication");
+  const certFields = orderedFields("certificate");
+  const selectedPublicationRecords = record ? records.filter((item) => item.publicationId === record.publicationId) : [];
+  const visibleCandidates = importCandidates.filter((candidate) => `${candidate.title} ${candidate.journal}`.toLowerCase().includes(importSearch.toLowerCase()));
 
   const isTextSelected = selectedBlock?.type === "text";
-
-  const exportCurrentPagePNG = useCallback(async () => {
-    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-    if (!pageEl) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    const link = document.createElement("a");
-    link.download = (template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".png";
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  }, [template, currentPageIdx]);
-
-  const exportCurrentPagePDF = useCallback(async () => {
-    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-    if (!pageEl || !currentPage) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const jsPDF = (await import("jspdf")).default;
-    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    const imgData = canvas.toDataURL("image/png");
-    const pw = currentPage.width;
-    const ph = currentPage.height;
-    const orientation = pw > ph ? "landscape" : "portrait";
-    const pdf = new jsPDF({ orientation, unit: "px", format: [pw, ph], hotfixes: ["px_scaling"] });
-    pdf.addImage(imgData, "PNG", 0, 0, pw, ph);
-    pdf.save((template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".pdf");
-  }, [template, currentPage, currentPageIdx]);
-
-  const exportAllPagesPDF = useCallback(async () => {
-    if (!template || !currentPage) return;
-    const html2canvas = (await import("html2canvas")).default;
-    const jsPDF = (await import("jspdf")).default;
-    const firstPage = template.pages[0];
-    const orientation = firstPage.width > firstPage.height ? "landscape" : "portrait";
-    const pdf = new jsPDF({ orientation, unit: "px", format: [firstPage.width, firstPage.height], hotfixes: ["px_scaling"] });
-    const origIdx = currentPageIdx;
-    for (let i = 0; i < template.pages.length; i++) {
-      setCurrentPageIdx(i);
-      setSelectedBlockId(null);
-      setEditingBlockId(null);
-      await new Promise((r) => setTimeout(r, 100));
-      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-      if (!pageEl) continue;
-      const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      const imgData = canvas.toDataURL("image/png");
-      const pg = template.pages[i];
-      if (i > 0) {
-        const o = pg.width > pg.height ? "landscape" : "portrait";
-        pdf.addPage([pg.width, pg.height], o);
-      }
-      pdf.addImage(imgData, "PNG", 0, 0, pg.width, pg.height);
-    }
-    setCurrentPageIdx(origIdx);
-    pdf.save((template.name || "certificate") + ".pdf");
-  }, [template, currentPage, currentPageIdx]);
 
   const hasEditorSel = (): boolean => {
     if (!editingBlockId) return false;
@@ -518,9 +790,23 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const editor = document.querySelector(".cert-inline-editor");
     return !!(sel && !sel.isCollapsed && editor && editor.contains(sel.anchorNode));
   };
-  const dispatchFmt = (style: Partial<BlockStyle>, toggleProp?: string) => {
-    window.dispatchEvent(new CustomEvent("cert-apply-format", { detail: { style, toggleProp } }));
+  const dispatchFmt = (style: Partial<BlockStyle>, toggleProp?: string, fontSizeDelta?: number) => {
+    window.dispatchEvent(new CustomEvent("cert-apply-format", { detail: { style, toggleProp, fontSizeDelta } }));
   };
+  const adjustFontSize = (delta: number) => {
+    if (!selectedBlock) return;
+    if (hasEditorSel()) { dispatchFmt({}, undefined, delta); return; }
+    updateBlockStyle(selectedBlock.id, { fontSize: Math.max(1, selectedBlock.style.fontSize + delta) });
+  };
+  const clearAllFormatting = () => {
+    if (!selectedBlock || selectedBlock.type !== "text") return;
+    const segments = selectedBlock.segments?.map((segment) => segment.t === "s" ? { ...segment, style: undefined } : segment);
+    updateBlock(selectedBlock.id, {
+      style: { ...selectedBlock.style, fontFamily: "Glacial Indifference", fontSize: 12, fontWeight: 400, fontStyle: "normal", textDecoration: "none", textTransform: "none", letterSpacing: 0, lineHeight: 1.5, backgroundColor: "transparent", color: "#152b21" },
+      ...(segments ? { segments } : {}),
+    });
+  };
+
   const fmt = (style: Partial<BlockStyle>, toggleProp?: string) => {
     if (!selectedBlock) return;
     if (hasEditorSel()) { dispatchFmt(style, toggleProp); return; }
@@ -541,15 +827,10 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
           <button className="cert-header-back" onClick={() => { setActiveTemplateId(null); setActiveRecordId(null); setSelectedBlockId(null); setEditingBlockId(null); }} title="Back to templates">←</button>
           <div className="cert-header-info">
             <span className="cert-header-breadcrumb">Certificates / {template.name}</span>
-            <span className={`cert-saved-indicator ${dirty ? "unsaved" : "saved"}`}>{dirty ? "Unsaved" : "Saved ✓"}</span>
+            <span className={`cert-saved-indicator ${saveState === "error" ? "unsaved" : dirty || saveState === "saving" ? "unsaved" : "saved"}`}>{saveState === "error" ? "Save failed — retry" : saveState === "saving" ? "Saving…" : dirty ? "Unsaved changes" : "Saved ✓"}</span>
           </div>
         </div>
-        <div className="cert-header-center">
-          <div className="cert-mode-toggle">
-            <button className={mode === "builder" ? "active" : ""} onClick={() => { setMode("builder"); setRightTab("data"); setSelectedBlockId(null); setEditingBlockId(null); }}>Template Builder</button>
-            <button className={mode === "generator" ? "active" : ""} onClick={() => { if (!record) createRecordForTemplate(); setMode("generator"); setRightTab("data"); setSelectedBlockId(null); setEditingBlockId(null); }}>Generate Certificate</button>
-          </div>
-        </div>
+        <div className="cert-header-center"><div className="cert-mode-toggle"><button className="active" onClick={() => { setRightTab("data"); setSelectedBlockId(null); setEditingBlockId(null); }}>Template Builder</button></div></div>
         <div className="cert-header-right">
           {mode === "builder" && (
             <>
@@ -559,7 +840,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               <button className={`cert-btn cert-btn--ghost ${rightOpen ? "active" : ""}`} onClick={() => setRightOpen((v) => !v)} title="Toggle right panel">☰</button>
             </>
           )}
-          <button className={`cert-btn ${dirty ? "cert-btn--primary" : ""}`} onClick={() => persist(templates, records)}>{dirty ? "Save" : "Saved"}</button>
+          <button className={`cert-btn ${dirty || saveState === "error" ? "cert-btn--primary" : ""}`} onClick={() => void saveWorkspace()} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : saveState === "error" ? "Retry save" : dirty ? "Save now" : "Saved"}</button>
           {mode === "generator" && validation && (
             <button className={`cert-btn ${validation.canExport ? "cert-btn--primary" : "cert-btn--warn"}`} onClick={() => setRightTab("validation")}>
               {validation.canExport ? "Export" : `${validation.errors} errors`}
@@ -571,14 +852,15 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
       {mode === "builder" && isTextSelected && selectedBlock && (
         <div className="cert-format-bar" onMouseDown={(e) => { if (editingBlockId) e.preventDefault(); }}>
           <div className="cert-fmt-group">
+            <button className="cert-fmt-btn" onClick={() => window.dispatchEvent(new CustomEvent("cert-open-link-panel"))} title="Link the highlighted text to a field">Link</button>
             <select className="cert-fmt-select cert-fmt-font" value={selectedBlock.style.fontFamily} onChange={(e) => fmt({ fontFamily: e.target.value })} title="Font family">
               {CERT_FONTS.map((f) => <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>)}
             </select>
             <div className="cert-fmt-size-wrap">
-              <button className="cert-fmt-size-btn" onClick={() => fmt({ fontSize: Math.max(1, selectedBlock.style.fontSize - 1) })} title="Decrease">−</button>
+              <button className="cert-fmt-size-btn" onClick={() => adjustFontSize(-1)} title="Decrease selected text or this whole box">−</button>
               <input className="cert-fmt-size" type="number" min={1} max={500} value={selectedBlock.style.fontSize} onChange={(e) => fmt({ fontSize: Math.max(1, +e.target.value) })} title="Font size (px)" />
               <span className="cert-fmt-size-unit">px</span>
-              <button className="cert-fmt-size-btn" onClick={() => fmt({ fontSize: selectedBlock.style.fontSize + 1 })} title="Increase">+</button>
+              <button className="cert-fmt-size-btn" onClick={() => adjustFontSize(1)} title="Increase selected text or this whole box">+</button>
             </div>
           </div>
           <span className="cert-fmt-sep" />
@@ -587,7 +869,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
             <button className={`cert-fmt-btn ${selectedBlock.style.fontStyle === "italic" ? "active" : ""}`} onClick={() => fmt({ fontStyle: "italic" }, "fontStyle")} title="Italic"><i>I</i></button>
             <button className={`cert-fmt-btn ${hasDecoration("underline") ? "active" : ""}`} onClick={() => fmt({ textDecoration: "underline" }, "textDecoration")} title="Underline"><u>U</u></button>
             <button className={`cert-fmt-btn ${hasDecoration("line-through") ? "active" : ""}`} onClick={() => fmt({ textDecoration: "line-through" }, "textDecoration")} title="Strikethrough"><s>S</s></button>
-            <button className="cert-fmt-btn" onClick={() => { if (hasEditorSel()) dispatchFmt({}); else updateBlockStyle(selectedBlock.id, { fontWeight: 400, fontStyle: "normal", textDecoration: "none", textTransform: "none", letterSpacing: 0 }); }} title="Clear formatting">⌫</button>
+            <button className="cert-fmt-btn" onClick={clearAllFormatting} title="Clear all formatting: reset this text box and its linked fields to Glacial Indifference, 12px">⌫</button>
           </div>
           <span className="cert-fmt-sep" />
           <div className="cert-fmt-group">
@@ -657,6 +939,43 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               </div>
             </div>
 
+            <div className="cert-left-section">
+              <h4 className="cert-left-title">Quick insert</h4>
+              <div className="cert-tool-palette">
+                <button className="cert-tool-btn" onClick={() => addQuickBlock("author")} title="A linked author name, ready to position"><span className="cert-tool-ico">A</span><span>Author</span></button>
+                <button className="cert-tool-btn" onClick={() => addQuickBlock("title")} title="A wrapped linked article title"><span className="cert-tool-ico">T</span><span>Title</span></button>
+                <button className="cert-tool-btn" onClick={() => addQuickBlock("citation")} title="A DOI citation line"><span className="cert-tool-ico">⌗</span><span>DOI</span></button>
+                <button className="cert-tool-btn" onClick={() => addQuickBlock("date")} title="A linked issue date"><span className="cert-tool-ico">D</span><span>Date</span></button>
+                <button className="cert-tool-btn" onClick={() => addQuickBlock("portrait")} title="Upload a photo, then choose Circle crop in its properties"><span className="cert-tool-ico">◯</span><span>Portrait</span></button>
+              </div>
+            </div>
+
+            <div className="cert-left-section cert-left-tool-section">
+              <button className="cert-left-title cert-left-tool-toggle" onClick={() => setLeftToolOpen((open) => ({ ...open, fields: !open.fields }))}>Linked Fields <span>{leftToolOpen.fields ? "−" : "+"}</span></button>
+              {leftToolOpen.fields && <>
+                <input className="cert-input cert-field-search" placeholder="Search fields…" value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} />
+                <div className="cert-field-list">
+                  {template.fields.filter((field) => !fieldSearch || field.label.toLowerCase().includes(fieldSearch.toLowerCase()) || field.key.includes(fieldSearch.toLowerCase())).map((field) => {
+                    const usage = getFieldUsage(template, field.key);
+                    return <div key={field.key} className="cert-field-item"><div className="cert-field-item-head"><strong>{field.label}</strong><code className="cert-field-key">{`{{${field.key}}}`}</code></div><p className="cert-field-usage">Used {usage.count} time{usage.count !== 1 ? "s" : ""}</p><div className="cert-field-item-actions"><button onClick={() => { const pageId = usage.pages[0]; const index = template.pages.findIndex((page) => page.id === pageId); if (index >= 0) setCurrentPageIdx(index); }}>Jump to</button><button onClick={() => { if (currentPage) addBlock(createLinkedBlock(currentPage.id, field.key, 60, 60)); }}>+ Add</button></div></div>;
+                  })}
+                </div>
+              </>}
+            </div>
+
+            <div className="cert-left-section cert-left-tool-section">
+              <button className="cert-left-title cert-left-tool-toggle" onClick={() => setLeftToolOpen((open) => ({ ...open, layers: !open.layers }))}>Layers <span>{leftToolOpen.layers ? "−" : "+"}</span></button>
+              {leftToolOpen.layers && <div className="cert-layers-panel">
+                {currentBlocks.length === 0 && <p className="cert-panel-empty-text">No layers on this page.</p>}
+                {[...currentBlocks].sort((a, b) => b.zIndex - a.zIndex).map((block) => <div key={block.id} className={`cert-layer-item ${block.id === selectedBlockId ? "selected" : ""} ${block.hidden ? "hidden" : ""}`} onClick={() => handleSelect(block.id)}><span className="cert-layer-icon">{block.type === "text" ? "T" : block.type === "image" ? "Image" : "QR"}</span><span className="cert-layer-name">{block.name}</span><div className="cert-layer-actions"><button onClick={(event) => { event.stopPropagation(); updateBlock(block.id, { hidden: !block.hidden }); }}>{block.hidden ? "Show" : "Hide"}</button><button onClick={(event) => { event.stopPropagation(); updateBlock(block.id, { locked: !block.locked }); }}>{block.locked ? "Unlock" : "Lock"}</button></div></div>)}
+              </div>}
+            </div>
+
+            <div className="cert-left-section cert-left-tool-section">
+              <button className="cert-left-title cert-left-tool-toggle" onClick={() => setLeftToolOpen((open) => ({ ...open, validation: !open.validation }))}>Validation <span>{leftToolOpen.validation ? "−" : "+"}</span></button>
+              {leftToolOpen.validation && validation && <div className="cert-validation-panel"><div className="cert-validation-summary"><span className={`cert-val-count ${validation.errors ? "error" : "ok"}`}>{validation.errors} errors</span><span className={`cert-val-count ${validation.warnings ? "warn" : "ok"}`}>{validation.warnings} warnings</span></div><div className="cert-validation-list">{validation.checks.map((check) => <div key={check.id} className={`cert-val-item cert-val-item--${check.status}`}><div><strong>{check.label}</strong><p>{check.message}</p></div>{check.pageId && <button className="cert-val-jump" onClick={() => { const index = template.pages.findIndex((page) => page.id === check.pageId); if (index >= 0) setCurrentPageIdx(index); if (check.blockId) handleSelect(check.blockId); }}>Go to</button>}</div>)}</div></div>}
+            </div>
+
             {selectedBlock && (
               <div className="cert-left-section cert-inspector">
                 <h4 className="cert-left-title">Properties · {selectedBlock.name}</h4>
@@ -676,6 +995,19 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                   <div className="cert-field-row cert-field-row--2">
                     <div className="cert-field-group"><label className="cert-field-label">Overflow</label><select className="cert-input" value={selectedBlock.overflowBehavior} onChange={(e) => updateBlock(selectedBlock.id, { overflowBehavior: e.target.value as CertificateBlock["overflowBehavior"] })}><option value="keep">Clip to box</option><option value="auto_fit">Auto-fit text</option><option value="auto_height">Auto height</option></select></div>
                     <div className="cert-field-group"><label className="cert-field-label">Opacity</label><input className="cert-input" type="number" step="0.05" min={0} max={1} value={selectedBlock.style.opacity} onChange={(e) => updateBlockStyle(selectedBlock.id, { opacity: Math.max(0, Math.min(1, +e.target.value)) })} /></div>
+                  </div>
+                )}
+                {isTextSelected && selectedBlock.segments?.some((segment) => segment.t === "f") && (
+                  <div className="cert-field-group">
+                    <label className="cert-field-label">Generated field emphasis</label>
+                    <div className="cert-emphasis-grid">
+                      {selectedBlock.segments.map((segment, index) => segment.t === "f" && (
+                        <label key={`${segment.k}-${index}`} className="cert-check-row" title={`Bold only the generated ${template.fields.find((field) => field.key === segment.k)?.label || segment.k}`}>
+                          <input type="checkbox" checked={Number(segment.style?.fontWeight || 400) >= 600} onChange={(e) => updateBlock(selectedBlock.id, { segments: selectedBlock.segments?.map((item, itemIndex) => item.t === "f" && itemIndex === index ? { ...item, style: { ...item.style, fontWeight: e.target.checked ? 700 : 400 } } : item) })} />
+                          <span>Bold {template.fields.find((field) => field.key === segment.k)?.label || segment.k}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -701,9 +1033,17 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                       <div className="cert-field-group"><label className="cert-field-label">Fit</label><select className="cert-input" value={selectedBlock.style.objectFit || "contain"} onChange={(e) => updateBlockStyle(selectedBlock.id, { objectFit: e.target.value as BlockStyle["objectFit"] })}><option value="contain">Contain</option><option value="cover">Cover</option><option value="fill">Stretch</option><option value="none">Original</option></select></div>
                       <div className="cert-field-group"><label className="cert-field-label">Opacity</label><input className="cert-input" type="number" step="0.05" min={0} max={1} value={selectedBlock.style.opacity} onChange={(e) => updateBlockStyle(selectedBlock.id, { opacity: Math.max(0, Math.min(1, +e.target.value)) })} /></div>
                     </div>
+                    {selectedBlock.assetUrl && <button className="cert-btn" onClick={() => setCropDraft({ blockId: selectedBlock.id, url: selectedBlock.assetUrl || "", x: selectedBlock.style.cropX || 0, y: selectedBlock.style.cropY || 0, zoom: selectedBlock.style.cropZoom || 1 })}>Crop & position photo</button>}
                     <div className="cert-field-row cert-field-row--2">
                       <div className="cert-field-group"><label className="cert-field-label">Radius</label><input className="cert-input" type="number" min={0} max={400} value={selectedBlock.style.borderRadius} onChange={(e) => updateBlockStyle(selectedBlock.id, { borderRadius: +e.target.value })} /></div>
                       <div className="cert-field-group"><label className="cert-field-label">Border</label><input className="cert-input" type="number" min={0} max={40} value={selectedBlock.style.borderWidth || 0} onChange={(e) => updateBlockStyle(selectedBlock.id, { borderWidth: +e.target.value })} /></div>
+                    </div>
+                    <div className="cert-field-group">
+                      <label className="cert-field-label">Photo frame</label>
+                      <div className="cert-create-actions">
+                        <button className="cert-btn" onClick={() => { const size = Math.min(selectedBlock.width, selectedBlock.height); updateBlock(selectedBlock.id, { imageShape: "circle", width: size, height: size }); updateBlockStyle(selectedBlock.id, { imageShape: "circle", objectFit: "cover", borderRadius: size / 2, borderWidth: 0, borderStyle: "none" }); }}>Circle crop</button>
+                        <button className="cert-btn" onClick={() => { updateBlock(selectedBlock.id, { imageShape: "rectangle" }); updateBlockStyle(selectedBlock.id, { imageShape: "rectangle", objectFit: "cover", borderRadius: 0, borderWidth: 5, borderColor: "#152b21", borderStyle: "solid" }); }}>Border frame</button>
+                      </div>
                     </div>
                     <div className="cert-field-row cert-field-row--2">
                       <div className="cert-field-group"><label className="cert-field-label">Border color</label><input className="cert-input" type="color" value={selectedBlock.style.borderColor || "#000000"} onChange={(e) => updateBlockStyle(selectedBlock.id, { borderColor: e.target.value })} /></div>
@@ -719,6 +1059,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
 
                 <div className="cert-inspector-actions">
                   <button className="cert-btn" onClick={() => { const d = duplicateBlock(selectedBlock); addBlock(d); }}>Duplicate</button>
+                  {mode === "builder" && <button className="cert-btn" onClick={copySelectedToOtherPages} title="Copy this element to the same relative position on every other page">Copy to all pages</button>}
                   <button className="cert-btn" onClick={() => updateBlock(selectedBlock.id, { locked: !selectedBlock.locked })}>{selectedBlock.locked ? "Unlock" : "Lock"}</button>
                   <button className="cert-btn cert-btn--danger" onClick={() => deleteBlock(selectedBlock.id)}>Delete</button>
                 </div>
@@ -737,6 +1078,12 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
         )}
 
         <div className="cert-canvas-col">
+          <div className="cert-page-nav cert-page-nav--top">
+            <button disabled={currentPageIdx === 0} onClick={() => { setCurrentPageIdx((i) => i - 1); setSelectedBlockId(null); setEditingBlockId(null); }}>‹</button>
+            <span className="cert-page-label">Page {currentPageIdx + 1} of {template.pages.length} · {currentPage?.name || ""}</span>
+            <button disabled={currentPageIdx >= template.pages.length - 1} onClick={() => { setCurrentPageIdx((i) => i + 1); setSelectedBlockId(null); setEditingBlockId(null); }}>›</button>
+            <button className={`cert-thumb-toggle ${showThumbnails ? "active" : ""}`} onClick={() => setShowThumbnails(!showThumbnails)} title="Show all pages">Pages</button>
+          </div>
           {currentPage && (
             <CertificateCanvas
               page={currentPage}
@@ -756,13 +1103,6 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               onZoomChange={setZoom}
             />
           )}
-
-          <div className="cert-page-nav">
-            <button disabled={currentPageIdx === 0} onClick={() => { setCurrentPageIdx((i) => i - 1); setSelectedBlockId(null); setEditingBlockId(null); }}>‹</button>
-            <span className="cert-page-label">{currentPageIdx + 1} of {template.pages.length} · {currentPage?.name || ""} · {Math.round(currentPage?.width || 0)}×{Math.round(currentPage?.height || 0)}</span>
-            <button disabled={currentPageIdx >= template.pages.length - 1} onClick={() => { setCurrentPageIdx((i) => i + 1); setSelectedBlockId(null); setEditingBlockId(null); }}>›</button>
-            <button className={`cert-thumb-toggle ${showThumbnails ? "active" : ""}`} onClick={() => setShowThumbnails(!showThumbnails)} title="Thumbnails">⊟</button>
-          </div>
 
           {showThumbnails && (
             <div className="cert-thumbnails">
@@ -786,45 +1126,34 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
             </div>
 
             <div className="cert-panel-body">
+              {launchState === "loading" && <div className="cert-empty-state"><p>Loading the manuscript, author, and publication details…</p></div>}
+              {launchState === "error" && <div className="cert-import-error">The publication record could not be loaded for this certificate.</div>}
               {rightTab === "data" && (
                 <div className="cert-data-panel">
-                  {mode === "generator" && !record && (
-                    <div className="cert-panel-empty">
-                      <p>No certificate record yet.</p>
-                      <button className="cert-btn cert-btn--primary" onClick={createRecordForTemplate}>Create Record</button>
-                    </div>
-                  )}
-                  {record && (
-                    <>
-                      <div className="cert-field-section">
-                        <h4 className="cert-field-section-title">Author Information</h4>
-                        {authorFields.map((f) => (
-                          <div key={f.key} className="cert-field-group">
-                            <label className="cert-field-label">{f.label}{f.required && <span className="cert-req">*</span>}</label>
-                            <input className="cert-input" value={fieldValues[f.key] || ""} onChange={(e) => setFieldValue(f.key, e.target.value)} placeholder={f.placeholder || ""} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="cert-field-section">
-                        <h4 className="cert-field-section-title">Publication Information</h4>
-                        {pubFields.map((f) => (
-                          <div key={f.key} className="cert-field-group">
-                            <label className="cert-field-label">{f.label}{f.required && <span className="cert-req">*</span>}</label>
-                            <input className="cert-input" value={fieldValues[f.key] || ""} onChange={(e) => setFieldValue(f.key, e.target.value)} placeholder={f.placeholder || ""} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="cert-field-section">
-                        <h4 className="cert-field-section-title">Certificate Information</h4>
-                        {certFields.map((f) => (
-                          <div key={f.key} className="cert-field-group">
-                            <label className="cert-field-label">{f.label}{f.required && <span className="cert-req">*</span>}</label>
-                            <input className="cert-input" value={fieldValues[f.key] || ""} onChange={(e) => setFieldValue(f.key, e.target.value)} placeholder={f.placeholder || ""} />
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                  <div className="cert-field-section cert-import-section">
+                    <div className="cert-data-section-head"><h4 className="cert-field-section-title">Import Manuscript</h4><button className="cert-btn" onClick={() => void loadImportCandidates()} disabled={importState === "loading" || importState === "importing"}>{importState === "loading" ? "Loading…" : "Refresh"}</button></div>
+                    <p className="cert-field-hint">Only manuscripts marked For approval appear here. Import creates one certificate for every linked author.</p>
+                    <input className="cert-input cert-field-search" value={importSearch} onFocus={() => { if (!importCandidates.length) void loadImportCandidates(); }} onChange={(event) => setImportSearch(event.target.value)} placeholder="Search approved manuscripts…" />
+                    {visibleCandidates.map((candidate) => <button key={candidate.publicationId} className="cert-import-candidate" disabled={!candidate.ready || importState === "importing"} onClick={() => void importManuscript(candidate.publicationId)}><strong>{candidate.title}</strong><span>{candidate.journal} · Vol. {candidate.volume || "—"}, Issue {candidate.issue || "—"} · {candidate.authorCount} author{candidate.authorCount === 1 ? "" : "s"}</span>{!candidate.ready && <em>Missing {candidate.missing.join(", ")}</em>}</button>)}
+                    {importState === "error" && <p className="cert-import-error">Could not import this manuscript. Please retry.</p>}
+                  </div>
+                  {record && <div className="cert-field-section cert-record-context">
+                    <div className="cert-data-section-head"><h4 className="cert-field-section-title">Imported Certificate</h4>{record.status !== "issued" && <button className="cert-btn" onClick={() => void refreshRecord()}>Refresh from manuscript</button>}</div>
+                    {selectedPublicationRecords.length > 1 && <label className="cert-field-label">Author certificate<select className="cert-input" value={record.id} onChange={(event) => setActiveRecordId(event.target.value)}>{selectedPublicationRecords.map((item) => <option key={item.id} value={item.id}>{item.fieldValues.author_name || item.certificateNumber}</option>)}</select></label>}
+                    {Array.isArray(record.fieldValues._import_warnings) && record.fieldValues._import_warnings.length > 0 && <p className="cert-import-error">{record.fieldValues._import_warnings.join(" ")}</p>}
+                  </div>}
+                  <div className="cert-field-section">
+                    <h4 className="cert-field-section-title">Author Information</h4>
+                    {authorFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} /></div>)}
+                  </div>
+                  <div className="cert-field-section">
+                    <h4 className="cert-field-section-title">Publication Information</h4>
+                    {pubFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} /></div>)}
+                  </div>
+                  <div className="cert-field-section">
+                    <h4 className="cert-field-section-title">Certificate Information</h4>
+                    {certFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} readOnly={Boolean(record && ["certificate_number", "date_issued", "publisher_name", "issuing_city"].includes(field.key))} /></div>)}
+                  </div>
                 </div>
               )}
 
@@ -952,6 +1281,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                 <div className="cert-export-panel">
                   <div className="cert-field-section">
                     <h4 className="cert-field-section-title">Export Options</h4>
+                    <button className="cert-btn cert-btn--primary cert-btn--full" onClick={downloadCertificatePackage}>Download Pages 1–5 PDF + Page 6 JPG</button>
                     <button className="cert-btn cert-btn--primary cert-btn--full" onClick={exportAllPagesPDF}>Export All Pages as PDF</button>
                     <button className="cert-btn cert-btn--full" onClick={exportCurrentPagePNG}>Export Current Page as PNG</button>
                     <button className="cert-btn cert-btn--full" onClick={exportCurrentPagePDF}>Export Current Page as PDF</button>
@@ -961,7 +1291,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                     <div className="cert-status-row">
                       <span>Current: <strong>{record?.status || template.status}</strong></span>
                       {record && record.status === "draft" && (
-                        <button className="cert-btn cert-btn--primary" onClick={() => { updateRecord((r) => ({ ...r, status: "issued", issuedAt: new Date().toISOString(), snapshot: { templateName: template.name, fieldValues: { ...r.fieldValues }, certificateNumber: r.certificateNumber, dateIssued: r.fieldValues["date_issued"] || "", issuedBy: "admin" } })); }}>Issue Certificate</button>
+                        <button className="cert-btn cert-btn--primary" onClick={() => void issueAndAttachCertificate()}>Issue and attach certificate</button>
                       )}
                     </div>
                   </div>
@@ -979,6 +1309,33 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
           </div>
         )}
       </div>
+
+      {cropDraft && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "grid", placeItems: "center", background: "rgba(10,20,15,.62)", padding: 20 }} onMouseDown={() => setCropDraft(null)}>
+          <div style={{ width: "min(560px, 94vw)", background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 24px 70px rgba(0,0,0,.35)" }} onMouseDown={(event) => event.stopPropagation()}>
+            <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Crop & position photo</h3>
+            <p style={{ margin: "0 0 14px", color: "#57635c", fontSize: 13 }}>Drag the photo to position it. Use the slider to zoom in or out. The visible frame is what will appear on the certificate.</p>
+            <div
+              style={{ position: "relative", height: 280, overflow: "hidden", background: "#e8ece9", borderRadius: selectedBlock?.imageShape === "circle" ? "50%" : 8, cursor: "grab", touchAction: "none" }}
+              onPointerDown={(event) => { const rect = event.currentTarget.getBoundingClientRect(); event.currentTarget.setPointerCapture(event.pointerId); cropPointerRef.current = { x: event.clientX, y: event.clientY, cropX: cropDraft.x, cropY: cropDraft.y, width: rect.width, height: rect.height }; }}
+              onPointerMove={(event) => { const start = cropPointerRef.current; if (!start) return; setCropDraft((draft) => draft ? { ...draft, x: Math.max(-100, Math.min(100, start.cropX + ((event.clientX - start.x) / start.width) * 100)), y: Math.max(-100, Math.min(100, start.cropY + ((event.clientY - start.y) / start.height) * 100)) } : draft); }}
+              onPointerUp={() => { cropPointerRef.current = null; }}
+              onPointerCancel={() => { cropPointerRef.current = null; }}
+            >
+              <img src={cropDraft.url} alt="Crop preview" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", transform: `translate(${cropDraft.x}%, ${cropDraft.y}%) scale(${cropDraft.zoom})`, transformOrigin: "center", pointerEvents: "none", userSelect: "none" }} />
+            </div>
+            <div className="cert-field-group" style={{ marginTop: 14 }}>
+              <label className="cert-field-label">Zoom · {Math.round(cropDraft.zoom * 100)}%</label>
+              <input className="cert-input" type="range" min="1" max="3" step="0.01" value={cropDraft.zoom} onChange={(event) => setCropDraft((draft) => draft ? { ...draft, zoom: +event.target.value } : draft)} />
+            </div>
+            <div className="cert-create-actions" style={{ marginTop: 16 }}>
+              <button className="cert-btn" onClick={() => setCropDraft((draft) => draft ? { ...draft, x: 0, y: 0, zoom: 1 } : draft)}>Reset</button>
+              <button className="cert-btn" onClick={() => setCropDraft(null)}>Cancel</button>
+              <button className="cert-btn cert-btn--primary" onClick={() => { updateBlockStyle(cropDraft.blockId, { cropX: cropDraft.x, cropY: cropDraft.y, cropZoom: cropDraft.zoom, objectFit: "cover" }); setCropDraft(null); }}>Apply crop</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(e) => { handleAddImage(e.target.files?.[0]); e.target.value = ""; }} />
       <input ref={bgImageInputRef} type="file" accept="image/*" hidden onChange={(e) => { handleSetBackground(e.target.files?.[0]); e.target.value = ""; }} />
