@@ -36,6 +36,32 @@ function safeName(value: string) {
   return (value || "certificate").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || "certificate";
 }
 
+function scaleForPct(pct: number) {
+  return Math.min(4.5, 2 + (Math.max(0, Math.min(100, pct)) / 100) * 2.5);
+}
+
+function qualityForPct(pct: number) {
+  return 0.6 + (Math.max(0, Math.min(100, pct)) / 100) * 0.4;
+}
+
+function renderScaleFor(pct: number, index: number) {
+  const base = scaleForPct(pct);
+  return index === 5 ? Math.max(4, base) : base;
+}
+
+function jpegQualityFor(pct: number, index: number) {
+  const base = qualityForPct(pct);
+  return index === 5 ? Math.max(0.95, base) : base;
+}
+
+function dataUrlBytes(dataUrl: string) {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return 0;
+  const payload = dataUrl.length - comma - 1;
+  const padding = dataUrl.endsWith("==") ? 2 : dataUrl.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(payload * 0.75) - padding);
+}
+
 export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [records, setRecords] = useState<CertificateRecord[]>([]);
@@ -70,10 +96,11 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
   const [uploadProgress, setUploadProgress] = useState<{ name: string; pct: number; status: "uploading" | "done" | "error" } | null>(null);
   const [compressOn, setCompressOn] = useState(true);
-  const [compressQuality, setCompressQuality] = useState(82);
+  const [compressQuality, setCompressQuality] = useState(85);
   const [pdfEstimate, setPdfEstimate] = useState<string>("");
   const [estimating, setEstimating] = useState(false);
   const estimateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bgSizesRef = useRef<Map<string, number>>(new Map());
   const launchSubmissionId = useMemo(() => new URLSearchParams(window.location.search).get("certificateSubmission") || "", []);
   const [launchState, setLaunchState] = useState<"idle" | "loading" | "error">(launchSubmissionId ? "loading" : "idle");
   const lastUndoRef = useRef(0);
@@ -756,45 +783,66 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const pdfBaseName = `Copy of Certificate _ ${manuscriptTitle}`;
   const socialBaseName = `Social Media _ ${manuscriptTitle}`;
 
-  const capturePage = useCallback(async (index: number) => {
+  const capturePage = useCallback(async (index: number, scale: number) => {
     setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
     await new Promise((resolve) => setTimeout(resolve, 130));
     const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
     if (!pageEl) return null;
     const html2canvas = (await import("html2canvas")).default;
-    return html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    return html2canvas(pageEl, { scale, useCORS: true, backgroundColor: "#ffffff" });
   }, []);
 
   const pageImage = useCallback((canvas: HTMLCanvasElement, index: number) => {
     if (!compressOn) return { data: canvas.toDataURL("image/png"), format: "PNG" as const };
-    const quality = index === 5 ? 0.95 : compressQuality / 100;
-    return { data: canvas.toDataURL("image/jpeg", quality), format: "JPEG" as const };
+    return { data: canvas.toDataURL("image/jpeg", jpegQualityFor(compressQuality, index)), format: "JPEG" as const };
   }, [compressOn, compressQuality]);
 
-  const estimatePdfSize = useCallback(async (quality: number) => {
-    if (!template) return;
+  const loadBgSizes = useCallback(async (pages: CertificatePage[]) => {
+    const missing = pages.filter((page) => page.backgroundImageUrl && !bgSizesRef.current.has(page.id));
+    if (!missing.length) return;
+    await Promise.all(missing.map(async (page) => {
+      try {
+        const response = await fetch(page.backgroundImageUrl as string, { cache: "force-cache" });
+        if (!response.ok) return;
+        const blob = await response.blob();
+        if (blob.size > 0) bgSizesRef.current.set(page.id, blob.size);
+      } catch { /* size unknown — estimate falls back gracefully */ }
+    }));
+  }, []);
+
+  const estimatePdfSize = useCallback(async (pct: number) => {
+    if (!template || template.pages.length < 5) return;
     setEstimating(true);
-    const originalPage = currentPageIdxRef.current;
+    const probeIndex = currentPageIdxRef.current;
+    const probeScale = renderScaleFor(pct, 0);
+    const probeQuality = jpegQualityFor(pct, 0);
     try {
-      const sample = await capturePage(0);
+      const sample = await capturePage(probeIndex, probeScale);
       if (!sample) { setPdfEstimate(""); return; }
-      const base64 = sample.toDataURL("image/jpeg", quality / 100);
-      const sampleBytes = base64.length * 0.75;
-      const estimated = sampleBytes * template.pages.length * 1.04;
-      setPdfEstimate(formatBytes(estimated));
+      const realBytes = dataUrlBytes(sample.toDataURL("image/jpeg", probeQuality));
+      const anchorBg = bgSizesRef.current.get(template.pages[probeIndex].id) || 0;
+      const ratio = anchorBg > 0 ? realBytes / anchorBg : 0;
+      let total = 0;
+      for (let index = 0; index < 5; index++) {
+        const bg = bgSizesRef.current.get(template.pages[index].id) || 0;
+        total += ratio > 0 && bg > 0 ? bg * ratio : realBytes;
+      }
+      total = total * 1.03 + 40000;
+      setPdfEstimate(formatBytes(total));
     } catch { setPdfEstimate(""); }
-    finally { setCurrentPageIdx(originalPage); setEstimating(false); }
+    finally { setEstimating(false); }
   }, [template, capturePage]);
 
   useEffect(() => {
     if (rightTab !== "export" || !template || !compressOn) { setPdfEstimate(""); return; }
+    void loadBgSizes(template.pages);
     if (estimateTimerRef.current) clearTimeout(estimateTimerRef.current);
-    estimateTimerRef.current = setTimeout(() => { void estimatePdfSize(compressQuality); }, 400);
+    estimateTimerRef.current = setTimeout(() => { void estimatePdfSize(compressQuality); }, 450);
     return () => { if (estimateTimerRef.current) clearTimeout(estimateTimerRef.current); };
-  }, [rightTab, compressOn, compressQuality, template, estimatePdfSize]);
+  }, [rightTab, compressOn, compressQuality, template, estimatePdfSize, loadBgSizes]);
 
   const exportCurrentPagePNG = useCallback(async () => {
-    const canvas = await capturePage(currentPageIdx);
+    const canvas = await capturePage(currentPageIdx, 3);
     if (!canvas) return;
     const link = document.createElement("a");
     link.download = `${pdfBaseName}_page${currentPageIdx + 1}.png`;
@@ -804,7 +852,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
 
   const exportCurrentPagePDF = useCallback(async () => {
     if (!currentPage) return;
-    const canvas = await capturePage(currentPageIdx);
+    const scale = compressOn ? renderScaleFor(compressQuality, currentPageIdx) : 3;
+    const canvas = await capturePage(currentPageIdx, scale);
     if (!canvas) return;
     const jsPDF = (await import("jspdf")).default;
     const pw = currentPage.width; const ph = currentPage.height;
@@ -812,7 +861,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const img = pageImage(canvas, currentPageIdx);
     pdf.addImage(img.data, img.format, 0, 0, pw, ph);
     pdf.save(`${pdfBaseName}_page${currentPageIdx + 1}.pdf`);
-  }, [capturePage, currentPage, currentPageIdx, pageImage, pdfBaseName]);
+  }, [capturePage, currentPage, currentPageIdx, pageImage, compressOn, compressQuality, pdfBaseName]);
 
   const exportAllPagesPDF = useCallback(async () => {
     if (!template) return;
@@ -821,7 +870,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const pdf = new jsPDF({ orientation: firstPage.width > firstPage.height ? "landscape" : "portrait", unit: "px", format: [firstPage.width, firstPage.height], hotfixes: ["px_scaling"] });
     const originalPage = currentPageIdx;
     for (let index = 0; index < template.pages.length; index++) {
-      const canvas = await capturePage(index);
+      const scale = compressOn ? renderScaleFor(compressQuality, index) : 3;
+      const canvas = await capturePage(index, scale);
       if (!canvas) continue;
       const page = template.pages[index];
       if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
@@ -830,7 +880,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     }
     setCurrentPageIdx(originalPage);
     pdf.save(`${pdfBaseName}.pdf`);
-  }, [template, currentPageIdx, capturePage, pageImage, pdfBaseName]);
+  }, [template, currentPageIdx, capturePage, pageImage, compressOn, compressQuality, pdfBaseName]);
 
   const downloadCertificatePackage = useCallback(async () => {
     if (!template) return;
@@ -839,7 +889,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const first = template.pages[0];
     const pdf = new jsPDF({ orientation: first.width > first.height ? "landscape" : "portrait", unit: "px", format: [first.width, first.height], hotfixes: ["px_scaling"] });
     for (let index = 0; index < 5; index++) {
-      const canvas = await capturePage(index);
+      const scale = compressOn ? renderScaleFor(compressQuality, index) : 3;
+      const canvas = await capturePage(index, scale);
       if (!canvas) continue;
       const page = template.pages[index];
       if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
@@ -847,15 +898,15 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
       pdf.addImage(img.data, img.format, 0, 0, page.width, page.height);
     }
     pdf.save(`${pdfBaseName}.pdf`);
-    const pageSix = await capturePage(5);
+    const pageSix = await capturePage(5, renderScaleFor(compressQuality, 5));
     if (pageSix) {
       const link = document.createElement("a");
       link.download = `${socialBaseName}.jpg`;
-      link.href = pageSix.toDataURL("image/jpeg", 0.95);
+      link.href = pageSix.toDataURL("image/jpeg", jpegQualityFor(compressQuality, 5));
       link.click();
     }
     setCurrentPageIdx(originalPage);
-  }, [template, currentPageIdx, capturePage, pageImage, pdfBaseName, socialBaseName]);
+  }, [template, currentPageIdx, capturePage, pageImage, compressOn, compressQuality, pdfBaseName, socialBaseName]);
 
   const issueAndAttachCertificate = useCallback(async () => {
     if (!record || !template || !currentPage) return;
@@ -1520,15 +1571,19 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                     {compressOn && (
                       <div className="cert-field-group cert-compress-control">
                         <div className="cert-compress-head">
-                          <label className="cert-field-label">Image quality</label>
+                          <label className="cert-field-label">Quality &amp; resolution</label>
                           <span className="cert-compress-quality">{compressQuality}%</span>
                         </div>
-                        <input className="cert-input cert-compress-slider" type="range" min={40} max={95} step={1} value={compressQuality} onChange={(e) => setCompressQuality(+e.target.value)} />
+                        <input className="cert-input cert-compress-slider" type="range" min={0} max={100} step={1} value={compressQuality} onChange={(e) => setCompressQuality(+e.target.value)} />
+                        <div className="cert-compress-meta">
+                          <span>Render <strong>×{renderScaleFor(compressQuality, 0).toFixed(1)}</strong></span>
+                          <span>JPEG <strong>{Math.round(jpegQualityFor(compressQuality, 0) * 100)}%</strong></span>
+                        </div>
                         <div className="cert-compress-estimate">
-                          <span>Estimated PDF size</span>
+                          <span>Estimated PDF (pages 1–5)</span>
                           <strong>{estimating ? "Analyzing…" : pdfEstimate || "—"}</strong>
                         </div>
-                        <p className="cert-field-hint">Lower quality = smaller file. Page 6 (social media) always exports at maximum quality.</p>
+                        <p className="cert-field-hint">Higher = sharper backgrounds and a larger file. The estimate uses each page's real background size. Page 6 (social media) always exports at maximum quality.</p>
                       </div>
                     )}
                     <button className="cert-btn cert-btn--primary cert-btn--full" onClick={downloadCertificatePackage}>Download Pages 1–5 PDF + Page 6 JPG</button>

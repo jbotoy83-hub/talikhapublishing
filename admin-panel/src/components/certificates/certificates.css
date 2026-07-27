@@ -537,5 +537,7 @@
 .cert-compress-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:.35rem; }
 .cert-compress-quality { font-size:.72rem; font-weight:800; color:#15803d; background:#dcfce7; padding:1px 7px; border-radius:10px; }
 .cert-compress-slider { padding:0; height:22px; accent-color:#16a34a; cursor:pointer; }
+.cert-compress-meta { display:flex; align-items:center; gap:10px; margin-top:.4rem; font-size:.68rem; color:#5a6a5e; }
+.cert-compress-meta strong { color:#1c2821; font-weight:800; }
 .cert-compress-estimate { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:.5rem; padding-top:.45rem; border-top:1px dashed #d4ddd6; font-size:.72rem; color:#5a6a5e; }
 .cert-compress-estimate strong { font-size:.82rem; color:#1c2821; }
