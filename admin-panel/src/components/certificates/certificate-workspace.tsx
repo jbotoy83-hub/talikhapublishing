@@ -26,6 +26,16 @@ function mapServerRecord(record: ServerRecord): CertificateRecord {
   return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
 }
 
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function safeName(value: string) {
+  return (value || "certificate").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || "certificate";
+}
+
 export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [records, setRecords] = useState<CertificateRecord[]>([]);
@@ -59,6 +69,11 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [dataOpen, setDataOpen] = useState({ author: true, publication: true, certificate: true });
   const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
   const [uploadProgress, setUploadProgress] = useState<{ name: string; pct: number; status: "uploading" | "done" | "error" } | null>(null);
+  const [compressOn, setCompressOn] = useState(true);
+  const [compressQuality, setCompressQuality] = useState(82);
+  const [pdfEstimate, setPdfEstimate] = useState<string>("");
+  const [estimating, setEstimating] = useState(false);
+  const estimateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const launchSubmissionId = useMemo(() => new URLSearchParams(window.location.search).get("certificateSubmission") || "", []);
   const [launchState, setLaunchState] = useState<"idle" | "loading" | "error">(launchSubmissionId ? "loading" : "idle");
   const lastUndoRef = useRef(0);
@@ -70,6 +85,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const editingRef = useRef<string | null>(null);
   const prevEditingRef = useRef<string | null>(null);
   const templateRef = useRef<CertificateTemplate | null>(null);
+  const currentPageIdxRef = useRef(currentPageIdx);
   const cropPointerRef = useRef<{ x: number; y: number; cropX: number; cropY: number; width: number; height: number } | null>(null);
   const fieldInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const recordsRef = useRef<CertificateRecord[]>(records);
@@ -104,6 +120,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const selectedBlock = activeBlocks.find((b) => b.id === selectedBlockId) || null;
   templateRef.current = template;
   editingRef.current = editingBlockId;
+  currentPageIdxRef.current = currentPageIdx;
 
   const handleApiState = useCallback((response: Response) => {
     if (response.status === 401) {
@@ -735,75 +752,110 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     showToast(`Copied “${selectedBlock.name}” to ${copies.length} other pages`, () => updateTemplate((t) => ({ ...t, blocks: t.blocks.filter((block) => !copies.some((copy) => copy.id === block.id)) })));
   };
 
-  const exportCurrentPagePNG = useCallback(async () => {
-    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-    if (!pageEl) return;
+  const manuscriptTitle = safeName(fieldValues.work_title || template?.name || "certificate");
+  const pdfBaseName = `Copy of Certificate _ ${manuscriptTitle}`;
+  const socialBaseName = `Social Media _ ${manuscriptTitle}`;
+
+  const capturePage = useCallback(async (index: number) => {
+    setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
+    if (!pageEl) return null;
     const html2canvas = (await import("html2canvas")).default;
-    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    return html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+  }, []);
+
+  const pageImage = useCallback((canvas: HTMLCanvasElement, index: number) => {
+    if (!compressOn) return { data: canvas.toDataURL("image/png"), format: "PNG" as const };
+    const quality = index === 5 ? 0.95 : compressQuality / 100;
+    return { data: canvas.toDataURL("image/jpeg", quality), format: "JPEG" as const };
+  }, [compressOn, compressQuality]);
+
+  const estimatePdfSize = useCallback(async (quality: number) => {
+    if (!template) return;
+    setEstimating(true);
+    const originalPage = currentPageIdxRef.current;
+    try {
+      const sample = await capturePage(0);
+      if (!sample) { setPdfEstimate(""); return; }
+      const base64 = sample.toDataURL("image/jpeg", quality / 100);
+      const sampleBytes = base64.length * 0.75;
+      const estimated = sampleBytes * template.pages.length * 1.04;
+      setPdfEstimate(formatBytes(estimated));
+    } catch { setPdfEstimate(""); }
+    finally { setCurrentPageIdx(originalPage); setEstimating(false); }
+  }, [template, capturePage]);
+
+  useEffect(() => {
+    if (rightTab !== "export" || !template || !compressOn) { setPdfEstimate(""); return; }
+    if (estimateTimerRef.current) clearTimeout(estimateTimerRef.current);
+    estimateTimerRef.current = setTimeout(() => { void estimatePdfSize(compressQuality); }, 400);
+    return () => { if (estimateTimerRef.current) clearTimeout(estimateTimerRef.current); };
+  }, [rightTab, compressOn, compressQuality, template, estimatePdfSize]);
+
+  const exportCurrentPagePNG = useCallback(async () => {
+    const canvas = await capturePage(currentPageIdx);
+    if (!canvas) return;
     const link = document.createElement("a");
-    link.download = (template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".png";
+    link.download = `${pdfBaseName}_page${currentPageIdx + 1}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
-  }, [template, currentPageIdx]);
+  }, [capturePage, currentPageIdx, pdfBaseName]);
 
   const exportCurrentPagePDF = useCallback(async () => {
-    const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-    if (!pageEl || !currentPage) return;
-    const html2canvas = (await import("html2canvas")).default;
+    if (!currentPage) return;
+    const canvas = await capturePage(currentPageIdx);
+    if (!canvas) return;
     const jsPDF = (await import("jspdf")).default;
-    const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
     const pw = currentPage.width; const ph = currentPage.height;
     const pdf = new jsPDF({ orientation: pw > ph ? "landscape" : "portrait", unit: "px", format: [pw, ph], hotfixes: ["px_scaling"] });
-    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, pw, ph);
-    pdf.save((template?.name || "certificate") + "_page" + (currentPageIdx + 1) + ".pdf");
-  }, [template, currentPage, currentPageIdx]);
+    const img = pageImage(canvas, currentPageIdx);
+    pdf.addImage(img.data, img.format, 0, 0, pw, ph);
+    pdf.save(`${pdfBaseName}_page${currentPageIdx + 1}.pdf`);
+  }, [capturePage, currentPage, currentPageIdx, pageImage, pdfBaseName]);
 
   const exportAllPagesPDF = useCallback(async () => {
-    if (!template || !currentPage) return;
-    const html2canvas = (await import("html2canvas")).default;
+    if (!template) return;
     const jsPDF = (await import("jspdf")).default;
     const firstPage = template.pages[0];
     const pdf = new jsPDF({ orientation: firstPage.width > firstPage.height ? "landscape" : "portrait", unit: "px", format: [firstPage.width, firstPage.height], hotfixes: ["px_scaling"] });
     const originalPage = currentPageIdx;
     for (let index = 0; index < template.pages.length; index++) {
-      setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement;
-      if (!pageEl) continue;
+      const canvas = await capturePage(index);
+      if (!canvas) continue;
       const page = template.pages[index];
       if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
-      pdf.addImage((await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" })).toDataURL("image/png"), "PNG", 0, 0, page.width, page.height);
+      const img = pageImage(canvas, index);
+      pdf.addImage(img.data, img.format, 0, 0, page.width, page.height);
     }
-    setCurrentPageIdx(originalPage); pdf.save((template.name || "certificate") + ".pdf");
-  }, [template, currentPage, currentPageIdx]);
+    setCurrentPageIdx(originalPage);
+    pdf.save(`${pdfBaseName}.pdf`);
+  }, [template, currentPageIdx, capturePage, pageImage, pdfBaseName]);
 
   const downloadCertificatePackage = useCallback(async () => {
-    if (!template || !currentPage) return;
-    const html2canvas = (await import("html2canvas")).default;
+    if (!template) return;
     const jsPDF = (await import("jspdf")).default;
     const originalPage = currentPageIdx;
     const first = template.pages[0];
     const pdf = new jsPDF({ orientation: first.width > first.height ? "landscape" : "portrait", unit: "px", format: [first.width, first.height], hotfixes: ["px_scaling"] });
     for (let index = 0; index < 5; index++) {
-      setCurrentPageIdx(index); setSelectedBlockId(null); setEditingBlockId(null);
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
-      if (!pageEl) continue;
+      const canvas = await capturePage(index);
+      if (!canvas) continue;
       const page = template.pages[index];
       if (index > 0) pdf.addPage([page.width, page.height], page.width > page.height ? "landscape" : "portrait");
-      const image = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      pdf.addImage(image.toDataURL("image/png"), "PNG", 0, 0, page.width, page.height);
+      const img = pageImage(canvas, index);
+      pdf.addImage(img.data, img.format, 0, 0, page.width, page.height);
     }
-    pdf.save(`${template.name || "certificate"}_pages_1-5.pdf`);
-    setCurrentPageIdx(5); setSelectedBlockId(null); setEditingBlockId(null);
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    const pageSix = document.querySelector(".cert-canvas-page") as HTMLElement | null;
+    pdf.save(`${pdfBaseName}.pdf`);
+    const pageSix = await capturePage(5);
     if (pageSix) {
-      const image = await html2canvas(pageSix, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      const link = document.createElement("a"); link.download = `${template.name || "certificate"}_page_6.jpg`; link.href = image.toDataURL("image/jpeg", .95); link.click();
+      const link = document.createElement("a");
+      link.download = `${socialBaseName}.jpg`;
+      link.href = pageSix.toDataURL("image/jpeg", 0.95);
+      link.click();
     }
     setCurrentPageIdx(originalPage);
-  }, [template, currentPage, currentPageIdx]);
+  }, [template, currentPageIdx, capturePage, pageImage, pdfBaseName, socialBaseName]);
 
   const issueAndAttachCertificate = useCallback(async () => {
     if (!record || !template || !currentPage) return;
@@ -1461,6 +1513,24 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                 <div className="cert-export-panel">
                   <div className="cert-field-section">
                     <h4 className="cert-field-section-title">Export Options</h4>
+                    <label className="cert-check-row cert-compress-toggle" title="Compress page images to JPEG so the PDF stays small. Text stays perfectly sharp.">
+                      <input type="checkbox" checked={compressOn} onChange={(e) => setCompressOn(e.target.checked)} />
+                      <span>Compress PDF (smaller file)</span>
+                    </label>
+                    {compressOn && (
+                      <div className="cert-field-group cert-compress-control">
+                        <div className="cert-compress-head">
+                          <label className="cert-field-label">Image quality</label>
+                          <span className="cert-compress-quality">{compressQuality}%</span>
+                        </div>
+                        <input className="cert-input cert-compress-slider" type="range" min={40} max={95} step={1} value={compressQuality} onChange={(e) => setCompressQuality(+e.target.value)} />
+                        <div className="cert-compress-estimate">
+                          <span>Estimated PDF size</span>
+                          <strong>{estimating ? "Analyzing…" : pdfEstimate || "—"}</strong>
+                        </div>
+                        <p className="cert-field-hint">Lower quality = smaller file. Page 6 (social media) always exports at maximum quality.</p>
+                      </div>
+                    )}
                     <button className="cert-btn cert-btn--primary cert-btn--full" onClick={downloadCertificatePackage}>Download Pages 1–5 PDF + Page 6 JPG</button>
                     <button className="cert-btn cert-btn--primary cert-btn--full" onClick={exportAllPagesPDF}>Export All Pages as PDF</button>
                     <button className="cert-btn cert-btn--full" onClick={exportCurrentPagePNG}>Export Current Page as PNG</button>

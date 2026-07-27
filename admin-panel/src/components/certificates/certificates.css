@@ -531,3 +531,11 @@
 .cert-convert-field-item:hover { background:#eef6f0; }
 .cert-convert-field-item span { font-weight:600; color:#1c2821; }
 .cert-convert-field-item code { font-size:.62rem; color:#6b7a6e; background:#e8ede9; padding:1px 4px; border-radius:3px; }
+
+.cert-compress-toggle { margin-bottom:.5rem; }
+.cert-compress-control { margin-bottom:.6rem; padding:.6rem .65rem; border:1px solid #e0e5df; border-radius:8px; background:#f7faf7; }
+.cert-compress-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:.35rem; }
+.cert-compress-quality { font-size:.72rem; font-weight:800; color:#15803d; background:#dcfce7; padding:1px 7px; border-radius:10px; }
+.cert-compress-slider { padding:0; height:22px; accent-color:#16a34a; cursor:pointer; }
+.cert-compress-estimate { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:.5rem; padding-top:.45rem; border-top:1px dashed #d4ddd6; font-size:.72rem; color:#5a6a5e; }
+.cert-compress-estimate strong { font-size:.82rem; color:#1c2821; }
