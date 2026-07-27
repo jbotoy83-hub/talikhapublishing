@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { TextSegment, CertificateField, BlockStyle } from "./types";
-import { CERT_FONTS } from "./types";
 import { normalizeSegments } from "./field-engine";
 
 interface InlineTextEditorProps {
@@ -32,30 +31,14 @@ function applyInlineStyle(el: HTMLElement, s: Partial<BlockStyle>): void {
   if (s.lineHeight) el.style.lineHeight = String(s.lineHeight);
 }
 
-type PopoverMode = "toolbar" | "link" | "style";
-interface PopoverState { x: number; y: number; mode: PopoverMode }
-
-const WEIGHT_OPTIONS = [
-  { label: "Light", value: 300 },
-  { label: "Regular", value: 400 },
-  { label: "Medium", value: 500 },
-  { label: "Semibold", value: 600 },
-  { label: "Bold", value: 700 },
-  { label: "X-Bold", value: 800 },
-  { label: "Black", value: 900 },
-];
-
 export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: InlineTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastSerialized = useRef<string>("");
   const focusedRef = useRef(false);
-  const selectionDraggingRef = useRef(false);
   const committedRef = useRef(false);
-  const [popover, setPopover] = useState<PopoverState | null>(null);
   const savedRange = useRef<Range | null>(null);
-  const [linkSearch, setLinkSearch] = useState("");
-  const [customStyle, setCustomStyle] = useState<Partial<BlockStyle>>({});
+  const [hasSelection, setHasSelection] = useState(false);
 
   const labelOf = useCallback((k: string) => fields.find((f) => f.key === k)?.label || k, [fields]);
 
@@ -79,48 +62,29 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
             out.push({ t: "f", k, style });
           }
         } else if (e.classList.contains("cert-run")) {
-          const styleStr = e.getAttribute("data-style");
           let runStyle: Partial<BlockStyle> | undefined;
-          if (styleStr) { try { runStyle = JSON.parse(styleStr); } catch { /* skip */ } }
-          const kids = e.childNodes;
-          for (let i = 0; i < kids.length; i++) {
-            const c = kids[i];
-            const lb = prependBreak && i === 0;
-            if (c.nodeType === Node.TEXT_NODE) {
-              out.push({ t: "s", v: (lb ? "\n" : "") + (c.textContent || ""), style: runStyle });
-            } else if (c.nodeType === Node.ELEMENT_NODE && (c as HTMLElement).tagName === "BR") {
-              out.push({ t: "s", v: "\n", style: runStyle });
-            } else {
-              walkNode(c, lb);
-            }
-          }
+          try { const raw = e.getAttribute("data-style"); if (raw) runStyle = JSON.parse(raw) as Partial<BlockStyle>; } catch { /* skip */ }
+          const inner = e.textContent || "";
+          if (inner) out.push({ t: "s", v: (prependBreak ? "\n" : "") + inner, style: runStyle });
         } else if (e.tagName === "BR") {
-          out.push({ t: "s", v: (prependBreak ? "\n\n" : "\n") });
+          out.push({ t: "s", v: "\n" });
+        } else if (e.tagName === "DIV" || e.tagName === "P") {
+          const children = Array.from(e.childNodes);
+          children.forEach((child, i) => walkNode(child, topBlockSeen && i === 0));
+          topBlockSeen = true;
+          return;
         } else {
-          const isBlock = e.tagName === "DIV" || e.tagName === "P";
-          const needBreak = prependBreak || isBlock;
-          const kids = e.childNodes;
-          for (let i = 0; i < kids.length; i++) {
-            walkNode(kids[i], needBreak && i === 0);
-          }
+          const inner = e.textContent || "";
+          if (inner) out.push({ t: "s", v: (prependBreak ? "\n" : "") + inner });
         }
       }
     };
 
-    const topKids = el.childNodes;
-    for (let i = 0; i < topKids.length; i++) {
-      const node = topKids[i];
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = (node as HTMLElement).tagName;
-        if (tag === "DIV" || tag === "P") {
-          walkNode(node, topBlockSeen);
-          topBlockSeen = true;
-          continue;
-        }
-      }
-      walkNode(node, false);
+    const children = Array.from(el.childNodes);
+    children.forEach((node, i) => {
+      walkNode(node, i > 0 && topBlockSeen);
       topBlockSeen = true;
-    }
+    });
 
     return normalizeSegments(out);
   }, [segments]);
@@ -197,119 +161,60 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     };
   }, []);
 
-  const saveSelection = useCallback(() => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount) savedRange.current = sel.getRangeAt(0).cloneRange();
-  }, []);
-
-  const restoreSelection = useCallback(() => {
-    const sel = window.getSelection();
-    if (sel && savedRange.current) {
-      sel.removeAllRanges();
-      sel.addRange(savedRange.current);
-    }
-  }, []);
-
-  const updatePopover = useCallback(() => {
+  const checkSelection = useCallback(() => {
     const sel = window.getSelection();
     const el = editorRef.current;
-    const wrap = wrapperRef.current;
-    const hasSelection = !!(sel && !sel.isCollapsed && sel.rangeCount && el && wrap && el.contains(sel.anchorNode));
-    const range = hasSelection ? sel!.getRangeAt(0) : null;
-    const inEditor = !!(range && el && el.contains(range.commonAncestorContainer));
-    const rr = inEditor ? range!.getBoundingClientRect() : null;
-    const hasRect = !!(rr && (rr.width > 0 || rr.height > 0));
-    if (hasSelection && inEditor && hasRect && range) savedRange.current = range.cloneRange();
-
-    setPopover((prev) => {
-      if (prev && prev.mode !== "toolbar") return prev;
-      if (!hasSelection || !inEditor || !hasRect || !wrap) {
-        savedRange.current = null;
-        return null;
-      }
-      const wr = wrap.getBoundingClientRect();
-      const z = zoom || 1;
-      let left = (rr!.left - wr.left) / z + rr!.width / (2 * z);
-      left = Math.max(4, Math.min(left, wr.width / z - 4));
-      const top = (rr!.top - wr.top) / z - 46;
-      return { mode: "toolbar", x: left, y: Math.max(4, top) };
-    });
-  }, [zoom]);
+    if (!sel || !el) { setHasSelection(false); return; }
+    const has = !sel.isCollapsed && sel.rangeCount > 0 && el.contains(sel.anchorNode);
+    setHasSelection(has);
+    if (has && sel.rangeCount) savedRange.current = sel.getRangeAt(0).cloneRange();
+    window.dispatchEvent(new CustomEvent("cert-selection-changed", { detail: { hasSelection: has } }));
+  }, []);
 
   useEffect(() => {
-    const handler = () => { if (focusedRef.current && !selectionDraggingRef.current) updatePopover(); };
+    const handler = () => { if (focusedRef.current) checkSelection(); };
     document.addEventListener("selectionchange", handler);
     return () => document.removeEventListener("selectionchange", handler);
-  }, [updatePopover]);
-
-  const openPanel = useCallback((mode: "link" | "style") => {
-    saveSelection();
-    setPopover((prev) => {
-      const wrap = wrapperRef.current;
-      const z = zoom || 1;
-      if (prev && wrap && savedRange.current) {
-        const rr = savedRange.current.getBoundingClientRect();
-        const wr = wrap.getBoundingClientRect();
-        const left = Math.max(4, Math.min((rr.left - wr.left) / z + rr.width / (2 * z), wr.width / z - 4));
-        return { mode, x: left, y: Math.max(4, (rr.bottom - wr.top) / z + 10) };
-      }
-      return { mode, x: prev?.x ?? 50, y: prev?.y ?? 4 };
-    });
-    if (mode === "style") {
-      setCustomStyle({});
-    }
-    if (mode === "link") {
-      setLinkSearch("");
-    }
-  }, [saveSelection, zoom]);
+  }, [checkSelection]);
 
   useEffect(() => {
-    const handler = () => { if (focusedRef.current && savedRange.current) openPanel("link"); };
-    window.addEventListener("cert-open-link-panel", handler);
-    return () => window.removeEventListener("cert-open-link-panel", handler);
-  }, [openPanel]);
-
-  const closePopover = useCallback(() => {
-    setPopover(null);
-    savedRange.current = null;
-  }, []);
-
-  const applyStyleToSelection = useCallback((runStyle: Partial<BlockStyle>) => {
-    const el = editorRef.current;
-    if (!el) return;
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    if (range.collapsed) return;
-
-    const wrapper = document.createElement("span");
-    wrapper.className = "cert-run";
-    wrapper.setAttribute("data-style", JSON.stringify(runStyle));
-    applyInlineStyle(wrapper, runStyle);
-
-    try {
-      range.surroundContents(wrapper);
-    } catch {
-      const frag = range.extractContents();
-      wrapper.appendChild(frag);
-      range.insertNode(wrapper);
-    }
-
-    const newRange = document.createRange();
-    newRange.selectNodeContents(wrapper);
-    sel.removeAllRanges();
-    sel.addRange(newRange);
-
-    handleInput();
-    setPopover(null);
-  }, [restoreSelection, handleInput]);
+    const handler = (e: Event) => {
+      const key = (e as CustomEvent<{ fieldKey: string }>).detail?.fieldKey;
+      if (!key) return;
+      const el = editorRef.current;
+      if (!el) return;
+      if (savedRange.current) {
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(savedRange.current); }
+      }
+      const sel = window.getSelection();
+      if (!el || !sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!el.contains(range.commonAncestorContainer)) return;
+      range.deleteContents();
+      const chip = makeChipEl(key, labelOf(key));
+      range.insertNode(chip);
+      const after = document.createRange();
+      after.setStartAfter(chip);
+      after.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(after);
+      savedRange.current = null;
+      setHasSelection(false);
+      handleInput();
+    };
+    window.addEventListener("cert-insert-field-at-selection", handler);
+    return () => window.removeEventListener("cert-insert-field-at-selection", handler);
+  }, [labelOf, handleInput]);
 
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ style: Partial<BlockStyle>; toggleProp?: string; fontSizeDelta?: number }>).detail;
       if (!detail || !detail.style) return;
-      restoreSelection();
+      if (savedRange.current) {
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(savedRange.current); }
+      }
       const sel = window.getSelection();
       const el = editorRef.current;
       if (!sel || !sel.rangeCount || sel.isCollapsed || !el) return;
@@ -322,25 +227,26 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           && range.compareBoundaryPoints(Range.END_TO_END, wholeEditor) === 0;
         if (selectsWholeEditor) {
           window.dispatchEvent(new CustomEvent("cert-change-block-font-size", { detail: { delta } }));
-          setPopover(null);
           return;
         }
         const styledRuns = [...el.querySelectorAll<HTMLElement>(".cert-run")].filter((run) => range.intersectsNode(run));
-        // Apply a size to ordinary text, then adjust existing styled runs so a
-        // select-all operation never leaves part of the paragraph unchanged.
         const baseSize = Math.max(1, style.fontSize + delta);
-        applyStyleToSelection({ fontSize: baseSize });
+        const wrapper = document.createElement("span");
+        wrapper.className = "cert-run";
+        const runStyle: Partial<BlockStyle> = { fontSize: baseSize };
+        wrapper.setAttribute("data-style", JSON.stringify(runStyle));
+        applyInlineStyle(wrapper, runStyle);
+        try { range.surroundContents(wrapper); } catch { const frag = range.extractContents(); wrapper.appendChild(frag); range.insertNode(wrapper); }
         styledRuns.forEach((run) => {
-          let runStyle: Partial<BlockStyle> = {};
-          try { runStyle = JSON.parse(run.getAttribute("data-style") || "{}") as Partial<BlockStyle>; } catch { /* use inherited size */ }
-          const current = runStyle.fontSize || style.fontSize;
-          runStyle.fontSize = Math.max(1, current + delta);
-          run.setAttribute("data-style", JSON.stringify(runStyle));
+          let rs: Partial<BlockStyle> = {};
+          try { rs = JSON.parse(run.getAttribute("data-style") || "{}") as Partial<BlockStyle>; } catch { /* skip */ }
+          const current = rs.fontSize || style.fontSize;
+          rs.fontSize = Math.max(1, current + delta);
+          run.setAttribute("data-style", JSON.stringify(rs));
           run.removeAttribute("style");
-          applyInlineStyle(run, runStyle);
+          applyInlineStyle(run, rs);
         });
         handleInput();
-        setPopover(null);
         return;
       }
       if (detail.toggleProp) {
@@ -366,85 +272,27 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
                   applyInlineStyle(runEl as HTMLElement, rs as Partial<BlockStyle>);
                 }
                 handleInput();
-                setPopover(null);
                 return;
               }
             } catch { /* fall through */ }
           }
         }
       }
-      applyStyleToSelection(detail.style);
+      const range = sel.getRangeAt(0);
+      const wrapper = document.createElement("span");
+      wrapper.className = "cert-run";
+      wrapper.setAttribute("data-style", JSON.stringify(detail.style));
+      applyInlineStyle(wrapper, detail.style);
+      try { range.surroundContents(wrapper); } catch { const frag = range.extractContents(); wrapper.appendChild(frag); range.insertNode(wrapper); }
+      const newRange = document.createRange();
+      newRange.selectNodeContents(wrapper);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      handleInput();
     };
     window.addEventListener("cert-apply-format", handler);
     return () => window.removeEventListener("cert-apply-format", handler);
-  }, [restoreSelection, applyStyleToSelection, handleInput, style.fontSize]);
-
-  const clearStyleFromSelection = useCallback(() => {
-    const el = editorRef.current;
-    if (!el) return;
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const runs = el.querySelectorAll(".cert-run");
-    let changed = false;
-    runs.forEach((run) => {
-      if (range.intersectsNode(run)) {
-        const parent = run.parentNode;
-        if (!parent) return;
-        while (run.firstChild) parent.insertBefore(run.firstChild, run);
-        parent.removeChild(run);
-        changed = true;
-      }
-    });
-    if (changed) {
-      handleInput();
-    }
-    setPopover(null);
-  }, [restoreSelection, handleInput]);
-
-  const insertField = useCallback((key: string) => {
-    const el = editorRef.current;
-    if (!el) return;
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!el || !sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    if (!el.contains(range.commonAncestorContainer)) return;
-    range.deleteContents();
-    const chip = makeChipEl(key, labelOf(key));
-    range.insertNode(chip);
-    const after = document.createRange();
-    after.setStartAfter(chip);
-    after.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(after);
-    setPopover(null);
-    handleInput();
-  }, [labelOf, handleInput, restoreSelection]);
-
-  const removeFieldLink = useCallback(() => {
-    const el = editorRef.current;
-    if (!el) return;
-    restoreSelection();
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const fragment = range.cloneContents();
-    const chip = fragment.querySelector?.(".cert-chip") as HTMLElement | null;
-    const replacement = chip?.textContent || range.toString() || "Linked field";
-    range.deleteContents();
-    const text = document.createTextNode(replacement);
-    range.insertNode(text);
-    const after = document.createRange(); after.setStartAfter(text); after.collapse(true);
-    sel.removeAllRanges(); sel.addRange(after);
-    closePopover();
-    handleInput();
-  }, [restoreSelection, closePopover, handleInput]);
-
-  const filteredFields = fields.filter((f) =>
-    !linkSearch || f.label.toLowerCase().includes(linkSearch.toLowerCase()) || f.key.includes(linkSearch.toLowerCase())
-  );
+  }, [handleInput, style.fontSize]);
 
   const rootStyle: React.CSSProperties = {
     fontFamily: style.fontFamily,
@@ -489,160 +337,15 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           const related = e.relatedTarget as Node | null;
           if (related && wrapperRef.current && wrapperRef.current.contains(related)) return;
           focusedRef.current = false;
-          setPopover(null);
+          setHasSelection(false);
           commit();
         }}
         onFocus={() => { focusedRef.current = true; }}
-        onPointerDown={(e) => { e.stopPropagation(); selectionDraggingRef.current = true; setPopover(null); }}
-        onPointerUp={(e) => { e.stopPropagation(); selectionDraggingRef.current = false; requestAnimationFrame(updatePopover); }}
-        onKeyUp={() => updatePopover()}
+        onPointerDown={(e) => { e.stopPropagation(); }}
+        onPointerUp={(e) => { e.stopPropagation(); requestAnimationFrame(checkSelection); }}
+        onKeyUp={() => checkSelection()}
         onMouseDown={(e) => e.stopPropagation()}
       />
-      {popover && (
-        <div
-          className={"cert-sel-popover cert-sel-popover--" + popover.mode}
-          style={{ position: "absolute", left: popover.x, top: popover.y, zIndex: 50, transform: "translateX(-50%)" }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {popover.mode === "toolbar" && (
-            <div className="cert-sel-toolbar">
-              <button type="button" className="cert-sel-btn cert-sel-btn--primary" onMouseDown={(e) => { e.preventDefault(); openPanel("link"); }} title="Replace selected text with a linked field">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-                <span>Convert</span>
-              </button>
-              <span className="cert-sel-sep" />
-              <button type="button" className="cert-sel-btn" onMouseDown={(e) => { e.preventDefault(); openPanel("link"); }} title="Insert a field at cursor">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                <span>Link</span>
-              </button>
-              <span className="cert-sel-sep" />
-              <button type="button" className="cert-sel-btn" onMouseDown={(e) => { e.preventDefault(); openPanel("style"); }} title="Customize style">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                <span>Style</span>
-              </button>
-            </div>
-          )}
-
-          {popover.mode === "link" && (
-            <div className="cert-sel-link-panel">
-              <div className="cert-sel-panel-head">
-                <span className="cert-sel-panel-title">Convert to field</span>
-                <button type="button" className="cert-sel-panel-back" onMouseDown={(e) => { e.preventDefault(); closePopover(); }}>Close</button>
-              </div>
-              <input
-                className="cert-sel-search"
-                placeholder="Search fields..."
-                value={linkSearch}
-                onChange={(e) => setLinkSearch(e.target.value)}
-                onMouseDown={(e) => e.stopPropagation()}
-                autoFocus
-              />
-              <div className="cert-sel-field-list">
-                {filteredFields.map((f) => (
-                  <button key={f.key} type="button" className="cert-sel-field-item" onMouseDown={(e) => { e.preventDefault(); insertField(f.key); }}>
-                    <span className="cert-sel-field-label">{f.label}</span>
-                    <code className="cert-sel-field-key">{f.key}</code>
-                  </button>
-                ))}
-                {filteredFields.length === 0 && <p className="cert-sel-empty">No matching fields</p>}
-              </div>
-              <button type="button" className="cert-sel-style-clear" onMouseDown={(e) => { e.preventDefault(); removeFieldLink(); }}>Remove link</button>
-            </div>
-          )}
-
-          {popover.mode === "style" && (
-            <div className="cert-sel-style-panel">
-              <div className="cert-sel-panel-head">
-                <span className="cert-sel-panel-title">Customize selection</span>
-                <button type="button" className="cert-sel-panel-back" onMouseDown={(e) => { e.preventDefault(); setPopover((p) => p ? { ...p, mode: "toolbar" } : null); }}>Back</button>
-              </div>
-              <div className="cert-sel-style-body">
-                <div className="cert-sel-style-row">
-                  <label className="cert-sel-style-label">Font</label>
-                  <select
-                    className="cert-sel-style-select"
-                    value={customStyle.fontFamily || ""}
-                    onChange={(e) => setCustomStyle((s) => ({ ...s, fontFamily: e.target.value || undefined }))}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <option value="">Inherit</option>
-                    {CERT_FONTS.map((f) => <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>)}
-                  </select>
-                </div>
-                <div className="cert-sel-style-row">
-                  <label className="cert-sel-style-label">Size</label>
-                  <input
-                    className="cert-sel-style-input"
-                    type="number"
-                    min={1}
-                    max={500}
-                    placeholder="—"
-                    value={customStyle.fontSize || ""}
-                    onChange={(e) => setCustomStyle((s) => ({ ...s, fontSize: e.target.value ? +e.target.value : undefined }))}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  />
-                  <span className="cert-sel-style-unit">px</span>
-                </div>
-                <div className="cert-sel-style-row">
-                  <label className="cert-sel-style-label">Weight</label>
-                  <select
-                    className="cert-sel-style-select"
-                    value={customStyle.fontWeight || ""}
-                    onChange={(e) => setCustomStyle((s) => ({ ...s, fontWeight: e.target.value ? +e.target.value : undefined }))}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <option value="">Inherit</option>
-                    {WEIGHT_OPTIONS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-                  </select>
-                </div>
-                <div className="cert-sel-style-row">
-                  <label className="cert-sel-style-label">Color</label>
-                  <div className="cert-sel-style-color-wrap">
-                    <input
-                      type="color"
-                      className="cert-sel-style-color"
-                      value={customStyle.color || style.color || "#000000"}
-                      onChange={(e) => setCustomStyle((s) => ({ ...s, color: e.target.value }))}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    />
-                    <span className="cert-sel-style-color-preview" style={{ backgroundColor: customStyle.color || style.color || "#000000" }} />
-                  </div>
-                </div>
-                <div className="cert-sel-style-row cert-sel-style-row--toggles">
-                  <button
-                    type="button"
-                    className={"cert-sel-style-toggle" + (customStyle.fontStyle === "italic" ? " active" : "")}
-                    onMouseDown={(e) => { e.preventDefault(); setCustomStyle((s) => ({ ...s, fontStyle: s.fontStyle === "italic" ? undefined : "italic" })); }}
-                  ><i>I</i></button>
-                  <button
-                    type="button"
-                    className={"cert-sel-style-toggle" + (customStyle.textDecoration === "underline" ? " active" : "")}
-                    onMouseDown={(e) => { e.preventDefault(); setCustomStyle((s) => ({ ...s, textDecoration: s.textDecoration === "underline" ? undefined : "underline" })); }}
-                  ><u>U</u></button>
-                  <button
-                    type="button"
-                    className={"cert-sel-style-toggle" + (customStyle.textDecoration === "line-through" ? " active" : "")}
-                    onMouseDown={(e) => { e.preventDefault(); setCustomStyle((s) => ({ ...s, textDecoration: s.textDecoration === "line-through" ? undefined : "line-through" })); }}
-                  ><s>S</s></button>
-                </div>
-              </div>
-              <div className="cert-sel-style-actions">
-                <button
-                  type="button"
-                  className="cert-sel-style-apply"
-                  disabled={Object.keys(customStyle).length === 0}
-                  onMouseDown={(e) => { e.preventDefault(); applyStyleToSelection(customStyle); }}
-                >Apply</button>
-                <button
-                  type="button"
-                  className="cert-sel-style-clear"
-                  onMouseDown={(e) => { e.preventDefault(); clearStyleFromSelection(); }}
-                >Clear style</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

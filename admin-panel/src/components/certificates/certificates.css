@@ -524,3 +524,10 @@
 .cert-asset-thumb:hover { border-color:#7aa884; background:#eef6f0; }
 .cert-asset-thumb img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:4px; }
 .cert-asset-thumb span { font-size:.6rem; font-weight:600; color:#5a6a5e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+
+.cert-convert-field-list { max-height:180px; overflow-y:auto; border:1px solid #e0e5df; border-radius:6px; margin-top:4px; background:#fafcf9; }
+.cert-convert-field-item { display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; padding:6px 8px; border:0; border-bottom:1px solid #eef1ed; background:transparent; cursor:pointer; text-align:left; font-size:.72rem; transition:background .1s; }
+.cert-convert-field-item:last-child { border-bottom:0; }
+.cert-convert-field-item:hover { background:#eef6f0; }
+.cert-convert-field-item span { font-weight:600; color:#1c2821; }
+.cert-convert-field-item code { font-size:.62rem; color:#6b7a6e; background:#e8ede9; padding:1px 4px; border-radius:3px; }

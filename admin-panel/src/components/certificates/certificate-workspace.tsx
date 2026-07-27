@@ -53,6 +53,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [cropDraft, setCropDraft] = useState<{ blockId: string; url: string; x: number; y: number; zoom: number } | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
+  const [convertSearch, setConvertSearch] = useState("");
+  const [editorHasSelection, setEditorHasSelection] = useState(false);
   const [leftToolOpen, setLeftToolOpen] = useState({ fields: false, layers: false, validation: false });
   const [dataOpen, setDataOpen] = useState({ author: true, publication: true, certificate: true });
   const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
@@ -86,6 +88,12 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     lastSentFvRef.current = null;
     lastSentRecIdRef.current = null;
   }, [activeTemplateId, activeRecordId]);
+
+  useEffect(() => {
+    const handler = (e: Event) => { setEditorHasSelection((e as CustomEvent<{ hasSelection: boolean }>).detail?.hasSelection ?? false); };
+    window.addEventListener("cert-selection-changed", handler);
+    return () => window.removeEventListener("cert-selection-changed", handler);
+  }, []);
 
   const template = templates.find((t) => t.id === activeTemplateId) || null;
   const record = records.find((r) => r.id === activeRecordId) || null;
@@ -282,7 +290,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const saved = mapServerRecord(payload.record);
     lastSentFvRef.current = JSON.stringify(fieldValues);
     lastSentRecIdRef.current = rec.id;
-    setRecords((current) => current.map((item) => item.id === rec.id ? { ...item, updatedAt: saved.updatedAt, status: saved.status, certificateNumber: saved.certificateNumber, issuedAt: saved.issuedAt ?? item.issuedAt } : item));
+    setRecords((current) => current.map((item) => item.id === rec.id ? { ...item, fieldValues: saved.fieldValues, updatedAt: saved.updatedAt, status: saved.status, certificateNumber: saved.certificateNumber, issuedAt: saved.issuedAt ?? item.issuedAt } : item));
     return true;
   }, [activeRecordId, handleApiState]);
 
@@ -982,7 +990,6 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
       {mode === "builder" && isTextSelected && selectedBlock && (
         <div className="cert-format-bar" onMouseDown={(e) => { if (editingBlockId) e.preventDefault(); }}>
           <div className="cert-fmt-group">
-            <button className="cert-fmt-btn" onClick={() => window.dispatchEvent(new CustomEvent("cert-open-link-panel"))} title="Link the highlighted text to a field">Link</button>
             <select className="cert-fmt-select cert-fmt-font" value={selectedBlock.style.fontFamily} onChange={(e) => fmt({ fontFamily: e.target.value })} title="Font family">
               {CERT_FONTS.map((f) => <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>)}
             </select>
@@ -1137,6 +1144,23 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                           <span>Bold {template.fields.find((field) => field.key === segment.k)?.label || segment.k}</span>
                         </label>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {isTextSelected && editingBlockId === selectedBlock.id && editorHasSelection && (
+                  <div className="cert-field-group">
+                    <label className="cert-field-label">Convert selection to field</label>
+                    <input className="cert-input cert-field-search" placeholder="Search fields…" value={convertSearch} onChange={(e) => setConvertSearch(e.target.value)} />
+                    <div className="cert-convert-field-list">
+                      {template.fields
+                        .filter((f) => !convertSearch || f.label.toLowerCase().includes(convertSearch.toLowerCase()) || f.key.includes(convertSearch.toLowerCase()))
+                        .map((f) => (
+                          <button key={f.key} type="button" className="cert-convert-field-item" onMouseDown={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("cert-insert-field-at-selection", { detail: { fieldKey: f.key } })); setConvertSearch(""); }}>
+                            <span>{f.label}</span>
+                            <code>{f.key}</code>
+                          </button>
+                        ))}
                     </div>
                   </div>
                 )}
