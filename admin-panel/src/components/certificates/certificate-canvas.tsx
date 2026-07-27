@@ -46,9 +46,10 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   onSelectBlock, onStartEdit, onEditCommit, onUpdateBlock, onTransformStart, onZoomChange, pdfDataUrl,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; origX: number; origY: number; wasSelected: boolean } | null>(null);
   const [resize, setResize] = useState<{ blockId: string; handle: HandleDir; startX: number; startY: number; origX: number; origY: number; origW: number; origH: number; aspectRatio: number } | null>(null);
   const [fitZoom, setFitZoom] = useState(1);
+  const dragMovedRef = useRef(false);
   // Pointer devices can produce 120–240 move events per second. Committing each
   // one made the whole workspace (inspector, validation, layers) re-render and
   // was also happening twice because block events bubbled to the canvas. Keep
@@ -108,11 +109,12 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
     if (editingBlockId === block.id) return;
     e.stopPropagation();
     e.preventDefault();
+    const wasSelected = block.id === selectedBlockId;
     onSelectBlock(block.id);
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag({ blockId: block.id, startX: e.clientX, startY: e.clientY, origX: block.x, origY: block.y });
-    if (onTransformStart) onTransformStart();
-  }, [mode, onSelectBlock, editingBlockId, onTransformStart]);
+    dragMovedRef.current = false;
+    setDrag({ blockId: block.id, startX: e.clientX, startY: e.clientY, origX: block.x, origY: block.y, wasSelected });
+  }, [mode, onSelectBlock, editingBlockId, selectedBlockId]);
 
   const onDoubleClickBlock = useCallback((e: React.MouseEvent, block: CertificateBlock) => {
     if (block.locked) return;
@@ -135,6 +137,10 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const scale = effectiveZoom;
     if (drag) {
+      if (Math.abs(e.clientX - drag.startX) + Math.abs(e.clientY - drag.startY) > 3) {
+        if (!dragMovedRef.current && onTransformStart) onTransformStart();
+        dragMovedRef.current = true;
+      }
       const dx = (e.clientX - drag.startX) / scale;
       const dy = (e.clientY - drag.startY) / scale;
       let nx = drag.origX + dx;
@@ -173,9 +179,19 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       }
       queueBlockUpdate(resize.blockId, { x: Math.max(0, x), y: Math.max(0, y), width: w, height: h });
     }
-  }, [drag, resize, effectiveZoom, queueBlockUpdate, blocks]);
+  }, [drag, resize, effectiveZoom, queueBlockUpdate, blocks, onTransformStart]);
 
-  const onPointerUp = useCallback(() => { flushPendingUpdate(); setDrag(null); setResize(null); }, [flushPendingUpdate]);
+  const onPointerUp = useCallback(() => {
+    const d = drag;
+    flushPendingUpdate();
+    if (d && !dragMovedRef.current && d.wasSelected) {
+      const block = blocks.find((b) => b.id === d.blockId);
+      if (block && block.type === "text" && !block.locked) onStartEdit(d.blockId);
+    }
+    dragMovedRef.current = false;
+    setDrag(null);
+    setResize(null);
+  }, [flushPendingUpdate, drag, blocks, onStartEdit]);
 
   const onCanvasClick = useCallback((e: React.MouseEvent) => {
     const t = e.target as HTMLElement;

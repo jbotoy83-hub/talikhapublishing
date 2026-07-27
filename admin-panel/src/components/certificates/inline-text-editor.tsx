@@ -226,12 +226,15 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     const wr = wrap.getBoundingClientRect();
     const z = zoom || 1;
     let left = (rr.left - wr.left) / z + rr.width / (2 * z);
-    const top = (rr.top - wr.top) / z - 48;
     left = Math.max(4, Math.min(left, wr.width / z - 4));
     savedRange.current = range.cloneRange();
-    // Formatting lives in the main editor toolbar. Keep the saved selection
-    // quietly, and only position a panel when the user explicitly opens Link.
-    setPopover((prev) => prev ? { ...prev, x: left, y: Math.max(4, top) } : null);
+    setPopover((prev) => {
+      const mode = prev?.mode ?? "toolbar";
+      const top = mode === "toolbar"
+        ? (rr.top - wr.top) / z - 46
+        : (rr.bottom - wr.top) / z + 10;
+      return { mode, x: left, y: Math.max(4, top) };
+    });
   }, [zoom]);
 
   useEffect(() => {
@@ -242,14 +245,24 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
 
   const openPanel = useCallback((mode: "link" | "style") => {
     saveSelection();
-    setPopover((prev) => prev ? { ...prev, mode } : { x: 50, y: 4, mode });
+    setPopover((prev) => {
+      const wrap = wrapperRef.current;
+      const z = zoom || 1;
+      if (prev && wrap && savedRange.current) {
+        const rr = savedRange.current.getBoundingClientRect();
+        const wr = wrap.getBoundingClientRect();
+        const left = Math.max(4, Math.min((rr.left - wr.left) / z + rr.width / (2 * z), wr.width / z - 4));
+        return { mode, x: left, y: Math.max(4, (rr.bottom - wr.top) / z + 10) };
+      }
+      return { mode, x: prev?.x ?? 50, y: prev?.y ?? 4 };
+    });
     if (mode === "style") {
       setCustomStyle({});
     }
     if (mode === "link") {
       setLinkSearch("");
     }
-  }, [saveSelection]);
+  }, [saveSelection, zoom]);
 
   useEffect(() => {
     const handler = () => { if (focusedRef.current && savedRange.current) openPanel("link"); };

@@ -1199,8 +1199,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
             {!selectedBlock && (
               <div className="cert-left-hint">
                 <p><strong>Click</strong> an element to select &amp; resize it.</p>
-                <p><strong>Double-click</strong> text to type directly on the canvas.</p>
-                <p><strong>Highlight</strong> words while typing to link them to a field.</p>
+                <p><strong>Double-click</strong> text to edit it on the canvas.</p>
+                <p><strong>Highlight</strong> words, then use the <strong>Convert</strong> button that appears to turn them into a linked field.</p>
                 <p><strong>Click empty canvas</strong> to deselect.</p>
               </div>
             )}
