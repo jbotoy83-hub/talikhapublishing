@@ -119,10 +119,6 @@ const sidebarSections = [
     ],
   },
   {
-    label: "Communications",
-    items: [{ label: "Inbox", icon: Inbox, index: 15 }],
-  },
-  {
     label: "Editorial library",
     items: [
       { label: "Studies & papers", icon: FileText, index: 4 },
@@ -135,7 +131,6 @@ const sidebarSections = [
     items: [
       { label: "Announcements", icon: Bell, index: 14 },
       { label: "Media", icon: ImageIcon, index: 13 },
-      { label: "Bank & wallets", icon: CreditCard, index: 5 },
       { label: "Reports", icon: FileCheck2, index: 7 },
       { label: "Activity log", icon: Activity, index: 16 },
     ],
@@ -4690,45 +4685,53 @@ function FeaturedView() {
   );
 }
 
-function ReportsView() {
+function ReportsView({ submissions }: { submissions: EditorialSubmission[] }) {
+  const total = submissions.length;
+  const uniqueAuthors = new Set(submissions.map((s) => s.author).filter(Boolean)).size;
+  const publishedCount = submissions.filter((s) => s.status === "Published").length;
+  const scheduledCount = submissions.filter((s) => s.status === "Scheduled for publishing").length;
+  const needsAction = total - publishedCount;
+  const reportStatuses: SubmissionStatus[] = ["New", "In progress", "Review", "Revise", "For approval", "Accepted", "Scheduled for publishing", "Published", "Rejected"];
+  const exportCsv = () => {
+    const header = ["Reference", "Title", "Author", "Journal", "Status", "Submitted"];
+    const rows = submissions.map((s) => [s.id, s.title, s.author, s.journal, s.status, s.submittedAt]);
+    const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `editorial-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
   return (
     <section className="utility-page">
       <PageHeading
         icon={FileCheck2}
         title="Editorial reports"
-        copy="A concise operational view of the sample records currently available in this design prototype."
+        copy="A concise operational view of your live editorial pipeline."
       />
       <div className="report-metrics">
-        <Metric label="Studies in prototype" value={studyRecords.length} />
-        <Metric label="Authors in prototype" value={authors.length} />
-        <Metric
-          label="Published"
-          value={studyRecords.filter((x) => x.status === "Published").length}
-        />
-        <Metric
-          label="Needs action"
-          value={studyRecords.filter((x) => x.status !== "Published").length}
-        />
+        <Metric label="Studies" value={total} />
+        <Metric label="Authors" value={uniqueAuthors} />
+        <Metric label="Published" value={publishedCount} />
+        <Metric label="Needs action" value={needsAction} />
       </div>
       <div className="report-layout">
         <section className="report-panel">
           <header>
             <h2>Workflow distribution</h2>
-            <span>Prototype records</span>
+            <span>{total} records</span>
           </header>
-          {["New", "In review", "Revision", "Published"].map((status) => {
-            const count = studyRecords.filter(
-              (x) => x.status === status,
-            ).length;
+          {reportStatuses.map((status) => {
+            const count = submissions.filter((s) => s.status === status).length;
             return (
               <div className="report-row" key={status}>
                 <span>{status}</span>
                 <div>
-                  <i
-                    style={{
-                      width: `${Math.max(8, (count / studyRecords.length) * 100)}%`,
-                    }}
-                  />
+                  <i style={{ width: `${total ? Math.max(8, (count / total) * 100) : 8}%` }} />
                 </div>
                 <strong>{count}</strong>
               </div>
@@ -4737,29 +4740,26 @@ function ReportsView() {
         </section>
         <section className="report-panel">
           <header>
-            <h2>Data status</h2>
-            <span>Integration readiness</span>
+            <h2>Pipeline status</h2>
+            <span>Live data</span>
           </header>
           <div className="readiness-item">
             <CheckCircle2 />
             <div>
-              <strong>Editorial prototype</strong>
-              <p>Interactive views and local schedule storage are available.</p>
+              <strong>Live editorial data</strong>
+              <p>Figures reflect the current production records loaded into this workspace.</p>
             </div>
           </div>
-          <div className="readiness-item pending">
+          <div className="readiness-item">
             <Clock3 />
             <div>
-              <strong>Live reporting</strong>
-              <p>
-                Connect protected production records before using these figures
-                operationally.
-              </p>
+              <strong>{scheduledCount} scheduled for publishing</strong>
+              <p>These studies are queued and will publish automatically on their scheduled date.</p>
             </div>
           </div>
-          <button className="disabled-action" disabled>
+          <button className="disabled-action" onClick={exportCsv} disabled={!total}>
             <Download />
-            Export live report
+            Export report (CSV)
           </button>
         </section>
       </div>
@@ -7028,7 +7028,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           </div>
         ) : active === 7 ? (
           <div className="utility-workspace">
-            <ReportsView />
+            <ReportsView submissions={editorialSubmissions} />
           </div>
         ) : active === 8 ? (
           <div className="utility-workspace">
