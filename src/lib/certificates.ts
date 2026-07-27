@@ -1,7 +1,7 @@
 
 export const certificateFieldCatalog = [
   ["author_name", "Author name", "text"], ["author_role", "Author role", "text"],
-  ["work_title", "Work title", "text"], ["publication_name", "Publication name", "text"],
+  ["work_title", "Manuscript title", "text"], ["publication_name", "Publication name", "text"],
   ["volume_number", "Volume", "text"], ["issue_number", "Issue", "text"],
   ["issue_date", "Issue date", "text"], ["date_issued", "Date issued", "date"],
   ["doi", "DOI", "doi"], ["certificate_number", "Certificate number", "certificate_number"],

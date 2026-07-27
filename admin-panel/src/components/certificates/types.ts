@@ -159,7 +159,7 @@ export const DEFAULT_FIELDS: CertificateField[] = [
   { key: "author_academic_title", label: "Academic Title", type: "text", required: false, section: "author", placeholder: "LPT, PhD, MAEd" },
   { key: "author_role", label: "Role or Occupation", type: "text", required: false, section: "author", placeholder: "Faculty, Teacher, Assistant Professor" },
   { key: "author_affiliation", label: "Affiliation", type: "text", required: false, section: "author", placeholder: "University or organization" },
-  { key: "work_title", label: "Article Title", type: "text", required: true, section: "publication", placeholder: "The full title of the article" },
+  { key: "work_title", label: "Manuscript Title", type: "text", required: true, section: "publication", placeholder: "The full title of the manuscript" },
   { key: "doi", label: "DOI", type: "doi", required: false, section: "publication", placeholder: "10.5281/zenodo.XXXXXXXX", validationRule: "doi" },
   { key: "publication_name", label: "Publication Name", type: "text", required: true, section: "publication", placeholder: "Journal or magazine name" },
   { key: "volume_number", label: "Volume", type: "text", required: false, section: "publication" },

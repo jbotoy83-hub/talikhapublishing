@@ -60,10 +60,14 @@ export function mapTemplate(template: Row, pages: Row[], fields: Row[], blocks: 
     version: number(template.version, 1),
     updatedAt: text(template.updated_at),
     pages: mappedPages,
-    fields: fields.map((field) => ({
-      key: text(field.field_key), label: text(field.label), type: text(field.field_type, "text"),
-      required: Boolean(field.required), section: text(field.section, "custom"), defaultValue: text(field.default_value),
-    })),
+    fields: fields.map((field) => {
+      const key = text(field.field_key);
+      const labelOverrides: Record<string, string> = { work_title: "Manuscript Title" };
+      return {
+        key, label: labelOverrides[key] || text(field.label), type: text(field.field_type, "text"),
+        required: Boolean(field.required), section: text(field.section, "custom"), defaultValue: text(field.default_value),
+      };
+    }),
     blocks: blocks.map((block) => {
       const content = normalizeRichContent(block.content);
       const rawStyle = block.style && typeof block.style === "object" ? block.style as Record<string, unknown> : {};

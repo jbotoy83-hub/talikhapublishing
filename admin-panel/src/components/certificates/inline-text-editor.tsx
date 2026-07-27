@@ -494,7 +494,12 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
         >
           {popover.mode === "toolbar" && (
             <div className="cert-sel-toolbar">
-              <button type="button" className="cert-sel-btn" onMouseDown={(e) => { e.preventDefault(); openPanel("link"); }} title="Link to a field">
+              <button type="button" className="cert-sel-btn cert-sel-btn--primary" onMouseDown={(e) => { e.preventDefault(); openPanel("link"); }} title="Replace selected text with a linked field">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+                <span>Convert</span>
+              </button>
+              <span className="cert-sel-sep" />
+              <button type="button" className="cert-sel-btn" onMouseDown={(e) => { e.preventDefault(); openPanel("link"); }} title="Insert a field at cursor">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 <span>Link</span>
               </button>
@@ -509,7 +514,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           {popover.mode === "link" && (
             <div className="cert-sel-link-panel">
               <div className="cert-sel-panel-head">
-                <span className="cert-sel-panel-title">Link to field</span>
+                <span className="cert-sel-panel-title">Convert to field</span>
                 <button type="button" className="cert-sel-panel-back" onMouseDown={(e) => { e.preventDefault(); closePopover(); }}>Close</button>
               </div>
               <input

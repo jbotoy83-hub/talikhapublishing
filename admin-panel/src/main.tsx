@@ -2254,6 +2254,7 @@ function LegacySubmissionReview({
   const [saved, setSaved] = useState(false),
     [deleteOpen, setDeleteOpen] = useState(false),
     [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false),
+    [confirmingPayment, setConfirmingPayment] = useState(false),
     [paymentViewerOpen, setPaymentViewerOpen] = useState(false),
     [previewFile, setPreviewFile] = useState<{ id: string; mime_type: string; original_name: string } | null>(null),
     [authors, setAuthors] = useState(() => authorsFor(submission)),
@@ -2370,13 +2371,15 @@ function LegacySubmissionReview({
     });
   };
   const confirmPayment = async () => {
-    if (paymentConfirmed || !isAdmin) return;
+    if (paymentConfirmed || !isAdmin || confirmingPayment) return;
     const paymentId = submission.paymentId;
     if (!submission.paymentProof || !submission.paymentMethod || !submission.paymentReference) {
       window.alert("A payment proof, method, and reference are required before confirmation.");
       return;
     }
+    setConfirmingPayment(true);
     const response = await fetch(`/api/admin/submissions/${submission.id}/payment/confirm`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(paymentId ? { paymentId } : {}) });
+    setConfirmingPayment(false);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       window.alert(body?.error || "The payment could not be confirmed.");
@@ -2948,7 +2951,7 @@ function LegacySubmissionReview({
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => setPaymentConfirmOpen(false)}>Cancel</Button>
-            <Button type="button" size="sm" onClick={async () => { await confirmPayment(); setPaymentConfirmOpen(false); }}><CheckCircle2 /> Accept payment</Button>
+            <Button type="button" size="sm" disabled={confirmingPayment} onClick={async () => { await confirmPayment(); setPaymentConfirmOpen(false); }}>{confirmingPayment ? "Confirming…" : <><CheckCircle2 /> Accept payment</>}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3224,11 +3227,14 @@ function ManuscriptFileList({ files, fallbackName, className, onPreview }: { fil
       <span>Manuscript files</span>
       <div>
         {docs.length ? docs.map((f) => (
-          <button key={f.id} type="button" onClick={() => onPreview({ id: f.id, mime_type: f.mime_type, original_name: f.original_name })}>
-            <FileText />
-            <span><strong>{f.original_name || "Submitted document"}</strong><small>{describeMime(f.mime_type)} · preview from storage</small></span>
-            <Eye />
-          </button>
+          <div key={f.id} className="manuscript-file-row">
+            <button type="button" onClick={() => onPreview({ id: f.id, mime_type: f.mime_type, original_name: f.original_name })}>
+              <FileText />
+              <span><strong>{f.original_name || "Submitted document"}</strong><small>{describeMime(f.mime_type)} · preview from storage</small></span>
+              <Eye />
+            </button>
+            <a className="manuscript-dl-btn" href={`/api/admin/files/${f.id}`} download={f.original_name || "manuscript"} title="Download file"><Download size={14} strokeWidth={1.9} /></a>
+          </div>
         )) : (
           <button type="button" disabled>
             <FileText />

@@ -1928,6 +1928,31 @@ main {
   color: var(--text-muted);
   font-size: 0.6875rem;
 }
+.manuscript-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.manuscript-file-row > button {
+  flex: 1;
+  min-width: 0;
+}
+.manuscript-dl-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid #e2e5ea;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.manuscript-dl-btn:hover {
+  border-color: #16a34a;
+  color: #16a34a;
+  background: #f0fdf4;
+}
 .instruction-choice {
   display: flex;
   align-items: center;
