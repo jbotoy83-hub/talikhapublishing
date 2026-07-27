@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Montserrat:wght@300;400;500;600;700;800;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Oswald:wght@200;300;400;500;600;700&family=Raleway:wght@300;400;500;600;700;800;900&display=swap');
 
-.cert-ws { display:flex; flex-direction:column; height:100vh; background:#f0eeea; color:#1c2821; font-family:Inter,system-ui,sans-serif; overflow:hidden; }
+.cert-ws { display:flex; flex-direction:column; height:100%; background:#f0eeea; color:#1c2821; font-family:Inter,system-ui,sans-serif; overflow:hidden; }
 .cert-ws--list { height:auto; min-height:100vh; overflow:auto; padding:0; }
 
-.cert-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.5rem 1rem; background:#14241c; color:#e8e6e0; border-bottom:1px solid #0e1a14; flex-shrink:0; z-index:20; }
+.cert-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.4rem .9rem; background:#14241c; color:#e8e6e0; border-bottom:1px solid #0e1a14; flex-shrink:0; z-index:20; }
 .cert-header-left { display:flex; align-items:center; gap:.75rem; min-width:0; }
 .cert-header-back { display:grid; width:28px; height:28px; place-items:center; border:1px solid rgba(255,255,255,.15); border-radius:6px; background:transparent; color:#b0b8ae; font-size:1rem; cursor:pointer; transition:background .15s,color .15s; }
 .cert-header-back:hover { background:rgba(255,255,255,.1); color:#fff; }
@@ -11,7 +11,9 @@
 .cert-header-breadcrumb { font-size:.78rem; color:#8a9588; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cert-saved-indicator { font-size:.7rem; font-weight:600; }
 .cert-saved-indicator.saved { color:#6dbf8b; }
-.cert-saved-indicator.unsaved { color:#e7aa54; animation:cert-pulse 1.5s ease-in-out infinite; }
+.cert-saved-indicator.unsaved { color:#c9a24a; }
+.cert-saved-indicator.saving { color:#8fbfa4; }
+.cert-saved-indicator.error { color:#e05555; animation:cert-pulse 1.5s ease-in-out infinite; }
 @keyframes cert-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 .cert-header-center { flex-shrink:0; }
 .cert-header-right { display:flex; align-items:center; gap:.4rem; flex-shrink:0; }
@@ -89,7 +91,7 @@
 .cert-canvas-toolbar button.active { background:#1f7a4d; color:#fff; }
 .cert-zoom-label { font-size:.72rem; font-weight:600; color:#6b756d; min-width:2.5rem; text-align:center; }
 
-.cert-canvas-scroll { flex:1; overflow:auto; display:flex; justify-content:center; padding:3rem 2rem 1rem; scrollbar-width:none; -ms-overflow-style:none; }
+.cert-canvas-scroll { flex:1; overflow:auto; display:flex; justify-content:center; padding:2.5rem 1.25rem 1rem; scrollbar-width:none; -ms-overflow-style:none; }
 .cert-canvas-scroll::-webkit-scrollbar { display:none; }
 .cert-canvas-scroll.is-fit { padding:3.5rem 4rem 2.5rem; }
 .cert-canvas-page { position:relative; background:#fff; box-shadow:0 4px 24px rgba(0,0,0,.12),0 1px 4px rgba(0,0,0,.06); flex-shrink:0; transition:transform .2s ease; }
@@ -98,7 +100,7 @@
 .cert-field-badge { position:absolute; top:-10px; left:2px; padding:1px 5px; background:#16a34a; color:#fff; font-size:8px; font-weight:700; border-radius:3px; letter-spacing:.03em; pointer-events:none; white-space:nowrap; max-width:120px; overflow:hidden; text-overflow:ellipsis; line-height:1.4; }
 .cert-overflow-badge { position:absolute; top:-10px; right:2px; width:16px; height:16px; display:grid; place-items:center; background:#dc2626; color:#fff; font-size:9px; border-radius:50%; pointer-events:none; }
 
-.cert-page-nav { display:flex; align-items:center; justify-content:center; gap:.6rem; padding:.45rem .75rem; background:rgba(255,255,255,.85); backdrop-filter:blur(6px); border-top:1px solid #d8ddd4; flex-shrink:0; }
+.cert-page-nav { display:flex; align-items:center; justify-content:center; gap:.6rem; padding:.35rem .75rem; background:rgba(255,255,255,.85); backdrop-filter:blur(6px); border-top:1px solid #d8ddd4; flex-shrink:0; }
 .cert-page-nav button { display:grid; width:26px; height:26px; place-items:center; border:1px solid #d0d5cc; border-radius:6px; background:#fff; color:#4a5560; font-size:.9rem; cursor:pointer; transition:background .12s; }
 .cert-page-nav button:hover:not(:disabled) { background:#eef2ee; }
 .cert-page-nav button:disabled { opacity:.35; cursor:not-allowed; }
@@ -459,3 +461,19 @@
   .cert-sel-popover { animation:none; }
 }
 .cert-import-section { display: none; }
+
+/* Empty linked field on the canvas: faded + dashed so an unfilled certificate
+   never looks finished. Filled fields keep the solid green chip. */
+.cert-chip--empty { background:transparent; outline:1px dashed #c2b4ac; color:#9a8d85; font-style:italic; }
+
+/* Data panel: clickable field labels jump to the matching block on the canvas. */
+.cert-field-label--loc { cursor:pointer; border-radius:4px; transition:color .12s,background .12s; }
+.cert-field-label--loc:hover { color:#1f7a4d; background:#eef6f0; }
+.cert-field-label--loc::after { content:" ⌖"; color:#9bb6a4; font-size:.72rem; opacity:0; transition:opacity .12s; }
+.cert-field-label--loc:hover::after { opacity:1; }
+
+/* Collapsible Data sections */
+.cert-data-section-toggle { display:flex; align-items:center; justify-content:space-between; width:100%; gap:.5rem; padding:0; border:0; background:transparent; cursor:pointer; text-align:left; }
+.cert-data-section-toggle .cert-field-section-title { margin:0; }
+.cert-data-section-chev { font-size:.85rem; font-weight:700; color:#8a9588; line-height:1; }
+.cert-data-section-toggle:hover .cert-field-section-title, .cert-data-section-toggle:hover .cert-data-section-chev { color:#1f7a4d; }

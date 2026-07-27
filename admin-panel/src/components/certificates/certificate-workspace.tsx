@@ -54,6 +54,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [cropDraft, setCropDraft] = useState<{ blockId: string; url: string; x: number; y: number; zoom: number } | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
   const [leftToolOpen, setLeftToolOpen] = useState({ fields: false, layers: false, validation: false });
+  const [dataOpen, setDataOpen] = useState({ author: true, publication: true, certificate: true });
   const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
   const launchSubmissionId = useMemo(() => new URLSearchParams(window.location.search).get("certificateSubmission") || "", []);
   const [launchState, setLaunchState] = useState<"idle" | "loading" | "error">(launchSubmissionId ? "loading" : "idle");
@@ -67,6 +68,23 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const prevEditingRef = useRef<string | null>(null);
   const templateRef = useRef<CertificateTemplate | null>(null);
   const cropPointerRef = useRef<{ x: number; y: number; cropX: number; cropY: number; width: number; height: number } | null>(null);
+  const fieldInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const recordsRef = useRef<CertificateRecord[]>(records);
+  recordsRef.current = records;
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentPayloadRef = useRef<string | null>(null);
+  const lastSentFvRef = useRef<string | null>(null);
+  const lastSentRecIdRef = useRef<string | null>(null);
+  const runSaveRef = useRef<() => void>(() => {});
+  const [saveRevision, setSaveRevision] = useState(0);
+
+  useEffect(() => {
+    lastSentPayloadRef.current = null;
+    lastSentFvRef.current = null;
+    lastSentRecIdRef.current = null;
+  }, [activeTemplateId, activeRecordId]);
 
   const template = templates.find((t) => t.id === activeTemplateId) || null;
   const record = records.find((r) => r.id === activeRecordId) || null;
@@ -182,18 +200,11 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     });
   }, [template?.id, template?.fields]);
 
-  const persist = useCallback(async (t: CertificateTemplate[]) => {
-    const active = t.find((item) => item.id === activeTemplateId);
-    if (!active || !active.pages.length) return;
-    setSaveState("saving");
-    try {
-      const response = await fetch(`/api/admin/certificates/${active.id}`, { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: active.name, pages: active.pages.map((page) => ({ id: page.id, width: page.width, height: page.height })), blocks: active.blocks.map((block) => ({ id: block.id.startsWith("cb-") ? undefined : block.id, pageId: block.pageId, type: block.type === "image" ? "image" : "text", content: block.segments ? { type: "rich_text", segments: block.segments } : block.content, x: block.x, y: block.y, width: block.width, height: block.height, rotation: block.rotation, zIndex: block.zIndex, style: block.style, overflowBehavior: block.overflowBehavior === "keep" ? "manual" : block.overflowBehavior, locked: block.locked, assetBucket: block.assetBucket || null, assetPath: block.assetPath || null })) }) });
-      if (!handleApiState(response)) { setSaveState("error"); return; }
-      const payload = await response.json();
-      setTemplates((items) => items.map((item) => item.id === active.id ? { ...item, ...payload.template } : item));
-      setDirty(false); setSaveState("saved");
-    } catch { setSaveState("error"); setServiceState("unavailable"); }
-  }, [activeTemplateId, handleApiState]);
+  const buildTemplatePayload = (active: CertificateTemplate) => ({
+    name: active.name,
+    pages: active.pages.map((page) => ({ id: page.id, width: page.width, height: page.height })),
+    blocks: active.blocks.map((block) => ({ id: block.id.startsWith("cb-") ? undefined : block.id, pageId: block.pageId, type: block.type === "image" ? "image" : "text", content: block.segments ? { type: "rich_text", segments: block.segments } : block.content, x: block.x, y: block.y, width: block.width, height: block.height, rotation: block.rotation, zIndex: block.zIndex, style: block.style, overflowBehavior: block.overflowBehavior === "keep" ? "manual" : block.overflowBehavior, locked: block.locked, assetBucket: block.assetBucket || null, assetPath: block.assetPath || null })),
+  });
 
   const pushUndo = useCallback(() => {
     const t = templateRef.current;
@@ -214,6 +225,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     }
     setTemplates((prev) => prev.map((x) => x.id === t.id ? { ...updater(x), updatedAt: new Date().toISOString() } : x));
     setDirty(true);
+    setSaveRevision((n) => n + 1);
     setSaveState("saved");
   }, [pushUndo]);
 
@@ -221,12 +233,28 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     if (!record) return;
     setRecords((prev) => prev.map((r) => r.id === record.id ? { ...updater(r), updatedAt: new Date().toISOString() } : r));
     setDirty(true);
+    setSaveRevision((n) => n + 1);
   }, [record]);
 
   const setFieldValue = useCallback((key: string, value: string) => {
     if (record) updateRecord((r) => ({ ...r, fieldValues: { ...r.fieldValues, [key]: value } }));
     else setPreviewValues((values) => ({ ...values, [key]: value }));
   }, [updateRecord]);
+
+  const focusFieldOnCanvas = (key: string) => {
+    if (!template) return;
+    const matches = (b: CertificateBlock) => b.linkedFieldKey === key || !!b.segments?.some((s) => s.t === "f" && s.k === key);
+    const block = template.blocks.find((b) => b.pageId === currentPage?.id && matches(b)) || template.blocks.find(matches);
+    if (!block) return;
+    const idx = template.pages.findIndex((p) => p.id === block.pageId);
+    if (idx >= 0 && idx !== currentPageIdx) setCurrentPageIdx(idx);
+    setSelectedBlockId(block.id);
+    setEditingBlockId(null);
+    window.setTimeout(() => {
+      const el = document.querySelector(`.cert-canvas-page [data-block-id="${block.id}"]`);
+      el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }, 80);
+  };
 
   const importManuscript = useCallback(async (publicationId: string) => {
     if (!template) return;
@@ -243,16 +271,19 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   }, [template, handleApiState]);
 
   const saveRecord = useCallback(async () => {
-    if (!record) return true;
-    const fieldValues = { ...record.fieldValues } as Record<string, unknown>;
+    const rec = recordsRef.current.find((item) => item.id === activeRecordId) || null;
+    if (!rec || rec.id.startsWith("cb-")) return true;
+    const fieldValues = { ...rec.fieldValues } as Record<string, unknown>;
     delete fieldValues._import_warnings;
-    const response = await fetch(`/api/admin/certificates/records/${record.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldValues }) });
+    const response = await fetch(`/api/admin/certificates/records/${rec.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldValues }) });
     if (!handleApiState(response)) return false;
     const payload = await response.json();
     const saved = mapServerRecord(payload.record);
-    setRecords((current) => current.map((item) => item.id === saved.id ? saved : item));
+    lastSentFvRef.current = JSON.stringify(fieldValues);
+    lastSentRecIdRef.current = rec.id;
+    setRecords((current) => current.map((item) => item.id === rec.id ? { ...item, updatedAt: saved.updatedAt, status: saved.status, certificateNumber: saved.certificateNumber, issuedAt: saved.issuedAt ?? item.issuedAt } : item));
     return true;
-  }, [record, handleApiState]);
+  }, [activeRecordId, handleApiState]);
 
   const refreshRecord = useCallback(async () => {
     if (!record) return;
@@ -264,11 +295,74 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     } catch { setServiceState("unavailable"); }
   }, [record, handleApiState]);
 
-  const saveWorkspace = useCallback(async () => {
-    await persist(templates);
-    const savedRecord = await saveRecord();
-    if (!savedRecord) setSaveState("error");
-  }, [persist, templates, saveRecord]);
+  const recordFieldValuesString = (rec: CertificateRecord | null) => {
+    if (!rec) return null;
+    const fv = { ...rec.fieldValues } as Record<string, unknown>;
+    delete fv._import_warnings;
+    return JSON.stringify(fv);
+  };
+
+  const scheduleAutosave = useCallback(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => { autosaveTimerRef.current = null; runSaveRef.current(); }, 1200);
+  }, []);
+
+  const runSave = useCallback(async () => {
+    const active = templateRef.current;
+    if (!active || !active.pages.length) return;
+    const rec = recordsRef.current.find((item) => item.id === activeRecordId) || null;
+    const payload = buildTemplatePayload(active);
+    const payloadStr = JSON.stringify(payload);
+    const fvStr = recordFieldValuesString(rec);
+    const needPut = payloadStr !== lastSentPayloadRef.current;
+    const needPatch = !!rec && !rec.id.startsWith("cb-") && fvStr !== lastSentFvRef.current;
+    if (!needPut && !needPatch) { setDirty(false); setSaveState("saved"); return; }
+    if (saveInFlightRef.current) { saveQueuedRef.current = true; return; }
+    saveInFlightRef.current = true;
+    setSaveState("saving");
+    let ok = true;
+    try {
+      if (needPut) {
+        const response = await fetch(`/api/admin/certificates/${active.id}`, { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: payloadStr });
+        if (!handleApiState(response)) ok = false;
+      }
+      if (ok && needPatch) {
+        const saved = await saveRecord();
+        if (!saved) ok = false;
+      }
+      if (ok) {
+        if (needPut) lastSentPayloadRef.current = payloadStr;
+        const nowActive = templateRef.current;
+        const nowRec = recordsRef.current.find((item) => item.id === activeRecordId) || null;
+        const stillDirty = (nowActive ? JSON.stringify(buildTemplatePayload(nowActive)) !== lastSentPayloadRef.current : false)
+          || (!!nowRec && !nowRec.id.startsWith("cb-") && recordFieldValuesString(nowRec) !== lastSentFvRef.current);
+        setDirty(stillDirty);
+        setSaveState("saved");
+      } else {
+        setSaveState("error");
+      }
+    } catch {
+      setSaveState("error");
+    } finally {
+      saveInFlightRef.current = false;
+      if (saveQueuedRef.current) { saveQueuedRef.current = false; runSaveRef.current(); }
+    }
+  }, [activeRecordId, handleApiState, saveRecord]);
+
+  runSaveRef.current = runSave;
+
+  const manualSave = useCallback(() => {
+    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
+    runSaveRef.current();
+  }, []);
+
+  useEffect(() => {
+    if (!dirty || serviceState !== "ready" || saveState !== "saved") return;
+    scheduleAutosave();
+    return () => { if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; } };
+  }, [dirty, saveRevision, serviceState, saveState, scheduleAutosave]);
+
+  useEffect(() => () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); }, []);
 
   const undo = useCallback(() => {
     if (!undoStack.length || !template) return;
@@ -289,8 +383,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   }, [redoStack, template]);
 
   useEffect(() => {
-    if (mode !== "builder") return;
-    setRightOpen(true);
+    if (mode === "generator") { setRightOpen(true); setRightTab("data"); return; }
+    if (selectedBlockId) setRightOpen(true);
   }, [selectedBlockId, mode]);
 
   // Snapshot the template once when text editing begins, so a whole typing session
@@ -405,7 +499,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     const next = records.map((r) => r.id === record.id ? { ...r, blocks: updater(current), updatedAt: new Date().toISOString() } : r);
     setRecords(next);
     setDirty(true);
-    setDirty(true);
+    setSaveRevision((n) => n + 1);
   }, [record, records]);
 
   const addBlock = (block: CertificateBlock) => {
@@ -779,6 +873,22 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const authorFields = orderedFields("author");
   const pubFields = orderedFields("publication");
   const certFields = orderedFields("certificate");
+  const visibleFieldKeys = [
+    ...(dataOpen.author ? authorFields : []),
+    ...(dataOpen.publication ? pubFields : []),
+    ...(dataOpen.certificate ? certFields : []),
+  ].map((f) => f.key);
+  const onFieldKeyDown = (e: React.KeyboardEvent, key: string) => {
+    if (e.key !== "Tab") return;
+    const i = visibleFieldKeys.indexOf(key);
+    if (i < 0) return;
+    const next = e.shiftKey ? i - 1 : i + 1;
+    if (next < 0 || next >= visibleFieldKeys.length) return;
+    e.preventDefault();
+    const nk = visibleFieldKeys[next];
+    fieldInputRefs.current[nk]?.focus();
+    focusFieldOnCanvas(nk);
+  };
   const selectedPublicationRecords = record ? records.filter((item) => item.publicationId === record.publicationId) : [];
   const visibleCandidates = importCandidates.filter((candidate) => `${candidate.title} ${candidate.journal}`.toLowerCase().includes(importSearch.toLowerCase()));
 
@@ -827,10 +937,10 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
           <button className="cert-header-back" onClick={() => { setActiveTemplateId(null); setActiveRecordId(null); setSelectedBlockId(null); setEditingBlockId(null); }} title="Back to templates">←</button>
           <div className="cert-header-info">
             <span className="cert-header-breadcrumb">Certificates / {template.name}</span>
-            <span className={`cert-saved-indicator ${saveState === "error" ? "unsaved" : dirty || saveState === "saving" ? "unsaved" : "saved"}`}>{saveState === "error" ? "Save failed — retry" : saveState === "saving" ? "Saving…" : dirty ? "Unsaved changes" : "Saved ✓"}</span>
+            <span className={`cert-saved-indicator ${saveState === "error" ? "error" : saveState === "saving" ? "saving" : dirty ? "unsaved" : "saved"}`}>{saveState === "error" ? "Save failed — retry" : saveState === "saving" ? "Saving in background…" : dirty ? "Editing · autosaves" : "Saved ✓"}</span>
           </div>
         </div>
-        <div className="cert-header-center"><div className="cert-mode-toggle"><button className="active" onClick={() => { setRightTab("data"); setSelectedBlockId(null); setEditingBlockId(null); }}>Template Builder</button></div></div>
+        <div className="cert-header-center"><div className="cert-mode-toggle"><button className={mode === "builder" ? "active" : ""} onClick={() => { setMode("builder"); }} title="Lay out the certificate — drag, resize, and style elements">Design</button><button className={mode === "generator" ? "active" : ""} onClick={() => { setMode("generator"); setRightTab("data"); setSelectedBlockId(null); setEditingBlockId(null); }} title="Preview and fill the certificate with real data">Fill</button></div></div>
         <div className="cert-header-right">
           {mode === "builder" && (
             <>
@@ -840,7 +950,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               <button className={`cert-btn cert-btn--ghost ${rightOpen ? "active" : ""}`} onClick={() => setRightOpen((v) => !v)} title="Toggle right panel">☰</button>
             </>
           )}
-          <button className={`cert-btn ${dirty || saveState === "error" ? "cert-btn--primary" : ""}`} onClick={() => void saveWorkspace()} disabled={saveState === "saving"}>{saveState === "saving" ? "Saving…" : saveState === "error" ? "Retry save" : dirty ? "Save now" : "Saved"}</button>
+          <button className={`cert-btn ${saveState === "error" ? "cert-btn--warn" : dirty ? "cert-btn--primary" : ""}`} onClick={manualSave} title="Save now — the editor also autosaves in the background">{saveState === "saving" ? "Saving…" : saveState === "error" ? "Retry save" : dirty ? "Save now" : "Saved"}</button>
           {mode === "generator" && validation && (
             <button className={`cert-btn ${validation.canExport ? "cert-btn--primary" : "cert-btn--warn"}`} onClick={() => setRightTab("validation")}>
               {validation.canExport ? "Export" : `${validation.errors} errors`}
@@ -1143,16 +1253,16 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                     {Array.isArray(record.fieldValues._import_warnings) && record.fieldValues._import_warnings.length > 0 && <p className="cert-import-error">{record.fieldValues._import_warnings.join(" ")}</p>}
                   </div>}
                   <div className="cert-field-section">
-                    <h4 className="cert-field-section-title">Author Information</h4>
-                    {authorFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} /></div>)}
+                    <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, author: !o.author }))} aria-expanded={dataOpen.author}><h4 className="cert-field-section-title">Author Information</h4><span className="cert-data-section-chev">{dataOpen.author ? "–" : "+"}</span></button>
+                    {dataOpen.author && authorFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} /></div>)}
                   </div>
                   <div className="cert-field-section">
-                    <h4 className="cert-field-section-title">Publication Information</h4>
-                    {pubFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} /></div>)}
+                    <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, publication: !o.publication }))} aria-expanded={dataOpen.publication}><h4 className="cert-field-section-title">Publication Information</h4><span className="cert-data-section-chev">{dataOpen.publication ? "–" : "+"}</span></button>
+                    {dataOpen.publication && pubFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} /></div>)}
                   </div>
                   <div className="cert-field-section">
-                    <h4 className="cert-field-section-title">Certificate Information</h4>
-                    {certFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label">{field.label}{field.required && <span className="cert-req">*</span>}</label><input className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} placeholder={field.placeholder || ""} readOnly={Boolean(record && ["certificate_number", "date_issued", "publisher_name", "issuing_city"].includes(field.key))} /></div>)}
+                    <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, certificate: !o.certificate }))} aria-expanded={dataOpen.certificate}><h4 className="cert-field-section-title">Certificate Information</h4><span className="cert-data-section-chev">{dataOpen.certificate ? "–" : "+"}</span></button>
+                    {dataOpen.certificate && certFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} readOnly={Boolean(record && ["certificate_number", "date_issued", "publisher_name", "issuing_city"].includes(field.key))} /></div>)}
                   </div>
                 </div>
               )}

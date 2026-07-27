@@ -193,11 +193,12 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
     const segs = block.segments && block.segments.length ? block.segments : contentToSegments(block.content);
     const resolved = block.type === "text" ? resolveText(block.content, fieldValues, block) : "";
     const builderText = block.type === "text" ? segmentsToBuilderText(segs, labelOf) : "";
+    const builderPreview = block.type === "text" ? segs.map((s) => (s.t === "f" ? (fieldValues[s.k] || labelOf(s.k)) : s.v)).join("") : "";
 
     let displayFontSize = block.style.fontSize;
     let overflowWarn = false;
     if (block.type === "text" && !isEditing) {
-      const measureStr = mode === "generator" ? resolved : builderText;
+      const measureStr = mode === "generator" ? resolved : builderPreview;
       if (block.overflowBehavior === "auto_fit" && measureStr) {
         const fit = measureTextFit(
           measureStr, block.width - block.style.padding * 2, block.height - block.style.padding * 2,
@@ -277,6 +278,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
     return (
       <div
         key={block.id}
+        data-block-id={block.id}
         style={blockStyle}
         onPointerDown={(e) => onPointerDownBlock(e, block)}
         onDoubleClick={(e) => onDoubleClickBlock(e, block)}
@@ -297,7 +299,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
               ? (s.style && Object.keys(s.style).length > 0
                 ? <span key={i} style={runCSS(s.style)}>{s.v}</span>
                 : <React.Fragment key={i}>{s.v}</React.Fragment>)
-              : <span key={i} className="cert-chip cert-chip--static" style={runCSS(s.style || {})} contentEditable={false}>{labelOf(s.k)}</span>)}
+              : <span key={i} className={`cert-chip cert-chip--static${fieldValues[s.k] ? "" : " cert-chip--empty"}`} style={runCSS(s.style || {})} contentEditable={false}>{fieldValues[s.k] || labelOf(s.k)}</span>)}
             {builderText === "" && <span style={{ color: "#9ca3af", fontStyle: "italic" }}>Double-click to edit text</span>}
           </div>
         )}

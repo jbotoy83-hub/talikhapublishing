@@ -8988,6 +8988,15 @@ main.tp-main {
   transition: transform .28s cubic-bezier(.4,0,.2,1), margin-bottom .28s cubic-bezier(.4,0,.2,1), opacity .2s ease;
 }
 .tp-top--certificate { transform: translateY(-100%); margin-bottom: -58px; opacity: 0; pointer-events: none; }
+
+/* Certificate EDITOR (not the template list): lock to the viewport so the page
+   never scrolls. The workspace fills the whole area; only the left tools, the
+   right panel, and the canvas scroll internally. The global top bar and the
+   floating dock are removed from layout here — the editor has its own header.
+   :has() keeps the template-list view (.cert-ws--list) scrollable as before. */
+main.tp-main--certificate:has(.cert-ws:not(.cert-ws--list)) { height: 100dvh; min-height: 0; overflow: hidden; }
+main.tp-main--certificate:has(.cert-ws:not(.cert-ws--list)) .tp-top--certificate { display: none; }
+main.tp-main--certificate:has(.cert-ws:not(.cert-ws--list)) .tp-dock { display: none; }
 .tp-top__left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .tp-top__right { position: relative; display: flex; align-items: center; gap: 8px; }
 .tp-crumb { display: flex; align-items: center; gap: 7px; }
