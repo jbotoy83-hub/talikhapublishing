@@ -1,12 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getAuthorProgress, isWorkflowStage, workflowStageLabels } from "@/lib/editorial-workflow";
+import { getAuthorProgress, isWorkflowStage, deriveAuthorStatus } from "@/lib/editorial-workflow";
 import { allowRequest, getRequestRateLimitKey } from "@/lib/rate-limit";
 
 const lookupInput = z.object({
   reference: z.string().trim().min(3).max(120)
 });
+
+const AUTHOR_EVENT_TYPES = ["progress_activity", "author_request_responded", "editorial_update"];
 
 type TrackedSubmission = {
   id: string;
@@ -45,18 +47,19 @@ export async function POST(request: NextRequest) {
 
   if (!submission || !isWorkflowStage(submission.current_stage)) return NextResponse.json({ error: "We could not find that submission reference. Check the number and try again." }, { status: 404 });
 
-  const [{ data: events }, { data: requests }, { data: payment }] = await Promise.all([
-    admin.from("workflow_events").select("id, public_title, public_description, event_type, created_at, metadata").eq("submission_id", submission.id).eq("visibility", "author").order("created_at", { ascending: false }).limit(50),
-    admin.from("author_requests").select("id, title, description, request_type, status, due_at, response_choice, responded_at").eq("submission_id", submission.id).eq("visible_to_author", true).order("created_at", { ascending: false }).limit(20),
-    admin.from("payments").select("status").eq("submission_id", submission.id).order("created_at", { ascending: false }).limit(1).maybeSingle()
+  const [{ data: events }, { data: requests }] = await Promise.all([
+    admin.from("workflow_events").select("id, public_title, public_description, event_type, created_at, metadata").eq("submission_id", submission.id).eq("visibility", "author").in("event_type", AUTHOR_EVENT_TYPES).order("created_at", { ascending: true }).limit(100),
+    admin.from("author_requests").select("id, title, description, request_type, status, due_at, response_choice, responded_at").eq("submission_id", submission.id).eq("visible_to_author", true).order("created_at", { ascending: false }).limit(20)
   ]);
+
+  const hasOpenRevision = (requests || []).some((r) => r.request_type === "revision" && r.status === "open");
 
   return NextResponse.json({
     trackingNumber: submission.tracking_number,
     reference: submission.reference,
     title: submission.title,
     currentStage: submission.current_stage,
-    currentStageLabel: submission.current_stage === "review_in_progress" && payment?.status === "confirmed" ? "Payment approved — In review" : workflowStageLabels[submission.current_stage],
+    currentStageLabel: deriveAuthorStatus(submission.current_stage, hasOpenRevision),
     progress: getAuthorProgress(submission.current_stage),
     events: events || [],
     requests: requests || []

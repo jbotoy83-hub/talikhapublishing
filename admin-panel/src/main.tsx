@@ -2048,7 +2048,7 @@ function statusActions(status: SubmissionStatus) {
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Review: [
-      { label: "Accept submission", status: "Accepted" },
+      { label: "Accept & start production", status: "Accepted" },
       { label: "Request revision", status: "Revise" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
@@ -2056,9 +2056,9 @@ function statusActions(status: SubmissionStatus) {
       { label: "Return to review", status: "Review" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
-    Accepted: [{ label: "Publish study", status: "Published" }],
-    "For approval": [],
-    "Scheduled for publishing": [],
+    Accepted: [{ label: "Ready to publish", status: "For approval" }],
+    "For approval": [{ label: "Publish", status: "Published" }],
+    "Scheduled for publishing": [{ label: "Publish", status: "Published" }],
     Published: [],
     Rejected: [],
   };
@@ -2269,6 +2269,7 @@ function LegacySubmissionReview({
     }),
     [reviewTab, setReviewTab] = useState<"review" | "publication">(() => initialTab || "review"),
     [scheduleUnlocked, setScheduleUnlocked] = useState(false);
+  useEffect(() => { let cancelled = false; void fetch(`/api/admin/submissions/${submission.id}/review-settings`, { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (cancelled || !body?.settings) return; const saved = body.settings; if (saved.receipt) setReceipt({ ...defaultReceiptSettings, ...saved.receipt }); if (saved.instructions) setInstructions((current) => ({ ...current, ...saved.instructions })); }).catch(() => {}); return () => { cancelled = true; }; }, [submission.id]);
   const paymentConfirmed = submission.paymentConfirmed === true;
   const reviewUnlocked = submission.workflowStage ? submission.workflowStage !== "review_new" : submission.status !== "New";
   const reviewActions = submission.workflowStage?.startsWith("production_") ? [] : statusActions(submission.status);
@@ -2295,8 +2296,18 @@ function LegacySubmissionReview({
   };
   const total = receipt.fee + receipt.tax - receipt.discount;
   const updateReceipt = (next: ReceiptSettings) => setReceipt(next);
-  const saveReview = () => {
+  const saveReview = async () => {
     const primaryAuthor = authors[0];
+    try {
+      const response = await fetch(`/api/admin/submissions/${submission.id}/review-settings`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ receipt, instructions }) });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "The review settings could not be saved.");
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The review settings could not be saved.");
+      return;
+    }
     setSaved(true);
     onUpdate({
       ...submission,
@@ -2311,34 +2322,50 @@ function LegacySubmissionReview({
   };
   const moveTo = async (status: SubmissionStatus) => {
     const stage = submission.workflowStage;
-    const targets: string[] =
-      status === "In progress" && stage === "review_new" ? ["review_in_progress"] :
-      status === "Review" && stage === "review_in_progress" ? ["review_final"] :
-      status === "Accepted" && stage === "review_final" ? ["review_accepted", "production_ready"] :
-      status === "Rejected" && stage ? ["closed"] : [];
-    if (targets.length) {
-      try {
-        for (const toStage of targets) {
-          const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ toStage }),
-          });
-          if (!response.ok) {
-            const body = await response.json().catch(() => null);
-            throw new Error(body?.error || "The workflow could not be updated.");
-          }
-        }
-      } catch (error) {
-        window.alert(error instanceof Error ? error.message : "The workflow could not be updated.");
-        return;
+    let ok = false;
+    let newStage = stage;
+    try {
+      if (status === "In progress" && stage === "review_new") {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1 }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
+      } else if (status === "Review" && (stage === "review_in_progress" || stage === "review_final" || stage === "review_new")) {
+        if (stage === "review_new") {
+          const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1 }) });
+          if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+          const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage;
+        } else if (stage === "review_in_progress") {
+          const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "review_final" }) });
+          if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+          newStage = "review_final";
+        } else { newStage = stage; }
+        ok = true;
+      } else if (status === "Accepted" && stage === "review_final") {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2 }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
+      } else if (status === "For approval" && stage === "review_accepted") {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3 }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
+      } else if (status === "Published" && (stage === "production_ready_to_publish" || stage === "production_scheduled")) {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 4 }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
+      } else if (status === "Rejected" && stage) {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "closed" }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        newStage = "closed"; ok = true;
       }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The workflow could not be updated.");
+      return;
     }
+    if (!ok && status !== "Rejected") return;
     onUpdate({
       ...submission,
-      status,
-      workflowStage: targets.at(-1) || submission.workflowStage,
+      status: (newStage && stageToSubmissionStatus[newStage]) || status,
+      workflowStage: newStage,
       history: [...submission.history, `Moved to ${status} · ${new Date().toLocaleString("en-PH")}`],
     });
   };
@@ -2355,10 +2382,12 @@ function LegacySubmissionReview({
       window.alert(body?.error || "The payment could not be confirmed.");
       return;
     }
+    const wasNew = submission.workflowStage === "review_new" || submission.status === "New";
     onUpdate({
       ...submission,
       paymentConfirmed: true,
-      status: submission.status,
+      workflowStage: wasNew ? "review_in_progress" : submission.workflowStage,
+      status: wasNew ? (stageToSubmissionStatus["review_in_progress"] || "In progress") : submission.status,
       history: [...submission.history, "Payment approved — In review"],
     });
   };
@@ -2395,17 +2424,26 @@ function LegacySubmissionReview({
     onPublicationRecordsChange(
       publicationRecords.map((record) => (record.id === next.id ? next : record)),
     );
-  const markForApproval = () => onUpdate({
-    ...submission,
-    status: "For approval",
-    history: [...submission.history, `Marked for approval · ${new Date().toLocaleString("en-PH")}`],
-  });
-  const revisePublication = () => {
+  const markForApproval = async () => {
+    try {
+      const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3 }) });
+      if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not advance to ready to publish."); }
+      const d = await r.json();
+      if (d.data?.blocked) { window.alert(`Cannot advance yet: ${d.data.blocked}`); return; }
+      const ns = d.data?.stage || submission.workflowStage;
+      onUpdate({ ...submission, status: stageToSubmissionStatus[ns] || "For approval", workflowStage: ns, history: [...submission.history, `Ready to publish · ${new Date().toLocaleString("en-PH")}`] });
+    } catch (error) { window.alert(error instanceof Error ? error.message : "Could not advance."); }
+  };
+  const revisePublication = async () => {
     if (publicationRecord) updatePublicationRecord({ ...publicationRecord, status: "Draft" });
+    try {
+      const r = await fetch(`/api/admin/submissions/${submission.id}/requests`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestType: "revision", title: "Revision required", description: "The editorial team has requested revisions to your submission. Please review the details and respond." }) });
+      if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not create revision request."); }
+    } catch (error) { window.alert(error instanceof Error ? error.message : "Could not create revision request."); return; }
     onUpdate({
       ...submission,
       status: "Revise",
-      history: [...submission.history, `Publication sent for revision · ${new Date().toLocaleString("en-PH")}`],
+      history: [...submission.history, `Revision requested · ${new Date().toLocaleString("en-PH")}`],
     });
     window.dispatchEvent(new CustomEvent("talikha:production-view", { detail: "Needs action" }));
     onBack();
@@ -2413,16 +2451,14 @@ function LegacySubmissionReview({
   const schedulePublication = async (scheduledFor: string): Promise<boolean> => {
     if (!publicationRecord || !scheduledFor) return false;
     const scheduledIso = new Date(`${scheduledFor}T00:00:00`).toISOString();
+    const isReschedule = submission.workflowStage === "production_scheduled";
     try {
-      const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: scheduledIso } }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || "The publication could not be scheduled.");
+      if (isReschedule) {
+        const response = await fetch(`/api/admin/submissions/${submission.id}/reschedule`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheduledFor: scheduledIso }) });
+        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The schedule could not be updated."); }
+      } else {
+        const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: scheduledIso } }) });
+        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The publication could not be scheduled."); }
       }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "The publication could not be scheduled.");
@@ -2432,9 +2468,20 @@ function LegacySubmissionReview({
     onUpdate({
       ...submission,
       workflowStage: "production_scheduled",
-      history: [...submission.history, `Scheduled for publishing · ${new Date().toLocaleString("en-PH")}`],
+      status: stageToSubmissionStatus["production_scheduled"] || submission.status,
+      history: [...submission.history, `${isReschedule ? "Schedule updated" : "Scheduled for publishing"} · ${new Date().toLocaleString("en-PH")}`],
     });
     return true;
+  };
+  const publishSubmission = async () => {
+    try {
+      const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 4 }) });
+      if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not publish."); }
+      const d = await r.json();
+      if (d.data?.blocked) { window.alert(d.data.blocked); return; }
+      const ns = d.data?.stage || "published";
+      onUpdate({ ...submission, status: stageToSubmissionStatus[ns] || "Published", workflowStage: ns, history: [...submission.history, `Published · ${new Date().toLocaleString("en-PH")}`] });
+    } catch (error) { window.alert(error instanceof Error ? error.message : "Could not publish."); }
   };
   return (
     <section className="submission-review">
@@ -4634,53 +4681,73 @@ function AuthorsView({
   );
 }
 
+type FeaturedPublication = { id: string; title: string; slug: string; author_display: string | null; featured: boolean; status: string; journal: string | null };
+
 function FeaturedView() {
-  const [featured, setFeatured] = useState(
-    () => new Set([studyRecords[0].reference, studyRecords[2].reference]),
-  );
-  const toggle = (id: string) =>
-    setFeatured((current) => {
-      const next = new Set(current);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+  const [publications, setPublications] = useState<FeaturedPublication[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/admin/featured", { credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => { if (!cancelled) setPublications(body?.publications || []); })
+      .catch(() => { if (!cancelled) { setError("The featured studies could not be loaded."); setPublications([]); } });
+    return () => { cancelled = true; };
+  }, []);
+  const toggle = async (publication: FeaturedPublication) => {
+    const next = !publication.featured;
+    setPublications((current) => (current || []).map((item) => (item.id === publication.id ? { ...item, featured: next } : item)));
+    try {
+      const response = await fetch("/api/admin/featured", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicationId: publication.id, featured: next }) });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "The featured state could not be saved.");
+      }
+    } catch (err) {
+      setPublications((current) => (current || []).map((item) => (item.id === publication.id ? { ...item, featured: publication.featured } : item)));
+      window.alert(err instanceof Error ? err.message : "The featured state could not be saved.");
+    }
+  };
   return (
     <section className="utility-page">
       <PageHeading
         icon={Star}
         title="Featured studies"
-        copy="Choose the studies highlighted on public discovery pages. Changes in this prototype are kept for this session only."
+        copy="Choose the published studies highlighted on public discovery pages."
       />
-      <div className="utility-grid">
-        {studyRecords.map((study) => (
-          <article className="utility-card" key={study.reference}>
-            <div className="utility-card-icon">
-              <FileText />
-            </div>
-            <div>
-              <span
-                className={`status-pill ${study.status.toLowerCase().replaceAll(" ", "-")}`}
+      {error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : publications === null ? (
+        <p className="text-sm text-muted-foreground">Loading featured studies…</p>
+      ) : (
+        <div className="utility-grid">
+          {publications.map((study) => (
+            <article className="utility-card" key={study.id}>
+              <div className="utility-card-icon">
+                <FileText />
+              </div>
+              <div>
+                <span className={`status-pill ${study.status.toLowerCase().replaceAll(" ", "-")}`}>
+                  {study.status}
+                </span>
+                <h2>{study.title}</h2>
+                <p>
+                  {study.author_display || "Unknown author"}{study.journal ? ` · ${study.journal}` : ""}
+                </p>
+              </div>
+              <button
+                className={study.featured ? "toggle active" : "toggle"}
+                onClick={() => void toggle(study)}
+                aria-pressed={study.featured}
               >
-                {study.status}
-              </span>
-              <h2>{study.title}</h2>
-              <p>
-                {study.author} · {study.journal}
-              </p>
-            </div>
-            <button
-              className={
-                featured.has(study.reference) ? "toggle active" : "toggle"
-              }
-              onClick={() => toggle(study.reference)}
-              aria-pressed={featured.has(study.reference)}
-            >
-              <span />
-              {featured.has(study.reference) ? "Featured" : "Not featured"}
-            </button>
-          </article>
-        ))}
-      </div>
+                <span />
+                {study.featured ? "Featured" : "Not featured"}
+              </button>
+            </article>
+          ))}
+          {!publications.length && <p className="text-sm text-muted-foreground">No published studies yet.</p>}
+        </div>
+      )}
     </section>
   );
 }
@@ -5254,7 +5321,6 @@ function CertificatesWorkspace({ submissions }: { submissions: EditorialSubmissi
 type AnnouncementSettings = {
   enabled: boolean; presentation: "banner" | "popup" | "both"; category: string; message: string; actionLabel: string; actionHref: string; target: "all" | "home" | "journals" | "submit"; trigger: "load" | "scroll"; delaySeconds: number; dismissible: boolean; frequency: "visit" | "session"; startsAt: string; endsAt: string;
 };
-const announcementStorageKey = "talikha-announcement-settings-v1";
 const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", actionLabel: "Submit your work", actionHref: "/submit", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
 
 function AnxCard({ icon: Icon, title, desc, children }: { icon: ComponentType<{ className?: string }>; title: string; desc: string; children: ReactNode }) {
@@ -5427,10 +5493,9 @@ function AnnouncementWorkspace() {
   const [settings, setSettings] = useState<AnnouncementSettings>(defaultAnnouncementSettings);
   const [saved, setSaved] = useState(false);
   const [previewTab, setPreviewTab] = useState<"bar" | "popup">("bar");
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage on mount; cannot run during SSR render
-  useEffect(() => { try { const stored = window.localStorage.getItem(announcementStorageKey); if (stored) setSettings({ ...defaultAnnouncementSettings, ...JSON.parse(stored) }); } catch {} }, []);
+  useEffect(() => { let cancelled = false; void fetch("/api/admin/announcements", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (!cancelled && body?.announcement) setSettings({ ...defaultAnnouncementSettings, ...body.announcement }); }).catch(() => {}); return () => { cancelled = true; }; }, []);
   const update = <K extends keyof AnnouncementSettings>(key: K, value: AnnouncementSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
-  const save = () => { window.localStorage.setItem(announcementStorageKey, JSON.stringify(settings)); window.dispatchEvent(new window.Event("talikha:announcement-updated")); setSaved(true); window.setTimeout(() => setSaved(false), 2200); };
+  const save = async () => { try { const response = await fetch("/api/admin/announcements", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }); if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The announcement could not be saved."); } setSaved(true); window.setTimeout(() => setSaved(false), 2200); } catch (error) { window.alert(error instanceof Error ? error.message : "The announcement could not be saved."); } };
 
   const showBar = settings.presentation !== "popup";
   const showPopup = settings.presentation !== "banner";
@@ -5456,7 +5521,7 @@ function AnnouncementWorkspace() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden items-center gap-1.5 text-[11.5px] text-[var(--ui-muted)] sm:inline-flex"><Info className="size-3.5" /> Saved to this browser</span>
+          <span className="hidden items-center gap-1.5 text-[11.5px] text-[var(--ui-muted)] sm:inline-flex"><Info className="size-3.5" /> Published to your site</span>
           <Button onClick={save} style={{ color: "#fff" }} className="min-w-[156px] gap-1.5 px-4">{saved ? <Check className="size-4" /> : <Save className="size-4" />}{saved ? "Saved" : "Save announcement"}</Button>
         </div>
       </div>

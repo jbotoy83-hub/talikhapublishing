@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { apiErrorResponse, isApiError, requireEditorApi } from "@/lib/admin-api";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { renderCertificatePdf } from "@/lib/render-certificate";
+import { POST_PUBLISH_CERT } from "@/lib/editorial-workflow";
 
 export async function POST(request: Request, { params }: { params: Promise<{ recordId: string }> }) {
   const user = await requireEditorApi(); if (isApiError(user)) return user;
@@ -78,6 +79,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
         internal_description: "The issued certificate PDF and its preview were attached to this manuscript record.", visibility: "internal",
         actor_type: user.role, actor_id: user.id, metadata: { certificate_record_id: recordId, certificate_file_id: certificateFileId, preview_file_id: previewFileId }
       });
+
+      const { data: subCheck } = await admin.from("submissions").select("current_stage").eq("id", submissionId).maybeSingle();
+      if (subCheck?.current_stage === "published") {
+        await admin.from("workflow_events").insert({
+          submission_id: submissionId, event_type: "progress_activity",
+          internal_title: POST_PUBLISH_CERT.title, internal_description: POST_PUBLISH_CERT.description,
+          public_title: POST_PUBLISH_CERT.title, public_description: POST_PUBLISH_CERT.description,
+          visibility: "author", actor_type: user.role, actor_id: user.id,
+          metadata: { batch: "post_publish_cert", batch_index: 0 }
+        });
+      }
     }
     return NextResponse.json({ issued: true, versionNumber, certificateFileId, previewFileId, submissionId: recordResult.data.submission_id });
   } catch (error) { return apiErrorResponse(error, "Could not issue the certificate."); }

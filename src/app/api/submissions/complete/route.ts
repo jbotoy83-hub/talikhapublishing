@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isSubmissionsEnabled } from "@/lib/launch";
 import { submissionCompleteSchema, submissionFileRules, type SubmissionFileField } from "@/lib/submission";
 import { allowRequest, getRequestRateLimitKey } from "@/lib/rate-limit";
+import { PROGRESS_OPENING } from "@/lib/editorial-workflow";
 
 const MAX_COMPLETE_BODY_BYTES = 8 * 1024;
 
@@ -76,5 +77,22 @@ export async function POST(request: Request) {
   const { data: submission, error } = await admin.from("submissions").update({ status: "submitted", submitted_at: new Date().toISOString() }).eq("id", submissionId).eq("status", "uploading").select("reference").maybeSingle();
   if (error || !submission) return NextResponse.json({ error: "Could not finalize the submission." }, { status: 500 });
   await admin.from("submission_history").insert({ submission_id: submissionId, event_type: "submitted", message: "Submission files validated and record finalized." });
+
+  const openingActivities = PROGRESS_OPENING[0] || [];
+  for (let i = 0; i < openingActivities.length; i++) {
+    await admin.from("workflow_events").insert({
+      submission_id: submissionId,
+      event_type: "progress_activity",
+      internal_title: openingActivities[i].title,
+      internal_description: openingActivities[i].description,
+      public_title: openingActivities[i].title,
+      public_description: openingActivities[i].description,
+      visibility: "author",
+      actor_type: "system",
+      actor_id: null,
+      metadata: { batch: "submission_received", batch_index: i }
+    });
+  }
+
   return NextResponse.json({ reference: submission.reference });
 }

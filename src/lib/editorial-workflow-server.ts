@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { workflowStages, type WorkflowStage } from "@/lib/editorial-workflow";
+import { workflowStages, type WorkflowStage, progressIndexOf, progressBoundary, canonicalStageForProgress, SCHEDULE_FIRST, SCHEDULE_UPDATED, POST_PUBLISH_INFO, type ProgressActivity } from "@/lib/editorial-workflow";
 import { getSiteUrl } from "@/lib/site";
 import { renderOfficialReceiptPdf } from "@/lib/receipt-pdf";
 import { createApa7JournalCitation } from "@/lib/apa-citation";
@@ -233,11 +233,44 @@ async function syncPublicationAuthors(admin: AdminClient, publicationId: string,
   }
 }
 
+const STAGE_PATH: WorkflowStage[] = [
+  "review_new", "review_in_progress", "review_final", "review_accepted",
+  "production_ready", "production_preparation", "production_proof", "production_records",
+  "production_ready_to_publish", "production_scheduled", "published"
+];
+
+async function emitProgressActivity(
+  admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  submissionId: string,
+  activities: ProgressActivity[],
+  actorType: string,
+  actorId: string,
+  batchLabel: string
+) {
+  for (let i = 0; i < activities.length; i++) {
+    await admin.from("workflow_events").insert({
+      submission_id: submissionId,
+      event_type: "progress_activity",
+      internal_title: activities[i].title,
+      internal_description: activities[i].description,
+      public_title: activities[i].title,
+      public_description: activities[i].description,
+      visibility: "author",
+      actor_type: actorType,
+      actor_id: actorId,
+      metadata: { batch: batchLabel, batch_index: i }
+    });
+  }
+}
+
 export async function transitionSubmission(input: z.input<typeof transitionInput>) {
   const parsed = transitionInput.parse(input);
   const user = await requireAdmin();
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("The editorial database is not configured.");
+
+  const { data: before } = await admin.from("submissions").select("current_stage").eq("id", parsed.submissionId).maybeSingle();
+  const fromProgress = before ? progressIndexOf(before.current_stage as WorkflowStage) : -1;
 
   const { data, error } = await admin.rpc("transition_submission", {
     p_submission_id: parsed.submissionId,
@@ -252,8 +285,95 @@ export async function transitionSubmission(input: z.input<typeof transitionInput
   });
 
   if (error) throw new Error(workflowFailure(error));
+
+  const toProgress = progressIndexOf(parsed.toStage);
+  if (fromProgress >= 0 && toProgress >= 0 && toProgress > fromProgress) {
+    const activities = progressBoundary(fromProgress, toProgress);
+    if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `boundary_${fromProgress}_${toProgress}`);
+  }
+
+  if (parsed.toStage === "production_scheduled" && before?.current_stage === "production_ready_to_publish") {
+    await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+  }
+
   refreshWorkflowPages(parsed.submissionId);
   return data;
+}
+
+const advanceInput = z.object({
+  submissionId: uuid,
+  targetProgress: z.number().int().min(0).max(4)
+});
+
+export async function advanceSubmissionProgress(input: z.input<typeof advanceInput>) {
+  const parsed = advanceInput.parse(input);
+  const user = await requireAdmin();
+  const admin = getSupabaseAdmin();
+  if (!admin) throw new Error("The editorial database is not configured.");
+
+  const { data: submission } = await admin.from("submissions").select("current_stage").eq("id", parsed.submissionId).maybeSingle();
+  if (!submission) throw new Error("Submission not found.");
+
+  const currentStage = submission.current_stage as WorkflowStage;
+  const currentProgress = progressIndexOf(currentStage);
+  if (currentProgress >= parsed.targetProgress) return { stage: currentStage, progress: currentProgress };
+
+  const targetStage = canonicalStageForProgress(parsed.targetProgress);
+  const currentIdx = STAGE_PATH.indexOf(currentStage);
+  const targetIdx = STAGE_PATH.indexOf(targetStage);
+  if (currentIdx < 0 || targetIdx < 0 || targetIdx <= currentIdx) throw new Error("Cannot compute advance path.");
+
+  let lastStage = currentStage;
+  let lastProgress = currentProgress;
+
+  for (let i = currentIdx + 1; i <= targetIdx; i++) {
+    const nextStage = STAGE_PATH[i];
+    const { error } = await admin.rpc("transition_submission", {
+      p_submission_id: parsed.submissionId,
+      p_to_stage: nextStage,
+      p_actor_id: user.id,
+      p_internal_title: "",
+      p_internal_description: "",
+      p_public_title: null,
+      p_public_description: null,
+      p_visibility: "internal",
+      p_metadata: {}
+    });
+    if (error) {
+      return { stage: lastStage, progress: lastProgress, blocked: workflowFailure(error), blockedAt: nextStage };
+    }
+    const nextProgress = progressIndexOf(nextStage);
+    if (nextProgress > lastProgress) {
+      const activities = progressBoundary(lastProgress, nextProgress);
+      if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `advance_${lastProgress}_${nextProgress}`);
+    }
+    if (nextStage === "production_scheduled" && lastProgress < 3) {
+      await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+    }
+    lastStage = nextStage;
+    lastProgress = nextProgress;
+  }
+
+  refreshWorkflowPages(parsed.submissionId);
+  return { stage: lastStage, progress: lastProgress };
+}
+
+const rescheduleInput = z.object({
+  submissionId: uuid,
+  scheduledFor: z.string().datetime()
+});
+
+export async function rescheduleSubmission(input: z.input<typeof rescheduleInput>) {
+  const parsed = rescheduleInput.parse(input);
+  const user = await requireAdmin();
+  const admin = getSupabaseAdmin();
+  if (!admin) throw new Error("The editorial database is not configured.");
+
+  const { error } = await admin.from("publication_records").update({ scheduled_for: parsed.scheduledFor }).eq("submission_id", parsed.submissionId);
+  if (error) throw new Error("The schedule could not be updated.");
+
+  await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_UPDATED], user.role, user.id, "reschedule");
+  refreshWorkflowPages(parsed.submissionId);
 }
 
 export async function setWorkflowChecklistItem(input: { checklistItemId: string; completed: boolean }) {
@@ -377,6 +497,11 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     actor_id: user.id,
     metadata: { doi: parsed.doi || null, issue_id: resolvedIssueId || null }
   });
+
+  if (submission.current_stage === "published") {
+    await emitProgressActivity(admin, parsed.submissionId, [POST_PUBLISH_INFO], user.role, user.id, "post_publish_info");
+  }
+
   refreshWorkflowPages(parsed.submissionId);
 }
 
@@ -477,6 +602,9 @@ export async function confirmSubmissionPayment(input: z.input<typeof confirmPaym
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("The editorial database is not configured.");
 
+  const { data: beforeSub } = await admin.from("submissions").select("current_stage").eq("id", parsed.submissionId).maybeSingle();
+  const wasAtNew = beforeSub?.current_stage === "review_new";
+
   const { data: payment, error } = await admin.rpc("confirm_payment_and_start_review", {
     p_submission_id: parsed.submissionId,
     p_payment_id: parsed.paymentId,
@@ -484,6 +612,12 @@ export async function confirmSubmissionPayment(input: z.input<typeof confirmPaym
   });
   if (error) throw new Error(workflowFailure(error));
   if (!payment) throw new Error("The payment could not be confirmed.");
+
+  if (wasAtNew) {
+    const activities = progressBoundary(0, 1);
+    if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, "payment_boundary_0_1");
+  }
+
   await createOfficialReceiptPdf({ paymentId: parsed.paymentId, submissionId: parsed.submissionId });
   refreshWorkflowPages(parsed.submissionId);
 }
