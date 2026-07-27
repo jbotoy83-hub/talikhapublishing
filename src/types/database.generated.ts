@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      announcements: {
+        Row: {
+          action_href: string
+          action_label: string
+          category: string
+          created_at: string
+          created_by: string | null
+          delay_seconds: number
+          dismissible: boolean
+          display_trigger: string
+          enabled: boolean
+          ends_at: string | null
+          frequency: string
+          id: string
+          message: string
+          presentation: string
+          starts_at: string | null
+          target: string
+          updated_at: string
+        }
+        Insert: {
+          action_href?: string
+          action_label?: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          delay_seconds?: number
+          dismissible?: boolean
+          display_trigger?: string
+          enabled?: boolean
+          ends_at?: string | null
+          frequency?: string
+          id?: string
+          message?: string
+          presentation?: string
+          starts_at?: string | null
+          target?: string
+          updated_at?: string
+        }
+        Update: {
+          action_href?: string
+          action_label?: string
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          delay_seconds?: number
+          dismissible?: boolean
+          display_trigger?: string
+          enabled?: boolean
+          ends_at?: string | null
+          frequency?: string
+          id?: string
+          message?: string
+          presentation?: string
+          starts_at?: string | null
+          target?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_events: {
         Row: {
           action: string
@@ -394,6 +454,8 @@ export type Database = {
           id: string
           label: string
           required: boolean
+          section: string
+          source_key: string | null
           template_id: string
           validation_rule: Json
         }
@@ -404,6 +466,8 @@ export type Database = {
           id?: string
           label: string
           required?: boolean
+          section?: string
+          source_key?: string | null
           template_id: string
           validation_rule?: Json
         }
@@ -414,6 +478,8 @@ export type Database = {
           id?: string
           label?: string
           required?: boolean
+          section?: string
+          source_key?: string | null
           template_id?: string
           validation_rule?: Json
         }
@@ -429,6 +495,10 @@ export type Database = {
       }
       certificate_template_pages: {
         Row: {
+          background_bucket: string | null
+          background_mime_type: string | null
+          background_original_name: string | null
+          background_path: string | null
           height: number
           id: string
           page_number: number
@@ -437,6 +507,10 @@ export type Database = {
           width: number
         }
         Insert: {
+          background_bucket?: string | null
+          background_mime_type?: string | null
+          background_original_name?: string | null
+          background_path?: string | null
           height?: number
           id?: string
           page_number: number
@@ -445,6 +519,10 @@ export type Database = {
           width?: number
         }
         Update: {
+          background_bucket?: string | null
+          background_mime_type?: string | null
+          background_original_name?: string | null
+          background_path?: string | null
           height?: number
           id?: string
           page_number?: number
@@ -605,6 +683,7 @@ export type Database = {
           cover_media_id: string | null
           created_at: string
           description: string
+          editorial_metadata: Json
           id: string
           issue_number: string
           journal_id: string
@@ -621,6 +700,7 @@ export type Database = {
           cover_media_id?: string | null
           created_at?: string
           description?: string
+          editorial_metadata?: Json
           id?: string
           issue_number: string
           journal_id: string
@@ -637,6 +717,7 @@ export type Database = {
           cover_media_id?: string | null
           created_at?: string
           description?: string
+          editorial_metadata?: Json
           id?: string
           issue_number?: string
           journal_id?: string
@@ -671,13 +752,17 @@ export type Database = {
           created_at: string
           current_issue_id: string | null
           description: string
+          editorial_metadata: Json
           hero_image_url: string | null
           hero_media_id: string | null
           id: string
           issn: string | null
+          issn_online: string | null
+          issn_print: string | null
           scope: string
           slug: string
           status: string
+          submission_issue_id: string | null
           title: string
           updated_at: string
         }
@@ -686,13 +771,17 @@ export type Database = {
           created_at?: string
           current_issue_id?: string | null
           description?: string
+          editorial_metadata?: Json
           hero_image_url?: string | null
           hero_media_id?: string | null
           id?: string
           issn?: string | null
+          issn_online?: string | null
+          issn_print?: string | null
           scope?: string
           slug: string
           status?: string
+          submission_issue_id?: string | null
           title: string
           updated_at?: string
         }
@@ -701,13 +790,17 @@ export type Database = {
           created_at?: string
           current_issue_id?: string | null
           description?: string
+          editorial_metadata?: Json
           hero_image_url?: string | null
           hero_media_id?: string | null
           id?: string
           issn?: string | null
+          issn_online?: string | null
+          issn_print?: string | null
           scope?: string
           slug?: string
           status?: string
+          submission_issue_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -724,6 +817,13 @@ export type Database = {
             columns: ["hero_media_id"]
             isOneToOne: false
             referencedRelation: "media_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "journals_submission_issue_id_fkey"
+            columns: ["submission_issue_id"]
+            isOneToOne: false
+            referencedRelation: "issues"
             referencedColumns: ["id"]
           },
         ]
@@ -993,28 +1093,46 @@ export type Database = {
       }
       profiles: {
         Row: {
+          access_views: string[]
           created_at: string
           display_name: string
           email: string
           id: string
+          last_opened_at: string | null
+          last_signed_in_at: string | null
+          requires_account_setup: boolean
           role: string
+          terms_accepted_at: string | null
           updated_at: string
+          username: string | null
         }
         Insert: {
+          access_views?: string[]
           created_at?: string
           display_name?: string
           email: string
           id: string
+          last_opened_at?: string | null
+          last_signed_in_at?: string | null
+          requires_account_setup?: boolean
           role?: string
+          terms_accepted_at?: string | null
           updated_at?: string
+          username?: string | null
         }
         Update: {
+          access_views?: string[]
           created_at?: string
           display_name?: string
           email?: string
           id?: string
+          last_opened_at?: string | null
+          last_signed_in_at?: string | null
+          requires_account_setup?: boolean
           role?: string
+          terms_accepted_at?: string | null
           updated_at?: string
+          username?: string | null
         }
         Relationships: []
       }
@@ -1487,6 +1605,7 @@ export type Database = {
           preferred_journal_id: string | null
           publication_type: string
           reference: string
+          review_settings: Json
           source_ip_hash: string | null
           status: string
           submitted_at: string | null
@@ -1514,6 +1633,7 @@ export type Database = {
           preferred_journal_id?: string | null
           publication_type: string
           reference: string
+          review_settings?: Json
           source_ip_hash?: string | null
           status?: string
           submitted_at?: string | null
@@ -1541,6 +1661,7 @@ export type Database = {
           preferred_journal_id?: string | null
           publication_type?: string
           reference?: string
+          review_settings?: Json
           source_ip_hash?: string | null
           status?: string
           submitted_at?: string | null
@@ -1677,6 +1798,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_certificate_number: { Args: { p_year: number }; Returns: string }
       complete_workflow_checklist_item: {
         Args: {
           p_actor_id: string
@@ -1711,6 +1833,33 @@ export type Database = {
           p_payment_id?: string
           p_payment_reference?: string
           p_provider?: string
+          p_submission_id: string
+        }
+        Returns: {
+          amount: number
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          currency: string
+          id: string
+          metadata: Json
+          payment_reference: string | null
+          provider: string | null
+          status: string
+          submission_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "payments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      confirm_payment_and_start_review: {
+        Args: {
+          p_actor_id: string
+          p_payment_id: string
           p_submission_id: string
         }
         Returns: {
@@ -1855,6 +2004,7 @@ export type Database = {
           preferred_journal_id: string | null
           publication_type: string
           reference: string
+          review_settings: Json
           source_ip_hash: string | null
           status: string
           submitted_at: string | null

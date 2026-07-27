@@ -14,10 +14,10 @@ function matchesTarget(target: AnnouncementSettings["target"], path: string) { r
 
 export function AnnouncementBanner() {
   const pathname = usePathname();
-  const [settings, setSettings] = useState(defaults);
+  const [settings, setSettings] = useState<AnnouncementSettings>({ ...defaults, enabled: false });
   const [dismissed, setDismissed] = useState(false);
   const [popupOpen, setPopupOpen] = useState(false);
-  useEffect(() => { const load = () => { try { const stored = localStorage.getItem(storageKey); setSettings(stored ? { ...defaults, ...JSON.parse(stored) } : defaults); setDismissed(false); } catch { setSettings(defaults); } }; load(); window.addEventListener("storage", load); window.addEventListener("talikha:announcement-updated", load); return () => { window.removeEventListener("storage", load); window.removeEventListener("talikha:announcement-updated", load); }; }, []);
+  useEffect(() => { let cancelled = false; void fetch("/api/announcements", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (cancelled) return; if (body?.announcement) { setSettings({ ...defaults, ...body.announcement }); setDismissed(false); } }).catch(() => {}); return () => { cancelled = true; }; }, []);
   const visible = settings.enabled && !dismissed && isScheduled(settings) && matchesTarget(settings.target, pathname || "/");
   // eslint-disable-next-line react-hooks/set-state-in-effect -- popup timer/scroll listener setup; setPopupOpen is a side-effect trigger, not a state mirror
   useEffect(() => { if (!visible || !["popup", "both"].includes(settings.presentation)) { setPopupOpen(false); return; } const sessionKey = `${storageKey}:seen`; if (settings.frequency === "session" && sessionStorage.getItem(sessionKey)) return; const open = () => { setPopupOpen(true); sessionStorage.setItem(sessionKey, "1"); }; if (settings.trigger === "scroll") { const onScroll = () => { if (window.scrollY > 180) { open(); window.removeEventListener("scroll", onScroll); } }; window.addEventListener("scroll", onScroll, { passive: true }); return () => window.removeEventListener("scroll", onScroll); } const timer = window.setTimeout(open, settings.delaySeconds * 1000); return () => window.clearTimeout(timer); }, [visible, settings]);
