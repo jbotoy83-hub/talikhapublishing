@@ -5,6 +5,7 @@ import { normalizeSegments } from "./field-engine";
 interface InlineTextEditorProps {
   segments: TextSegment[];
   fields: CertificateField[];
+  fieldValues: Record<string, string>;
   style: BlockStyle;
   zoom: number;
   onCommit: (segs: TextSegment[]) => void;
@@ -31,16 +32,19 @@ function applyInlineStyle(el: HTMLElement, s: Partial<BlockStyle>): void {
   if (s.lineHeight) el.style.lineHeight = String(s.lineHeight);
 }
 
-export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: InlineTextEditorProps) {
+export function InlineTextEditor({ segments, fields, fieldValues, style, zoom, onCommit }: InlineTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastSerialized = useRef<string>("");
   const focusedRef = useRef(false);
   const committedRef = useRef(false);
   const savedRange = useRef<Range | null>(null);
+  const fieldValuesRef = useRef(fieldValues);
+  fieldValuesRef.current = fieldValues;
   const [hasSelection, setHasSelection] = useState(false);
 
   const labelOf = useCallback((k: string) => fields.find((f) => f.key === k)?.label || k, [fields]);
+  const chipText = useCallback((k: string) => fieldValuesRef.current[k] || labelOf(k), [labelOf]);
 
   const serialize = useCallback((): TextSegment[] => {
     const el = editorRef.current;
@@ -106,11 +110,11 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
           el.appendChild(document.createTextNode(s.v));
         }
       } else {
-        el.appendChild(makeChipEl(s.k, labelOf(s.k), s.style));
+        el.appendChild(makeChipEl(s.k, chipText(s.k), s.style));
       }
     }
     lastSerialized.current = JSON.stringify(segs);
-  }, [labelOf]);
+  }, [chipText]);
 
   useEffect(() => {
     buildDOM(segments.length ? segments : [{ t: "s", v: "" }]);
@@ -192,7 +196,7 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
       const range = sel.getRangeAt(0);
       if (!el.contains(range.commonAncestorContainer)) return;
       range.deleteContents();
-      const chip = makeChipEl(key, labelOf(key));
+      const chip = makeChipEl(key, chipText(key));
       range.insertNode(chip);
       const after = document.createRange();
       after.setStartAfter(chip);

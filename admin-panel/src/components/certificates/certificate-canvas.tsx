@@ -214,7 +214,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
 
     let displayFontSize = block.style.fontSize;
     let overflowWarn = false;
-    if (block.type === "text" && !isEditing) {
+    if (block.type === "text") {
       const measureStr = mode === "generator" ? resolved : builderPreview;
       if (block.overflowBehavior === "auto_fit" && measureStr) {
         const fit = measureTextFit(
@@ -305,6 +305,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
           <InlineTextEditor
             segments={segs}
             fields={fields}
+            fieldValues={fieldValues}
             style={{ ...block.style, fontSize: displayFontSize }}
             zoom={effectiveZoom}
             onCommit={(s) => onEditCommit(block.id, s)}
