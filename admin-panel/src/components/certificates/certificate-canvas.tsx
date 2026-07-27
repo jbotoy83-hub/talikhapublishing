@@ -117,6 +117,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   }, [mode, onSelectBlock, editingBlockId, selectedBlockId]);
 
   const onDoubleClickBlock = useCallback((e: React.MouseEvent, block: CertificateBlock) => {
+    if (mode !== "builder") return;
     if (block.locked) return;
     if (block.type !== "text") return;
     e.stopPropagation();
@@ -184,14 +185,14 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   const onPointerUp = useCallback(() => {
     const d = drag;
     flushPendingUpdate();
-    if (d && !dragMovedRef.current && d.wasSelected) {
+    if (d && !dragMovedRef.current && d.wasSelected && mode === "builder") {
       const block = blocks.find((b) => b.id === d.blockId);
       if (block && block.type === "text" && !block.locked) onStartEdit(d.blockId);
     }
     dragMovedRef.current = false;
     setDrag(null);
     setResize(null);
-  }, [flushPendingUpdate, drag, blocks, onStartEdit]);
+  }, [flushPendingUpdate, drag, blocks, onStartEdit, mode]);
 
   const onCanvasClick = useCallback((e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
@@ -270,10 +271,10 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
       overflow: "hidden",
       display: "block",
       minWidth: 0,
-      overflowWrap: "anywhere",
-      wordBreak: "break-word",
+      overflowWrap: "break-word",
+      wordBreak: "normal",
       whiteSpace: "pre-wrap",
-      hyphens: "auto",
+      hyphens: "none",
       width: "100%",
       height: "100%",
       boxSizing: "border-box",

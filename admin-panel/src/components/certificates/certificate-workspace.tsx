@@ -144,11 +144,24 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
       const response = await fetch(`/api/admin/certificates/records?templateId=${encodeURIComponent(templateId)}`, { credentials: "same-origin" });
       if (!handleApiState(response)) return;
       const payload = await response.json();
-      setRecords((payload.records || []).map((row: ServerRecord) => mapServerRecord(row)));
+      const loaded: CertificateRecord[] = (payload.records || []).map((row: ServerRecord) => mapServerRecord(row));
+      setRecords(loaded);
+      if (!launchSubmissionId) {
+        try {
+          const saved = JSON.parse(localStorage.getItem(`cert-ws-${templateId}`) || "{}") as { recordId?: string; mode?: WorkspaceMode };
+          if (saved.recordId && loaded.some((r) => r.id === saved.recordId)) setActiveRecordId(saved.recordId);
+          if (saved.mode === "builder" || saved.mode === "generator") setMode(saved.mode);
+        } catch { /* ignore malformed storage */ }
+      }
     } catch { setServiceState("unavailable"); }
-  }, [handleApiState]);
+  }, [handleApiState, launchSubmissionId]);
 
   useEffect(() => { if (activeTemplateId) void loadRecords(activeTemplateId); }, [activeTemplateId, loadRecords]);
+
+  useEffect(() => {
+    if (!activeTemplateId) return;
+    try { localStorage.setItem(`cert-ws-${activeTemplateId}`, JSON.stringify({ recordId: activeRecordId, mode })); } catch { /* storage unavailable */ }
+  }, [activeTemplateId, activeRecordId, mode]);
 
   useEffect(() => {
     if (!launchSubmissionId || !activeTemplateId || activeRecordId) return;
