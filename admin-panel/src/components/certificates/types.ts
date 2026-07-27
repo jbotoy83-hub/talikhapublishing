@@ -183,7 +183,7 @@ export const DEFAULT_PAGE_NAMES: { name: string; type: PageType }[] = [
 ];
 
 export const DEFAULT_BLOCK_STYLE: BlockStyle = {
-  fontFamily: "Georgia, serif",
+  fontFamily: "Helvetica",
   fontSize: 14,
   fontWeight: 400,
   fontStyle: "normal",

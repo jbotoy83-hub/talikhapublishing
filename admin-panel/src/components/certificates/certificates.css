@@ -1,5 +1,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Montserrat:wght@300;400;500;600;700;800;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Oswald:wght@200;300;400;500;600;700&family=Raleway:wght@300;400;500;600;700;800;900&display=swap');
 
+@font-face {
+  font-family: 'Oswald';
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url('../../assets/fonts/Oswald-Variable.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Glacial Indifference';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../../assets/fonts/GlacialIndifference-Regular.woff') format('woff');
+}
+@font-face {
+  font-family: 'Glacial Indifference';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../../assets/fonts/GlacialIndifference-Bold.woff') format('woff');
+}
+
 .cert-ws { display:flex; flex-direction:column; height:100%; background:#f0eeea; color:#1c2821; font-family:Inter,system-ui,sans-serif; overflow:hidden; }
 .cert-ws--list { height:auto; min-height:100vh; overflow:auto; padding:0; }
 
