@@ -1,6 +1,7 @@
 import "server-only";
 import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import sharp from "sharp";
 import { certificateBlockText, resolveCertificateContent, type CertificateBlock } from "@/lib/certificates";
 
 type Template = { background_bucket?: string | null; background_path?: string | null } | null | undefined;
@@ -16,6 +17,15 @@ const hex = (value: unknown) => {
   const number = Number.parseInt(match[1], 16);
   return rgb(((number >> 16) & 255) / 255, ((number >> 8) & 255) / 255, (number & 255) / 255);
 };
+
+async function compressImageForPdf(raw: ArrayBuffer, isSocialPage: boolean): Promise<Buffer> {
+  const maxDim = isSocialPage ? 2160 : 1600;
+  const quality = isSocialPage ? 95 : 85;
+  return sharp(Buffer.from(raw))
+    .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality, mozjpeg: true, progressive: true })
+    .toBuffer();
+}
 
 function wrappedLines(text: string, font: { widthOfTextAtSize: (text: string, size: number) => number }, size: number, maxWidth: number) {
   return text.split(/\n/).flatMap((paragraph) => {
@@ -50,7 +60,9 @@ export async function renderCertificatePdf({ admin, template, values, blocks = [
     const page = pages[item.pageNumber - 1]; if (!page || !item.backgroundBucket || !item.backgroundPath) continue;
     const { data } = await admin.storage.from(item.backgroundBucket).download(item.backgroundPath);
     if (!data) { warnings.push(`Background for page ${item.pageNumber} is unavailable.`); continue; }
-    const bytes = await data.arrayBuffer(); const image = item.backgroundMimeType === "image/jpeg" || /\.jpe?g$/i.test(item.backgroundPath) ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
+    const isSocial = item.pageNumber === 6;
+    const compressed = await compressImageForPdf(await data.arrayBuffer(), isSocial);
+    const image = await pdf.embedJpg(compressed);
     page.drawImage(image, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
   }
   for (const block of [...blocks].sort((a, b) => a.zIndex - b.zIndex)) {
@@ -64,8 +76,9 @@ export async function renderCertificatePdf({ admin, template, values, blocks = [
     if (block.blockType === "image" && block.assetBucket && block.assetPath) {
       const { data } = await admin.storage.from(block.assetBucket).download(block.assetPath);
       if (!data) { warnings.push("An image block is unavailable."); continue; }
-      const bytes = await data.arrayBuffer();
-      const image = /\.jpe?g$/i.test(block.assetPath) ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
+      const isSocial = (block.pageNumber || pageIndex + 1) === 6;
+      const compressed = await compressImageForPdf(await data.arrayBuffer(), isSocial);
+      const image = await pdf.embedJpg(compressed);
       page.drawImage(image, { x: block.x * scale, y: page.getHeight() - (block.y + block.height) * scale, width: block.width * scale, height: block.height * scale, rotate: degrees(-block.rotation || 0), opacity: Number(style.opacity ?? 1) });
       continue;
     }
