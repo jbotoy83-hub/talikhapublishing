@@ -214,26 +214,25 @@ export function InlineTextEditor({ segments, fields, style, zoom, onCommit }: In
     const sel = window.getSelection();
     const el = editorRef.current;
     const wrap = wrapperRef.current;
-    if (!sel || sel.isCollapsed || !sel.rangeCount || !el || !wrap || !el.contains(sel.anchorNode)) {
-      setPopover(null);
-      savedRange.current = null;
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    if (!el.contains(range.commonAncestorContainer)) { setPopover(null); savedRange.current = null; return; }
-    const rr = range.getBoundingClientRect();
-    if (rr.width === 0 && rr.height === 0) { setPopover(null); savedRange.current = null; return; }
-    const wr = wrap.getBoundingClientRect();
-    const z = zoom || 1;
-    let left = (rr.left - wr.left) / z + rr.width / (2 * z);
-    left = Math.max(4, Math.min(left, wr.width / z - 4));
-    savedRange.current = range.cloneRange();
+    const hasSelection = !!(sel && !sel.isCollapsed && sel.rangeCount && el && wrap && el.contains(sel.anchorNode));
+    const range = hasSelection ? sel!.getRangeAt(0) : null;
+    const inEditor = !!(range && el && el.contains(range.commonAncestorContainer));
+    const rr = inEditor ? range!.getBoundingClientRect() : null;
+    const hasRect = !!(rr && (rr.width > 0 || rr.height > 0));
+    if (hasSelection && inEditor && hasRect && range) savedRange.current = range.cloneRange();
+
     setPopover((prev) => {
-      const mode = prev?.mode ?? "toolbar";
-      const top = mode === "toolbar"
-        ? (rr.top - wr.top) / z - 46
-        : (rr.bottom - wr.top) / z + 10;
-      return { mode, x: left, y: Math.max(4, top) };
+      if (prev && prev.mode !== "toolbar") return prev;
+      if (!hasSelection || !inEditor || !hasRect || !wrap) {
+        savedRange.current = null;
+        return null;
+      }
+      const wr = wrap.getBoundingClientRect();
+      const z = zoom || 1;
+      let left = (rr!.left - wr.left) / z + rr!.width / (2 * z);
+      left = Math.max(4, Math.min(left, wr.width / z - 4));
+      const top = (rr!.top - wr.top) / z - 46;
+      return { mode: "toolbar", x: left, y: Math.max(4, top) };
     });
   }, [zoom]);
 
