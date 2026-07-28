@@ -247,14 +247,6 @@ const publicationSelect = `
   publication_authors(position, author:authors(id, slug, name, bio, affiliation, credentials, orcid, image_url))
 `;
 
-const homePublicationSelect = `
-  id, slug, title, abstract, keywords, publication_date, updated_at,
-  volume, issue_number, pages, doi, pdf_url, recommended_citation,
-  license_name, license_url, copyright_holder, featured, content_type, author_display, views, downloads,
-  journal:journals(id, slug, title, description, scope, issn, hero_image_url, accent),
-  publication_authors(position, author:authors(id, slug, name))
-`;
-
 export type JournalArchiveEntry = {
   id: string;
   journalId: string;
@@ -319,21 +311,17 @@ export const getPublications = cache(async (): Promise<Publication[]> => {
 });
 
 export const getHomePublications = cache(async (limit = 24): Promise<Publication[]> => {
-  const supabase = getPublicSupabase();
-  if (!supabase) return fallbackPublications().slice(0, limit);
-  const { data, error } = await supabase
-    .from("publications")
-    .select(homePublicationSelect)
-    .eq("status", "published")
-    .order("publication_date", { ascending: false })
-    .limit(limit);
-  if (error || !data) {
-    reportReadFailure("getHomePublications", error);
-    return fallbackPublications().slice(0, limit);
-  }
-  return (data as unknown as PublicationRow[])
-    .map(mapPublication)
-    .filter((item): item is Publication => Boolean(item));
+  const all = await getPublications();
+  return all
+    .slice()
+    .sort((a, b) => {
+      const scoreA = (a.views || 0) + (a.downloads || 0);
+      const scoreB = (b.views || 0) + (b.downloads || 0);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      const dateOrder = b.publicationDate.localeCompare(a.publicationDate);
+      return dateOrder || a.title.localeCompare(b.title, "en");
+    })
+    .slice(0, limit);
 });
 
 export const getPublicContentCounts = cache(async (): Promise<PublicContentCounts> => {

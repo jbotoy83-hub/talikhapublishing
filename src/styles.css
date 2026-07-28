@@ -5277,3 +5277,27 @@ body:has(.track-page) { background:#f7f7f8; }
   .search-result-card,.search-pill,.search-facet-chevron,.search-skeleton { transition:none !important; animation:none !important; }
   .search-result-card:hover { transform:none !important; }
 }
+
+/* ==========================================================================
+   JOURNAL ARCHIVE — thumbnail-free rows + readership metric
+   ========================================================================== */
+.journal-publisher-page .journal-archive-panel #journalLatestGrid .journal-latest-record.no-thumb { grid-template-columns:minmax(0,1fr); }
+.journal-publisher-page .journal-archive-panel #journalLatestGrid .journal-latest-views { display:inline-flex; align-items:center; gap:.3rem; margin-left:auto; color:#647169; font-size:.78rem; font-weight:800; letter-spacing:.01em; text-transform:none; }
+.journal-publisher-page .journal-archive-panel #journalLatestGrid .journal-latest-views svg { color:#9aa39c; }
+
+/* ==========================================================================
+   JOURNAL FEATURED — horizontal scroller with navigation
+   ========================================================================== */
+.journal-recognition-nav { display:flex; justify-content:flex-end; gap:.5rem; padding:0 .25rem .9rem; }
+.journal-recognition-nav-btn { display:grid; width:2.4rem; height:2.4rem; place-items:center; border:1px solid #d4b895; border-radius:999px; background:#fff; color:#183d2c; cursor:pointer; transition:background .18s ease, color .18s ease, transform .18s ease, border-color .18s ease; }
+.journal-recognition-nav-btn:hover { background:#183d2c; border-color:#183d2c; color:#fff; transform:translateY(-1px); }
+.journal-recognition-layout .journal-recognition-track { display:flex; gap:1.1rem; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth; padding:.25rem .25rem 1.1rem; scrollbar-width:thin; scrollbar-color:#d4b895 transparent; }
+.journal-recognition-layout .journal-recognition-track::-webkit-scrollbar { height:8px; }
+.journal-recognition-layout .journal-recognition-track::-webkit-scrollbar-thumb { background:#d4b895; border-radius:999px; }
+.journal-recognition-track > .journal-recognition-card { flex:0 0 clamp(260px,33%,400px); scroll-snap-align:start; display:flex; flex-direction:column; }
+.journal-recognition-track > .journal-recognition-card .journal-recognition-copy { flex:1; }
+@media (prefers-reduced-motion:reduce) {
+  .journal-recognition-track { scroll-behavior:auto; }
+  .journal-recognition-nav-btn { transition:none !important; }
+  .journal-recognition-nav-btn:hover { transform:none !important; }
+}

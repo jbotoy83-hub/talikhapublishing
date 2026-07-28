@@ -62,6 +62,15 @@ export function comparePublicationsNewestFirst(a: Publication, b: Publication) {
   return a.title.localeCompare(b.title, "en");
 }
 
+export function compareByEngagement(a: Publication, b: Publication) {
+  const scoreA = (a.views || 0) + (a.downloads || 0);
+  const scoreB = (b.views || 0) + (b.downloads || 0);
+  if (scoreB !== scoreA) return scoreB - scoreA;
+  const dateOrder = b.publicationDate.localeCompare(a.publicationDate);
+  if (dateOrder) return dateOrder;
+  return a.title.localeCompare(b.title, "en");
+}
+
 export function groupJournalArchive(publications: Array<Pick<Publication, "id" | "volume" | "issue">>): JournalVolumeGroup[] {
   const volumes = new Map<string, Map<string, Array<Pick<Publication, "id" | "volume" | "issue">>>>();
   for (const publication of publications) {

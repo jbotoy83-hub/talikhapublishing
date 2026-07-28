@@ -7,7 +7,8 @@ import { Icon } from "@/components/icon";
 import { JsonLd } from "@/components/json-ld";
 import { getCurrentIssueForJournal, getJournal, getJournalIssues, getJournals, getPublications } from "@/lib/content";
 import { absoluteUrl } from "@/lib/site";
-import { archiveIssueLabel, comparePublicationsNewestFirst, formatPublicationDate, getJournalPresentation, groupJournalArchive } from "@/lib/journal-presentation";
+import { archiveIssueLabel, compareByEngagement, comparePublicationsNewestFirst, formatPublicationDate, getJournalPresentation, groupJournalArchive } from "@/lib/journal-presentation";
+import { FeaturedNav } from "@/components/featured-nav";
 import type { Publication } from "@/lib/types";
 
 export const revalidate = 300;
@@ -58,7 +59,7 @@ export default async function JournalPage({ params, searchParams }: { params: Pr
   const declaredVolumes = new Set(journalIssues.map((i) => i.volume)).size;
   const latest = journalPublications[0];
   const cycleIssues = journalIssues.filter((i) => i.isCurrent || i.status === "published" || i.status === "open" || i.status === "scheduled");
-  const featured = journalPublications.slice(0, 3);
+  const featured = [...journalPublications].sort(compareByEngagement).slice(0, 10);
   const search = queryValue(query.q).trim();
   const volume = queryValue(query.volume);
   const issue = queryValue(query.issue);
@@ -124,8 +125,8 @@ export default async function JournalPage({ params, searchParams }: { params: Pr
       <section className="journal-publisher-content">
         <div className="section-shell">
           <section className="journal-recognition-section" id="featured">
-            <div className="journal-section-heading"><div><p className="journal-publisher-overline">From this journal</p><h2>Featured publications</h2></div><p>A current selection from the verified publication archive. No readership ranking is implied.</p></div>
-            {featured.length ? <div className="journal-recognition-layout"><div className="journal-recognition-primary-grid">
+            <div className="journal-section-heading"><div><p className="journal-publisher-overline">From this journal</p><h2>Featured publications</h2></div><p>The most-read work in this journal — the ten publications readers return to most, ranked by combined views and downloads.</p></div>
+            {featured.length ? <div className="journal-recognition-layout"><FeaturedNav targetId="journalFeaturedTrack" /><div className="journal-recognition-primary-grid journal-recognition-track" id="journalFeaturedTrack">
               {featured.map((publication, index) => <article className={`journal-recognition-card ${index === 0 ? "is-featured" : ""}`} key={publication.id}>
                 <Link href={publicationHref(publication)} className="journal-recognition-image" aria-label={`Read ${publication.title}`}><Image src={journal.heroImage} alt="" fill sizes="(max-width: 720px) 100vw, 33vw" /><span className="journal-recognition-ribbon">Featured · {String(index + 1).padStart(2, "0")}</span></Link>
                 <div className="journal-recognition-copy"><div className="journal-recognition-meta"><span>{publication.contentType}</span>{publication.volume && <span>Vol. {publication.volume}{publication.issue ? `, No. ${publication.issue}` : ""}</span>}{publication.doi && <span>DOI supplied</span>}</div><h3><Link href={publicationHref(publication)}>{publication.title}</Link></h3>{publication.abstract && <p>{publication.abstract}</p>}<div className="journal-recognition-authors"><small>Authors</small><div>{publication.authors.length ? publication.authors.map((author) => <Link href={`/authors/${author.slug}`} key={author.id}><span>{initials(author.name)}</span><strong>{author.name}</strong></Link>) : <strong>{publication.authorDisplay}</strong>}</div></div><div className="journal-recognition-record"><span>{journal.title}{publication.volume ? `, Vol. ${publication.volume}` : ""}{publication.issue ? `, No. ${publication.issue}` : ""}</span><time dateTime={publication.publicationDate}>{formatPublicationDate(publication)}</time></div><Link href={publicationHref(publication)} className="journal-recognition-action">Read publication <Icon name="arrow" className="h-4 w-4" /></Link></div>

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Publication } from "@/lib/types";
 import { Icon } from "./icon";
 
-const journalOrder = ["academic-frontiers", "echoes-of-expression", "visionary-voices"];
 const gradients: Record<string, string> = {
   "academic-frontiers": "from-emerald-900 via-emerald-700 to-amber-600",
   "echoes-of-expression": "from-rose-950 via-rose-700 to-orange-500",
@@ -35,9 +34,22 @@ function PublicationCard({ publication, large = false }: { publication: Publicat
 
 export function HomePublications({ publications }: { publications: Publication[] }) {
   const { featured, rail } = useMemo(() => {
-    const firstByJournal = journalOrder.flatMap((slug) => publications.find((item) => item.journal.slug === slug) || []);
-    const featuredIds = new Set(firstByJournal.map((item) => item.id));
-    return { featured: firstByJournal.length ? firstByJournal : publications.slice(0,3), rail: publications.filter((item) => !featuredIds.has(item.id)).slice(0,6) };
+    const byJournal = new Map<string, Publication[]>();
+    const order: string[] = [];
+    for (const publication of publications) {
+      const slug = publication.journal.slug;
+      if (!byJournal.has(slug)) { byJournal.set(slug, []); order.push(slug); }
+      byJournal.get(slug)!.push(publication);
+    }
+    const rank = (list: Publication[]) => [...list].sort((a, b) => ((b.views || 0) + (b.downloads || 0)) - ((a.views || 0) + (a.downloads || 0)) || b.publicationDate.localeCompare(a.publicationDate));
+    const featured: Publication[] = [];
+    const rail: Publication[] = [];
+    for (const slug of order) {
+      const ranked = rank(byJournal.get(slug) || []);
+      featured.push(...ranked.slice(0, 2));
+      rail.push(...ranked.slice(2, 6));
+    }
+    return { featured, rail };
   }, [publications]);
   const [active, setActive] = useState(0);
   const railRef = useRef<HTMLDivElement>(null);
