@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run build",
     "readiness": "node scripts/check-launch-readiness.mjs",
-    "db:types": "npx supabase gen types typescript --linked --schema public > src/types/database.generated.ts"
+    "db:types": "npx supabase gen types typescript --linked --schema public > src/types/database.generated.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "overrides": {
     "postcss": "$postcss"
@@ -63,14 +65,19 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.2.10",
+    "jsdom": "^30.0.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

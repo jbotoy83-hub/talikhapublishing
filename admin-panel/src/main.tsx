@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { SubmissionStatus, ReviewAuthor, ReceiptSettings, EditorialSubmission, PublicationRecord, JournalIssueDefault, IssueStatus, IssueRecord, JournalMeta, JournalCatalog, SiteJournal, SiteIssue, SiteStore } from "@/types";
 import {
   AlertTriangle,
   Award,
@@ -136,88 +137,7 @@ const sidebarSections = [
     ],
   },
 ];
-type SubmissionStatus =
-  | "New"
-  | "In progress"
-  | "Review"
-  | "Revise"
-  | "For approval"
-  | "Rejected"
-  | "Accepted"
-  | "Scheduled for publishing"
-  | "Published";
-type ReviewAuthor = {
-  id: string;
-  name: string;
-  firstName?: string;
-  middleInitial?: string;
-  surname?: string;
-  email: string;
-  affiliation: string;
-  academicTitle?: string;
-  occupation: string;
-  photo?: string | null;
-};
-type ReceiptSettings = {
-  feeLabel: string;
-  fee: number;
-  tax: number;
-  discount: number;
-};
-type EditorialSubmission = {
-  id: string;
-  title: string;
-  author: string;
-  email: string;
-  affiliation: string;
-  journal: string;
-  status: SubmissionStatus;
-  workflowStage?: string;
-  submittedAt: string;
-  displayDate: string;
-  image: string;
-  abstract: string;
-  fileName: string;
-  paymentProof: boolean;
-  paymentConfirmed?: boolean;
-  paymentId?: string;
-  history: string[];
-  authors?: ReviewAuthor[];
-  receipt?: ReceiptSettings;
-  targetIssueId?: string;
-  issueHistory?: string[];
-  paymentPlan?: string;
-  paymentMethod?: string;
-  paymentReference?: string;
-  paymentAmount?: number;
-  paymentStatus?: string;
-  proofFileName?: string;
-  proofFilePath?: string;
-  proofBucket?: string;
-  manuscriptFileName?: string;
-  manuscriptFilePath?: string;
-  manuscriptBucket?: string;
-  files?: { id: string; file_kind: string; storage_path: string; original_name: string; mime_type: string; size_bytes: number }[];
-  authorDetails?: { firstName?: string; surname?: string; middleInitial?: string; email?: string; institution?: string; affiliation?: string; academicTitle?: string; position?: string; orcid?: string; location?: string }[];
-  proofFileId?: string;
-  manuscriptFileId?: string;
-  priority?: "normal" | "high" | "urgent";
-};
-type PublicationRecord = {
-  id: string;
-  submissionId: string;
-  journal: string;
-  volume: string;
-  issue: string;
-  doi: string;
-  pageStart: string;
-  pageEnd: string;
-  readCount?: number;
-  downloadCount?: number;
-  scheduledFor?: string;
-  status: "Draft" | "For approval" | "Ready to publish" | "Scheduled" | "Published";
-};
-type JournalIssueDefault = { volume: string; issue: string };
+
 const journalIssueDefaults: Record<string, JournalIssueDefault> = {
   InQuira: { volume: "1", issue: "1" },
   Lumera: { volume: "1", issue: "1" },
@@ -744,59 +664,7 @@ const studyRecords = [
       "The role of regional publishing networks in strengthening access to local research.",
   },
 ];
-type IssueStatus = "Draft" | "Open" | "Editorial" | "Production" | "Scheduled" | "Published" | "Archived";
-type IssueRecord = {
-  id: string;
-  journalId: string;
-  volume: number;
-  issue: number;
-  title: string;
-  description: string;
-  status: IssueStatus;
-  isCurrent: boolean;
-  isSubmissionTarget: boolean;
-  isSpecial: boolean;
-  specialLabel: string;
-  publicationDate: string;
-  submissionDeadline: string;
-  editorialStart: string;
-  editorialEnd: string;
-  openAt: string;
-  closeAt: string;
-  publishAt: string;
-  cover: string;
-  articleOrder: string[];
-  doi: string;
-  keywords: string[];
-  seoTitle: string;
-  seoDescription: string;
-  socialImage: string;
-  changelog: string[];
-  deleted: boolean;
-  createdAt: string;
-};
-type JournalMeta = {
-  id: string;
-  slug?: string;
-  title: string;
-  abbreviation: string;
-  issnOnline: string;
-  issnPrint: string;
-  publisher: string;
-  frequency: string;
-  language: string;
-  subject: string;
-  copyright: string;
-  license: string;
-  doiPrefix: string;
-  seoTitle: string;
-  seoDescription: string;
-  socialImage: string;
-  currentIssueId?: string;
-  submissionIssueId?: string;
-  deleted: boolean;
-};
-type JournalCatalog = { journals: JournalMeta[]; issues: IssueRecord[]; syncedAt: string };
+
 const JOURNAL_CATALOG_KEY = "talikha-journal-catalog-v2";
 const ISSUE_STATUS_ORDER: IssueStatus[] = ["Draft", "Open", "Editorial", "Production", "Scheduled", "Published", "Archived"];
 const ISSUE_STATUS_META: Record<IssueStatus, { label: string; tone: string; note: string }> = {
@@ -841,9 +709,7 @@ function jwSeedCatalog(): JournalCatalog {
   issues[2].isSubmissionTarget = true;
   return { journals, issues, syncedAt: new Date().toISOString() };
 }
-type SiteJournal = { id: string; slug: string; title: string; description: string; scope: string; issn: string; issnOnline: string; issnPrint: string; hero: string; accent: string; status: string; submissionIssueId?: string; metadata: Record<string, unknown> };
-type SiteIssue = { id: string; journalId: string; volume: string; issue: string; title: string; description: string; status: string; isCurrent: boolean; isSubmissionTarget: boolean; publicationDate: string; cover: string; deleted: boolean; metadata: Record<string, unknown> };
-type SiteStore = { version: number; journals: SiteJournal[]; issues: SiteIssue[] };
+
 const jwSluggify: (v: string) => string = (value) => { const out = (value || "journal").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); return out || "journal"; };
 function projectCatalogForSite(catalog: JournalCatalog): SiteStore {
   const journals: SiteJournal[] = [];
