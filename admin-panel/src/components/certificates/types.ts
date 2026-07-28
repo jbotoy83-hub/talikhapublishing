@@ -9,7 +9,7 @@ export type RightTab = "data" | "fields" | "layers" | "page" | "validation" | "e
 export interface CertificateField {
   key: string;
   label: string;
-  type: "text" | "date" | "doi" | "number" | "url";
+  type: "text" | "date" | "doi" | "number" | "url" | "image";
   required: boolean;
   section: "author" | "publication" | "certificate";
   placeholder?: string;
@@ -121,6 +121,7 @@ export interface CertificateRecord {
   submissionId?: string;
   reference?: string;
   fieldValues: Record<string, string>;
+  fieldUrls?: Record<string, string>;
   status: CertificateStatus;
   certificateNumber: string;
   issuedAt?: string;
@@ -159,6 +160,7 @@ export const DEFAULT_FIELDS: CertificateField[] = [
   { key: "author_academic_title", label: "Academic Title", type: "text", required: false, section: "author", placeholder: "LPT, PhD, MAEd" },
   { key: "author_role", label: "Role or Occupation", type: "text", required: false, section: "author", placeholder: "Faculty, Teacher, Assistant Professor" },
   { key: "author_affiliation", label: "Affiliation", type: "text", required: false, section: "author", placeholder: "University or organization" },
+  { key: "author_photo", label: "Author photo", type: "image", required: false, section: "author" },
   { key: "work_title", label: "Manuscript Title", type: "text", required: true, section: "publication", placeholder: "The full title of the manuscript" },
   { key: "doi", label: "DOI", type: "doi", required: false, section: "publication", placeholder: "10.5281/zenodo.XXXXXXXX", validationRule: "doi" },
   { key: "publication_name", label: "Publication Name", type: "text", required: true, section: "publication", placeholder: "Journal or magazine name" },

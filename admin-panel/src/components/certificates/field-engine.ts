@@ -343,6 +343,15 @@ export function createDefaultTemplate(name: string, publication: string, pageCou
       safeMargin: 36,
     });
   }
+  const blocks: CertificateBlock[] = [];
+  const page6 = pages.find((p) => p.pageNumber === 6);
+  if (page6) {
+    const photoBlock = createImageBlock(page6.id, Math.round((page6.width - 360) / 2), 60, "", 360, 360);
+    photoBlock.linkedFieldKey = "author_photo";
+    photoBlock.style.objectFit = "cover";
+    photoBlock.name = "Author photo";
+    blocks.push(photoBlock);
+  }
   return {
     id: uid(),
     name,
@@ -351,7 +360,7 @@ export function createDefaultTemplate(name: string, publication: string, pageCou
     status: "draft",
     pages,
     fields: [...DEFAULT_FIELDS],
-    blocks: [],
+    blocks,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     certificateNumberPrefix: publication.slice(0, 3).toUpperCase() || "CRT",

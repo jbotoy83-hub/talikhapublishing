@@ -2972,8 +2972,15 @@ function PublicationRecordEditor({
             <p>Review one author at a time without expanding the record.</p>
           </div>
           <div className="publication-author-photo">
-            <Avatar src={submission.image} size="lg" />
-            <span><strong>2×2 profile picture</strong><small>{(selectedAuthor?.name || "author").toLowerCase().replaceAll(" ", "-")}.webp</small></span>
+            <Avatar src={selectedAuthor?.photo || submission.image} size="lg" />
+            <span>
+              <strong>2×2 profile picture</strong>
+              {selectedAuthor?.photo ? (
+                <a className="author-photo-dl" href={selectedAuthor.photo} download={`${(selectedAuthor.name || "author").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author"}-photo.jpg`}><Download size={12} strokeWidth={1.9} /> Download</a>
+              ) : (
+                <small>{(selectedAuthor?.name || "author").toLowerCase().replaceAll(" ", "-")}.webp</small>
+              )}
+            </span>
           </div>
         </header>
         <div className="publication-author-switcher" role="tablist" aria-label="Publication authors">

@@ -697,6 +697,8 @@ html.reveal-ready [data-reveal].is-revealed { opacity: 1; transform: none; will-
 .auth-coauthor-label { flex:1; font-size:.82rem; font-weight:600; color:#4a5560; }
 .auth-coauthor-remove { display:grid; width:26px; height:26px; place-items:center; border:0; border-radius:7px; background:transparent; color:#b0b7bf; cursor:pointer; transition:background .15s ease, color .15s ease; }
 .auth-coauthor-remove:hover { background:#fde8e8; color:#c95b3c; }
+.auth-coauthor-dl { display:grid; width:26px; height:26px; place-items:center; border:0; border-radius:7px; background:transparent; color:#9aa3ab; cursor:pointer; transition:background .15s ease, color .15s ease; }
+.auth-coauthor-dl:hover { background:#eef5f0; color:#1f5e40; }
 .auth-coauthor-card .floating-grid { padding:.85rem; }
 .auth-add-btn { display:inline-flex; align-items:center; gap:.45rem; border:1.5px dashed #bcd3c4; border-radius:10px; background:#f8fbf9; padding:.55rem 1rem; color:#1f5e40; font-size:.88rem; font-weight:600; cursor:pointer; transition:background .15s ease, border-color .15s ease; }
 .auth-add-btn:hover { background:#eef5f0; border-color:#7fb596; }

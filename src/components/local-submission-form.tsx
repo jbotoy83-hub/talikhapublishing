@@ -96,6 +96,20 @@ function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return fetch(dataUrl).then((r) => r.blob());
 }
 
+async function downloadPhoto(dataUrl: string | undefined, baseName: string) {
+  if (!dataUrl) return;
+  const blob = await dataUrlToBlob(dataUrl);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const safe = baseName.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author";
+  a.download = `${safe}-photo.${dataUrl.indexOf("data:image/png") === 0 ? "png" : "jpg"}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="review-row">
@@ -785,6 +799,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                   <p>A clear headshot helps editors and readers recognise you. Optional — stored only in this browser.</p>
                   <div className="aphoto-actions">
                     <button type="button" className="aphoto-btn" onClick={() => openPhoto("primary")}><Icon name="image" className="h-4 w-4" /> {form.photo ? "Edit photo" : "Upload photo"}</button>
+                    {form.photo && <button type="button" className="aphoto-btn" onClick={() => downloadPhoto(form.photo, displayName(form) || "author")}><DownloadGlyph className="h-4 w-4" /> Download</button>}
                     {form.photo && <button type="button" className="aphoto-btn ghost" onClick={() => removePhoto("primary")}>Remove</button>}
                   </div>
                   {photoError && <p className="aphoto-error">{photoError}</p>}
@@ -877,6 +892,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                           <span className="auth-coauthor-label">Co-author {idx + 1}</span>
                           <span className={`auth-coauthor-sub ${author.photo ? "has" : "none"}`}>{author.photo ? "Photo added" : "No photo yet"}</span>
                         </div>
+                        {author.photo && <button type="button" className="auth-coauthor-dl" onClick={() => downloadPhoto(author.photo, coDisplayName(author) || `co-author-${idx + 1}`)} aria-label={`Download photo for co-author ${idx + 1}`} title="Download photo"><DownloadGlyph className="h-4 w-4" /></button>}
                         <button type="button" className="auth-coauthor-remove" onClick={() => removeCoAuthor(author.id)} aria-label={`Remove co-author ${idx + 1}`}>
                           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
                         </button>
@@ -1243,6 +1259,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                             <div className="rauthor-photo-row">
                               <PhotoSlot photo={a.photo} initials={a.initials} size="md" verified interactive={false} label="" />
                               <div className="rauthor-photo-meta"><strong>{a.name || "—"}</strong><span>{a.role}{a.isPrimary ? " · Corresponding author" : ""}</span></div>
+                              {a.photo && <button type="button" className="aphoto-btn" onClick={() => downloadPhoto(a.photo, a.name || `author-${idx + 1}`)}><DownloadGlyph className="h-4 w-4" /> Download</button>}
                             </div>
                             <DetailRow icon={<Icon name="building" className="h-4 w-4" />} label="Affiliation" value={a.affiliation || "—"} />
                             <DetailRow icon={<Icon name="mail" className="h-4 w-4" />} label="Email" value={a.email || "—"} />
@@ -1263,6 +1280,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
               <div className="rauthor-single">
                 <PhotoSlot photo={reviewAuthors[0].photo} initials={reviewAuthors[0].initials} size="md" verified interactive={false} label="" />
                 <div><strong>{reviewAuthors[0].name || "—"}</strong><span>{reviewAuthors[0].role}</span></div>
+                {reviewAuthors[0].photo && <button type="button" className="aphoto-btn" onClick={() => downloadPhoto(reviewAuthors[0].photo, reviewAuthors[0].name || "author")}><DownloadGlyph className="h-4 w-4" /> Download</button>}
               </div>
               <DetailRow icon={<Icon name="building" className="h-4 w-4" />} label="Affiliation" value={reviewAuthors[0].affiliation || "—"} />
               <DetailRow icon={<Icon name="mail" className="h-4 w-4" />} label="Email" value={reviewAuthors[0].email || "—"} />

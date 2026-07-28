@@ -157,6 +157,11 @@
 .cert-field-section { margin-bottom:1rem; }
 .cert-field-section-title { font-size:.72rem; font-weight:700; color:#1f7a4d; text-transform:uppercase; letter-spacing:.08em; margin:0 0 .5rem; padding-bottom:.35rem; border-bottom:1px solid #eef2ee; }
 .cert-field-group { margin-bottom:.5rem; }
+.cert-image-field { display:flex; align-items:flex-start; gap:.6rem; }
+.cert-image-field-thumb { width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #d8ddd4; flex-shrink:0; }
+.cert-image-field-empty { width:64px; height:64px; border-radius:8px; border:1.5px dashed #c0c8bc; display:grid; place-items:center; font-size:.65rem; color:#8a9588; flex-shrink:0; }
+.cert-image-field-actions { display:flex; flex-direction:column; gap:.3rem; }
+.cert-image-field-actions .cert-btn { font-size:.72rem; padding:.25rem .55rem; }
 .cert-field-input-row { display:flex; align-items:center; gap:.35rem; }
 .cert-field-input-row .cert-input { flex:1; min-width:0; }
 .cert-case-btn { flex-shrink:0; width:26px; height:26px; display:grid; place-items:center; border:1px solid #d0d5cf; border-radius:5px; background:#f6f8f5; color:#5a6a5e; font-size:.62rem; font-weight:800; letter-spacing:.02em; cursor:pointer; transition:all .15s; }
@@ -345,9 +350,9 @@
 .cert-inline-editor { caret-color:#1f7a4d; }
 .cert-inline-editor:empty::before { content:"Type here…"; color:#9ca3af; font-style:italic; pointer-events:none; }
 .cert-text-display { user-select:none; }
-.cert-chip { display:inline; padding:0 4px; margin:0 1px; border-radius:4px; background:#e0f0e6; color:inherit; font-family:inherit; font-size:inherit; font-weight:inherit; font-style:inherit; line-height:inherit; letter-spacing:inherit; text-decoration:inherit; text-transform:inherit; box-decoration-break:clone; -webkit-box-decoration-break:clone; cursor:default; white-space:nowrap; }
-.cert-chip--static { background:#eaf3ee; color:inherit; outline:1px solid #bfe0cc; }
-.cert-block.is-editing .cert-chip { background:#d6ecdf; outline:1px solid #8fcba8; }
+.cert-chip { display:inline; padding:0; margin:0; border-radius:3px; background:#e0f0e6; color:inherit; font-family:inherit; font-size:inherit; font-weight:inherit; font-style:inherit; line-height:inherit; letter-spacing:inherit; text-decoration:inherit; text-transform:inherit; box-decoration-break:clone; -webkit-box-decoration-break:clone; cursor:default; box-shadow:0 0 0 3px #e0f0e6; }
+.cert-chip--static { background:#eaf3ee; color:inherit; box-shadow:0 0 0 3px #eaf3ee, 0 0 0 4px #bfe0cc; }
+.cert-block.is-editing .cert-chip { background:#d6ecdf; box-shadow:0 0 0 3px #d6ecdf, 0 0 0 4px #8fcba8; }
 
 .cert-link-popover { width:210px; max-width:60vw; background:#14241c; color:#e8e6e0; border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.32); overflow:hidden; animation:cert-pop .12s ease-out; }
 @keyframes cert-pop { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
@@ -493,7 +498,7 @@
 
 /* Empty linked field on the canvas: faded + dashed so an unfilled certificate
    never looks finished. Filled fields keep the solid green chip. */
-.cert-chip--empty { background:transparent; outline:1px dashed #c2b4ac; color:#9a8d85; font-style:italic; }
+.cert-chip--empty { background:transparent; box-shadow:none; outline:1px dashed #c2b4ac; outline-offset:2px; color:#9a8d85; font-style:italic; }
 
 /* Data panel: clickable field labels jump to the matching block on the canvas. */
 .cert-field-label--loc { cursor:pointer; border-radius:4px; transition:color .12s,background .12s; }

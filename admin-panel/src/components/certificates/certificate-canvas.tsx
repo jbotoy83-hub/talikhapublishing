@@ -11,6 +11,7 @@ interface CanvasProps {
   zoom: number;
   mode: WorkspaceMode;
   fieldValues: Record<string, string>;
+  fieldUrls?: Record<string, string>;
   showMargins: boolean;
   fields: CertificateField[];
   onSelectBlock: (id: string | null) => void;
@@ -18,6 +19,7 @@ interface CanvasProps {
   onEditCommit: (id: string, segs: import("./types").TextSegment[]) => void;
   onUpdateBlock: (id: string, updates: Partial<CertificateBlock>, transient?: boolean) => void;
   onTransformStart?: () => void;
+  onOpenImageCrop?: (id: string) => void;
   onZoomChange: (z: number) => void;
   pdfDataUrl?: string | null;
 }
@@ -42,8 +44,8 @@ function runCSS(s: Partial<import("./types").BlockStyle>): React.CSSProperties {
 }
 
 export const CertificateCanvas = React.memo(function CertificateCanvas({
-  page, blocks, selectedBlockId, editingBlockId, zoom, mode, fieldValues, showMargins, fields,
-  onSelectBlock, onStartEdit, onEditCommit, onUpdateBlock, onTransformStart, onZoomChange, pdfDataUrl,
+  page, blocks, selectedBlockId, editingBlockId, zoom, mode, fieldValues, fieldUrls, showMargins, fields,
+  onSelectBlock, onStartEdit, onEditCommit, onUpdateBlock, onTransformStart, onOpenImageCrop, onZoomChange, pdfDataUrl,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; origX: number; origY: number; wasSelected: boolean } | null>(null);
@@ -119,11 +121,18 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
   const onDoubleClickBlock = useCallback((e: React.MouseEvent, block: CertificateBlock) => {
     if (mode !== "builder") return;
     if (block.locked) return;
+    if (block.type === "image") {
+      if (!onOpenImageCrop) return;
+      e.stopPropagation();
+      onSelectBlock(block.id);
+      onOpenImageCrop(block.id);
+      return;
+    }
     if (block.type !== "text") return;
     e.stopPropagation();
     onSelectBlock(block.id);
     onStartEdit(block.id);
-  }, [mode, onSelectBlock, onStartEdit]);
+  }, [mode, onSelectBlock, onStartEdit, onOpenImageCrop]);
 
   const onPointerDownResize = useCallback((e: React.PointerEvent, block: CertificateBlock, handle: HandleDir) => {
     if (block.locked) return;
@@ -334,15 +343,17 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
         {block.type === "text" && !isEditing && overflowWarn && mode === "builder" && (
           <div className="cert-overflow-fade" aria-hidden="true" />
         )}
-        {block.type === "image" && block.assetUrl && (
-          <img src={block.assetUrl} alt={block.name} style={imgStyle} draggable={false} />
-        )}
-        {block.type === "image" && !block.assetUrl && (
-          <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: "#f3f4f6", border: "1px dashed #9ca3af", borderRadius: 4, fontSize: 10, color: "#6b7280", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 20 }}>🖼</span>
-            <span>No image</span>
-          </div>
-        )}
+        {block.type === "image" && (() => {
+          const src = block.linkedFieldKey ? (fieldUrls?.[block.linkedFieldKey] || block.assetUrl) : block.assetUrl;
+          if (src) return <img src={src} alt={block.name} style={imgStyle} draggable={false} />;
+          const fieldLabel = block.linkedFieldKey ? fields.find((f) => f.key === block.linkedFieldKey)?.label : undefined;
+          return (
+            <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: "#f3f4f6", border: "1px dashed #9ca3af", borderRadius: 4, fontSize: 10, color: "#6b7280", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 20 }}>🖼</span>
+              <span>{fieldLabel ? `No image — ${fieldLabel}` : "No image"}</span>
+            </div>
+          );
+        })()}
         {block.type === "qr" && (
           <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: "#f3f4f6", border: "1px dashed #9ca3af", borderRadius: 4, fontSize: 10, color: "#6b7280" }}>QR</div>
         )}

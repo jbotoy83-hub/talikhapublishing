@@ -20,10 +20,32 @@ interface WorkspaceProps {
 }
 
 type ImportCandidate = { publicationId: string; submissionId: string; title: string; journal: string; volume: string; issue: string; authorCount: number; ready: boolean; missing: string[] };
-type ServerRecord = { id: string; template_id: string; publication_id?: string; author_id?: string; submission_id?: string; status: CertificateRecord["status"]; field_values: Record<string, string>; certificate_number: string; created_at: string; updated_at: string };
+type ServerRecord = { id: string; template_id: string; publication_id?: string; author_id?: string; submission_id?: string; status: CertificateRecord["status"]; field_values: Record<string, string>; field_urls?: Record<string, string>; certificate_number: string; created_at: string; updated_at: string };
 
 function mapServerRecord(record: ServerRecord): CertificateRecord {
-  return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
+  return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, fieldUrls: record.field_urls || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
+}
+
+function imageBlockUrl(block: { linkedFieldKey: string | null; assetUrl?: string }, fieldUrls: Record<string, string>) {
+  return block.linkedFieldKey ? (fieldUrls[block.linkedFieldKey] || block.assetUrl || "") : (block.assetUrl || "");
+}
+
+function cropBounds(iw: number, ih: number, W: number, H: number, zoom: number) {
+  const coverScale = Math.max(W / iw, H / ih);
+  const cW = iw * coverScale;
+  const cH = ih * coverScale;
+  const width = W / (zoom * coverScale);
+  const height = H / (zoom * coverScale);
+  const txMin = zoom * (cW / 2 - coverScale * (iw - width)) - W / 2;
+  const txMax = (zoom * cW) / 2 - W / 2;
+  const tyMin = zoom * (cH / 2 - coverScale * (ih - height)) - H / 2;
+  const tyMax = (zoom * cH) / 2 - H / 2;
+  return { xMin: (txMin / W) * 100, xMax: (txMax / W) * 100, yMin: (tyMin / H) * 100, yMax: (tyMax / H) * 100 };
+}
+
+function clampCrop(x: number, y: number, zoom: number, iw: number, ih: number, W: number, H: number) {
+  const b = cropBounds(iw, ih, W, H, zoom);
+  return { x: Math.min(Math.max(x, b.xMin), b.xMax), y: Math.min(Math.max(y, b.yMin), b.yMax) };
 }
 
 function formatBytes(bytes: number) {
@@ -88,6 +110,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [newTemplatePub, setNewTemplatePub] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [cropDraft, setCropDraft] = useState<{ blockId: string; url: string; x: number; y: number; zoom: number } | null>(null);
+  const [cropNatural, setCropNatural] = useState<{ w: number; h: number } | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
   const [convertSearch, setConvertSearch] = useState("");
   const [editorHasSelection, setEditorHasSelection] = useState(false);
@@ -95,6 +118,8 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const [dataOpen, setDataOpen] = useState({ author: true, publication: true, certificate: true });
   const [serviceState, setServiceState] = useState<"loading" | "ready" | "forbidden" | "unavailable">("loading");
   const [uploadProgress, setUploadProgress] = useState<{ name: string; pct: number; status: "uploading" | "done" | "error" } | null>(null);
+  const [fieldUrls, setFieldUrls] = useState<Record<string, string>>({});
+  const [imageFieldError, setImageFieldError] = useState<string | null>(null);
   const [compressOn, setCompressOn] = useState(true);
   const [compressQuality, setCompressQuality] = useState(85);
   const [pdfEstimate, setPdfEstimate] = useState<string>("");
@@ -144,7 +169,33 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const activeBlocks = template?.blocks || [];
   const currentBlocks = activeBlocks.filter((b) => b.pageId === currentPage?.id);
   const fieldValues = useMemo(() => record?.fieldValues || previewValues, [record, previewValues]);
+  useEffect(() => { setFieldUrls(record?.fieldUrls || {}); setImageFieldError(null); }, [record?.id]);
+  useEffect(() => {
+    if (!cropDraft) { setCropNatural(null); return; }
+    setCropNatural(null);
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth; const h = img.naturalHeight;
+      if (!w || !h) return;
+      setCropNatural({ w, h });
+      const block = activeBlocks.find((b) => b.id === cropDraft.blockId);
+      if (block) setCropDraft((draft) => draft ? { ...draft, ...clampCrop(draft.x, draft.y, draft.zoom, w, h, block.width, block.height) } : draft);
+    };
+    img.src = cropDraft.url;
+  }, [cropDraft?.url, cropDraft?.blockId]);
   const selectedBlock = activeBlocks.find((b) => b.id === selectedBlockId) || null;
+  const selectedCropUrl = selectedBlock ? imageBlockUrl(selectedBlock, fieldUrls) : "";
+  const openImageCrop = (id: string) => {
+    const block = activeBlocks.find((b) => b.id === id);
+    if (!block) return;
+    const url = imageBlockUrl(block, fieldUrls);
+    if (!url) return;
+    setCropDraft({ blockId: id, url, x: block.style.cropX || 0, y: block.style.cropY || 0, zoom: block.style.cropZoom || 1 });
+  };
+  const cropBlock = cropDraft ? activeBlocks.find((b) => b.id === cropDraft.blockId) || null : null;
+  let cropPreviewW = 480;
+  let cropPreviewH = cropBlock ? 480 * (cropBlock.height / cropBlock.width) : 280;
+  if (cropPreviewH > 440) { cropPreviewH = 440; cropPreviewW = cropBlock ? 440 * (cropBlock.width / cropBlock.height) : 480; }
   templateRef.current = template;
   editingRef.current = editingBlockId;
   currentPageIdxRef.current = currentPageIdx;
@@ -269,7 +320,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const buildTemplatePayload = (active: CertificateTemplate) => ({
     name: active.name,
     pages: active.pages.map((page) => ({ id: page.id, width: page.width, height: page.height })),
-    blocks: active.blocks.map((block) => ({ id: block.id.startsWith("cb-") ? undefined : block.id, pageId: block.pageId, type: block.type === "image" ? "image" : "text", content: block.segments ? { type: "rich_text", segments: block.segments } : block.content, x: block.x, y: block.y, width: block.width, height: block.height, rotation: block.rotation, zIndex: block.zIndex, style: block.style, overflowBehavior: block.overflowBehavior === "keep" ? "manual" : block.overflowBehavior, locked: block.locked, assetBucket: block.assetBucket || null, assetPath: block.assetPath || null })),
+    blocks: active.blocks.map((block) => ({ id: block.id.startsWith("cb-") ? undefined : block.id, pageId: block.pageId, type: block.type === "image" ? "image" : "text", content: block.segments ? { type: "rich_text", segments: block.segments } : block.content, x: block.x, y: block.y, width: block.width, height: block.height, rotation: block.rotation, zIndex: block.zIndex, style: block.type === "image" && block.linkedFieldKey ? { ...block.style, linkedFieldKey: block.linkedFieldKey } : block.style, overflowBehavior: block.overflowBehavior === "keep" ? "manual" : block.overflowBehavior, locked: block.locked, assetBucket: block.assetBucket || null, assetPath: block.assetPath || null })),
   });
 
   const pushUndo = useCallback(() => {
@@ -744,6 +795,43 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     try { const asset = await uploadImageAsset(file); updateBlock(selectedBlock.id, { assetUrl: asset.url, assetBucket: asset.bucket, assetPath: asset.path, name: file.name.replace(/\.[^.]+$/, "") }); } catch { setServiceState("unavailable"); }
   };
 
+  const imageFieldInputRef = useRef<HTMLInputElement | null>(null);
+  const imageFieldKeyRef = useRef<string | null>(null);
+
+  const handleImageFieldUpload = async (file: File | undefined, key: string) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    try {
+      const asset = await uploadImageAsset(file);
+      setFieldValue(key, asset.path);
+      setFieldUrls((u) => ({ ...u, [key]: asset.url }));
+      setImageFieldError(null);
+    } catch { setImageFieldError("Image upload was not accepted."); }
+  };
+
+  const handleUseAuthorPhoto = async (key: string) => {
+    if (!record) return;
+    setImageFieldError(null);
+    try {
+      const response = await fetch(`/api/admin/certificates/record/${record.id}/use-author-photo`, { method: "POST", credentials: "same-origin" });
+      if (response.status === 404) { const payload = await response.json().catch(() => ({})); setImageFieldError(String(payload.error || "No author photo found for this author.")); return; }
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setFieldValue(key, payload.path);
+      setFieldUrls((u) => ({ ...u, [key]: payload.url }));
+    } catch { setImageFieldError("Could not fetch the author photo."); }
+  };
+
+  const handlePlaceImageOnPage = (key: string) => {
+    if (!currentPage || !template) return;
+    const existing = template.blocks.find((b) => b.pageId === currentPage.id && b.linkedFieldKey === key);
+    if (existing) { setSelectedBlockId(existing.id); setEditingBlockId(null); return; }
+    const block = createImageBlock(currentPage.id, Math.round((currentPage.width - 220) / 2), 60, "", 220, 220);
+    block.linkedFieldKey = key;
+    block.style.objectFit = "cover";
+    block.name = template.fields.find((f) => f.key === key)?.label || "Image";
+    addBlock(block);
+  };
+
   const addQuickBlock = (kind: "author" | "title" | "citation" | "date" | "portrait") => {
     if (!currentPage) return;
     if (kind === "portrait") {
@@ -1009,7 +1097,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   const tabs: RightTab[] = ["data", "page", "export"];
   const tabLabels: Record<RightTab, string> = { data: "Data", fields: "Linked Fields", layers: "Layers", page: "Page", validation: "Validation", export: "Export" };
   const FIELD_LABEL_OVERRIDES: Record<string, string> = { work_title: "Manuscript Title" };
-  const fieldOrder = ["author_name", "author_academic_title", "author_role", "author_affiliation", "work_title", "doi", "publication_name", "volume_number", "issue_number", "issue_date", "issn_online", "issn_print", "certificate_number", "date_issued", "issuing_city", "publisher_name"];
+  const fieldOrder = ["author_name", "author_academic_title", "author_role", "author_affiliation", "author_photo", "work_title", "doi", "publication_name", "volume_number", "issue_number", "issue_date", "issn_online", "issn_print", "certificate_number", "date_issued", "issuing_city", "publisher_name"];
   const orderedFields = (section: "author" | "publication" | "certificate") => (template.fields || [])
     .filter((field) => field.section === section && fieldOrder.includes(field.key))
     .sort((a, b) => fieldOrder.indexOf(a.key) - fieldOrder.indexOf(b.key))
@@ -1303,7 +1391,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                       <div className="cert-field-group"><label className="cert-field-label">Fit</label><select className="cert-input" value={selectedBlock.style.objectFit || "contain"} onChange={(e) => updateBlockStyle(selectedBlock.id, { objectFit: e.target.value as BlockStyle["objectFit"] })}><option value="contain">Contain</option><option value="cover">Cover</option><option value="fill">Stretch</option><option value="none">Original</option></select></div>
                       <div className="cert-field-group"><label className="cert-field-label">Opacity</label><input className="cert-input" type="number" step="0.05" min={0} max={1} value={selectedBlock.style.opacity} onChange={(e) => updateBlockStyle(selectedBlock.id, { opacity: Math.max(0, Math.min(1, +e.target.value)) })} /></div>
                     </div>
-                    {selectedBlock.assetUrl && <button className="cert-btn" onClick={() => setCropDraft({ blockId: selectedBlock.id, url: selectedBlock.assetUrl || "", x: selectedBlock.style.cropX || 0, y: selectedBlock.style.cropY || 0, zoom: selectedBlock.style.cropZoom || 1 })}>Crop & position photo</button>}
+                    {selectedCropUrl && <button className="cert-btn" onClick={() => openImageCrop(selectedBlock.id)}>Crop & position photo</button>}
                     <div className="cert-field-row cert-field-row--2">
                       <div className="cert-field-group"><label className="cert-field-label">Radius</label><input className="cert-input" type="number" min={0} max={400} value={selectedBlock.style.borderRadius} onChange={(e) => updateBlockStyle(selectedBlock.id, { borderRadius: +e.target.value })} /></div>
                       <div className="cert-field-group"><label className="cert-field-label">Border</label><input className="cert-input" type="number" min={0} max={40} value={selectedBlock.style.borderWidth || 0} onChange={(e) => updateBlockStyle(selectedBlock.id, { borderWidth: +e.target.value })} /></div>
@@ -1363,6 +1451,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               zoom={zoom}
               mode={mode}
               fieldValues={fieldValues}
+              fieldUrls={fieldUrls}
               showMargins={showMargins}
               fields={template.fields}
               onSelectBlock={handleSelect}
@@ -1370,6 +1459,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               onEditCommit={editCommit}
               onUpdateBlock={updateBlock}
               onTransformStart={onTransformStart}
+              onOpenImageCrop={openImageCrop}
               onZoomChange={setZoom}
             />
           )}
@@ -1414,7 +1504,23 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                   </div>}
                   <div className="cert-field-section">
                     <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, author: !o.author }))} aria-expanded={dataOpen.author}><h4 className="cert-field-section-title">Author Information</h4><span className="cert-data-section-chev">{dataOpen.author ? "–" : "+"}</span></button>
-                    {dataOpen.author && authorFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><div className="cert-field-input-row">{field.key === "author_name" && <button type="button" className={`cert-case-btn${(fieldValues[field.key] || "").length > 0 && fieldValues[field.key] === fieldValues[field.key].toUpperCase() ? " active" : ""}`} title="Convert to ALL CAPS" onClick={() => setFieldValue(field.key, (fieldValues[field.key] || "").toUpperCase())}>AA</button>}<input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} /></div></div>)}
+                    {dataOpen.author && authorFields.map((field) => field.type === "image" ? (
+                      <div key={field.key} className="cert-field-group">
+                        <label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label>
+                        <div className="cert-image-field">
+                          {fieldValues[field.key] ? <img className="cert-image-field-thumb" src={fieldUrls[field.key] || ""} alt={field.label} /> : <div className="cert-image-field-empty">No photo</div>}
+                          <div className="cert-image-field-actions">
+                            <button type="button" className="cert-btn" onClick={() => { imageFieldKeyRef.current = field.key; imageFieldInputRef.current?.click(); }}>Upload</button>
+                            <button type="button" className="cert-btn" onClick={() => void handleUseAuthorPhoto(field.key)} disabled={!record}>Use submitted photo</button>
+                            {fieldValues[field.key] && <button type="button" className="cert-btn cert-btn--ghost cert-btn--danger" onClick={() => { setFieldValue(field.key, ""); setFieldUrls((u) => { const next = { ...u }; delete next[field.key]; return next; }); }}>Remove</button>}
+                            <button type="button" className="cert-btn" onClick={() => handlePlaceImageOnPage(field.key)}>Place on page</button>
+                          </div>
+                          {imageFieldError && <p className="cert-import-error">{imageFieldError}</p>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><div className="cert-field-input-row">{field.key === "author_name" && <button type="button" className={`cert-case-btn${(fieldValues[field.key] || "").length > 0 && fieldValues[field.key] === fieldValues[field.key].toUpperCase() ? " active" : ""}`} title="Convert to ALL CAPS" onClick={() => setFieldValue(field.key, (fieldValues[field.key] || "").toUpperCase())}>AA</button>}<input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} /></div></div>
+                    ))}
                   </div>
                   <div className="cert-field-section">
                     <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, publication: !o.publication }))} aria-expanded={dataOpen.publication}><h4 className="cert-field-section-title">Publication Information</h4><span className="cert-data-section-chev">{dataOpen.publication ? "–" : "+"}</span></button>
@@ -1621,9 +1727,9 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
             <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Crop & position photo</h3>
             <p style={{ margin: "0 0 14px", color: "#57635c", fontSize: 13 }}>Drag the photo to position it. Use the slider to zoom in or out. The visible frame is what will appear on the certificate.</p>
             <div
-              style={{ position: "relative", height: 280, overflow: "hidden", background: "#e8ece9", borderRadius: selectedBlock?.imageShape === "circle" ? "50%" : 8, cursor: "grab", touchAction: "none" }}
+              style={{ position: "relative", width: cropPreviewW, height: cropPreviewH, maxWidth: "100%", margin: "0 auto", overflow: "hidden", background: "#e8ece9", borderRadius: cropBlock?.imageShape === "circle" ? "50%" : 8, cursor: "grab", touchAction: "none" }}
               onPointerDown={(event) => { const rect = event.currentTarget.getBoundingClientRect(); event.currentTarget.setPointerCapture(event.pointerId); cropPointerRef.current = { x: event.clientX, y: event.clientY, cropX: cropDraft.x, cropY: cropDraft.y, width: rect.width, height: rect.height }; }}
-              onPointerMove={(event) => { const start = cropPointerRef.current; if (!start) return; setCropDraft((draft) => draft ? { ...draft, x: Math.max(-100, Math.min(100, start.cropX + ((event.clientX - start.x) / start.width) * 100)), y: Math.max(-100, Math.min(100, start.cropY + ((event.clientY - start.y) / start.height) * 100)) } : draft); }}
+              onPointerMove={(event) => { const start = cropPointerRef.current; if (!start) return; setCropDraft((draft) => { if (!draft) return draft; const nx = start.cropX + ((event.clientX - start.x) / start.width) * 100; const ny = start.cropY + ((event.clientY - start.y) / start.height) * 100; if (cropNatural && cropBlock) { const c = clampCrop(nx, ny, draft.zoom, cropNatural.w, cropNatural.h, cropBlock.width, cropBlock.height); return { ...draft, x: c.x, y: c.y }; } return { ...draft, x: nx, y: ny }; }); }}
               onPointerUp={() => { cropPointerRef.current = null; }}
               onPointerCancel={() => { cropPointerRef.current = null; }}
             >
@@ -1631,7 +1737,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
             </div>
             <div className="cert-field-group" style={{ marginTop: 14 }}>
               <label className="cert-field-label">Zoom · {Math.round(cropDraft.zoom * 100)}%</label>
-              <input className="cert-input" type="range" min="1" max="3" step="0.01" value={cropDraft.zoom} onChange={(event) => setCropDraft((draft) => draft ? { ...draft, zoom: +event.target.value } : draft)} />
+              <input className="cert-input" type="range" min="1" max="3" step="0.01" value={cropDraft.zoom} onChange={(event) => { const z = +event.target.value; setCropDraft((draft) => { if (!draft) return draft; if (cropNatural && cropBlock) { const c = clampCrop(draft.x, draft.y, z, cropNatural.w, cropNatural.h, cropBlock.width, cropBlock.height); return { ...draft, zoom: z, x: c.x, y: c.y }; } return { ...draft, zoom: z }; }); }} />
             </div>
             <div className="cert-create-actions" style={{ marginTop: 16 }}>
               <button className="cert-btn" onClick={() => setCropDraft((draft) => draft ? { ...draft, x: 0, y: 0, zoom: 1 } : draft)}>Reset</button>
@@ -1645,6 +1751,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
       <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(e) => { handleAddImage(e.target.files?.[0]); e.target.value = ""; }} />
       <input ref={bgImageInputRef} type="file" accept="image/*" hidden onChange={(e) => { handleSetBackground(e.target.files?.[0]); e.target.value = ""; }} />
       <input ref={replaceImageInputRef} type="file" accept="image/*" hidden onChange={(e) => { handleReplaceImage(e.target.files?.[0]); e.target.value = ""; }} />
+      <input ref={imageFieldInputRef} type="file" accept="image/*" hidden onChange={(e) => { const key = imageFieldKeyRef.current; if (key) void handleImageFieldUpload(e.target.files?.[0], key); e.target.value = ""; }} />
 
       {uploadProgress && (
         <div className={`cert-upload-toast cert-upload-toast--${uploadProgress.status}`}>

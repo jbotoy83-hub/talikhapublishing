@@ -88,7 +88,7 @@ async function makeCropped(imageSrc: string, pixelCrop: Area, rotation: number, 
   const data = ctx.getImageData(0, 0, safe, safe);
   canvas.width = rs.width;
   canvas.height = rs.height;
-  ctx.putImageData(data, Math.round(0 - safe / 2 + rs.width * 0.5 - pixelCrop.x), Math.round(0 - safe / 2 + rs.height * 0.5 - pixelCrop.y));
+  ctx.putImageData(data, Math.round(0 - safe / 2 + rs.width * 0.5), Math.round(0 - safe / 2 + rs.height * 0.5));
   const final = document.createElement("canvas");
   final.width = out;
   final.height = out;

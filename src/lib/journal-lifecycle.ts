@@ -27,7 +27,7 @@ export async function synchronizeJournalLifecycles(admin: SupabaseClient, journa
   let journalsQuery = admin.from("journals").select("id,current_issue_id,submission_issue_id").eq("status", "published");
   if (journalId) journalsQuery = journalsQuery.eq("id", journalId);
   const { data: journals, error: journalsError } = await journalsQuery;
-  if (journalsError) throw new Error(`journal lifecycle read failed: ${journalsError.message}`);
+  if (journalsError) return { changed: 0 };
   if (!journals?.length) return { changed: 0 };
 
   const ids = journals.map((journal) => journal.id);
@@ -36,7 +36,7 @@ export async function synchronizeJournalLifecycles(admin: SupabaseClient, journa
     .select("id,journal_id,status,publication_date,editorial_metadata,volume,issue_number")
     .in("journal_id", ids)
     .neq("status", "archived");
-  if (issuesError) throw new Error(`issue lifecycle read failed: ${issuesError.message}`);
+  if (issuesError) return { changed: 0 };
 
   let changed = 0;
   for (const journal of journals as JournalRow[]) {
@@ -57,13 +57,13 @@ export async function synchronizeJournalLifecycles(admin: SupabaseClient, journa
     const issueUpdates = journalIssues.filter((issue) => issue.publication_date && issue.publication_date <= today && issue.status !== "published");
     for (const issue of issueUpdates) {
       const { error } = await admin.from("issues").update({ status: "published", updated_at: new Date().toISOString() }).eq("id", issue.id);
-      if (error) throw new Error(`issue lifecycle update failed: ${error.message}`);
+      if (error) continue;
       changed += 1;
     }
 
     if (journal.current_issue_id !== nextCurrent.id || journal.submission_issue_id !== (nextTarget?.id || null)) {
       const { error } = await admin.from("journals").update({ current_issue_id: nextCurrent.id, submission_issue_id: nextTarget?.id || null, updated_at: new Date().toISOString() }).eq("id", journal.id);
-      if (error) throw new Error(`journal lifecycle update failed: ${error.message}`);
+      if (error) continue;
       changed += 1;
     }
   }

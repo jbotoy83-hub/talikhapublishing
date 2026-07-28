@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import sharp from "sharp";
 import { certificateBlockText, resolveCertificateContent, type CertificateBlock } from "@/lib/certificates";
+import { CERTIFICATE_ASSET_BUCKET } from "@/lib/certificate-editor";
 
 type Template = { background_bucket?: string | null; background_path?: string | null } | null | undefined;
 type Download = { data: Blob | null; error: unknown };
@@ -25,6 +26,20 @@ async function compressImageForPdf(raw: ArrayBuffer, isSocialPage: boolean): Pro
     .resize({ width: maxDim, height: maxDim, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality, mozjpeg: true, progressive: true })
     .toBuffer();
+}
+
+function visibleWindow(iw: number, ih: number, W: number, H: number, cropX: unknown, cropY: unknown, cropZoom: unknown) {
+  const zoom = Math.max(1e-6, Number(cropZoom) || 1);
+  const coverScale = Math.max(W / iw, H / ih);
+  const ox = (W - iw * coverScale) / 2;
+  const oy = (H - ih * coverScale) / 2;
+  const tx = (Number(cropX) || 0) / 100 * W;
+  const ty = (Number(cropY) || 0) / 100 * H;
+  const left = ((W / 2 + (0 - tx - W / 2) / zoom) - ox) / coverScale;
+  const top = ((H / 2 + (0 - ty - H / 2) / zoom) - oy) / coverScale;
+  const width = W / (zoom * coverScale);
+  const height = H / (zoom * coverScale);
+  return { left, top, width, height };
 }
 
 function wrappedLines(text: string, font: { widthOfTextAtSize: (text: string, size: number) => number }, size: number, maxWidth: number) {
@@ -73,11 +88,34 @@ export async function renderCertificatePdf({ admin, template, values, blocks = [
     const scale = logicalPage ? page.getWidth() / logicalPage.width : 1;
     if (block.x < 0 || block.y < 0 || block.x + block.width > (logicalPage?.width ?? page.getWidth()) || block.y + block.height > (logicalPage?.height ?? page.getHeight())) { warnings.push("A block extends beyond the certificate page."); continue; }
     const style = block.style || {};
-    if (block.blockType === "image" && block.assetBucket && block.assetPath) {
-      const { data } = await admin.storage.from(block.assetBucket).download(block.assetPath);
+    if (block.blockType === "image") {
+      const linkedKey = typeof style.linkedFieldKey === "string" ? style.linkedFieldKey : null;
+      let bucket = block.assetBucket || null; let path = block.assetPath || null;
+      if ((!bucket || !path) && linkedKey) { const v = values[linkedKey]; if (typeof v === "string" && v.trim()) { bucket = CERTIFICATE_ASSET_BUCKET; path = v.trim(); } }
+      if (!bucket || !path) continue;
+      const { data } = await admin.storage.from(bucket).download(path);
       if (!data) { warnings.push("An image block is unavailable."); continue; }
       const isSocial = (block.pageNumber || pageIndex + 1) === 6;
-      const compressed = await compressImageForPdf(await data.arrayBuffer(), isSocial);
+      const raw = await data.arrayBuffer();
+      const meta = await sharp(Buffer.from(raw)).metadata();
+      const iw = meta.width; const ih = meta.height;
+      const cropped = iw && ih && (String(style.objectFit) === "cover" || Number(style.cropZoom || 1) !== 1 || Number(style.cropX || 0) !== 0 || Number(style.cropY || 0) !== 0);
+      if (cropped) {
+        const win = visibleWindow(iw, ih, block.width, block.height, style.cropX, style.cropY, style.cropZoom);
+        const L = Math.min(Math.max(Math.round(win.left), 0), iw - 1);
+        const T = Math.min(Math.max(Math.round(win.top), 0), ih - 1);
+        const Rw = Math.min(Math.max(Math.round(win.width), 1), iw - L);
+        const Rh = Math.min(Math.max(Math.round(win.height), 1), ih - T);
+        const buffer = await sharp(Buffer.from(raw))
+          .extract({ left: L, top: T, width: Rw, height: Rh })
+          .resize({ width: Math.max(1, Math.round(block.width * scale)), height: Math.max(1, Math.round(block.height * scale)), fit: "fill" })
+          .jpeg({ quality: isSocial ? 95 : 85, mozjpeg: true, progressive: true })
+          .toBuffer();
+        const image = await pdf.embedJpg(buffer);
+        page.drawImage(image, { x: block.x * scale, y: page.getHeight() - (block.y + block.height) * scale, width: block.width * scale, height: block.height * scale, rotate: degrees(-block.rotation || 0), opacity: Number(style.opacity ?? 1) });
+        continue;
+      }
+      const compressed = await compressImageForPdf(raw, isSocial);
       const image = await pdf.embedJpg(compressed);
       page.drawImage(image, { x: block.x * scale, y: page.getHeight() - (block.y + block.height) * scale, width: block.width * scale, height: block.height * scale, rotate: degrees(-block.rotation || 0), opacity: Number(style.opacity ?? 1) });
       continue;

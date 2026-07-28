@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
+import { CERTIFICATE_ASSET_BUCKET } from "@/lib/certificate-editor";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -83,7 +85,11 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
     .select("position,first_name,middle_initial,surname,position_title,academic_title,institution,location")
     .eq("submission_id", submissionId).order("position");
   if (authorsResult.error) throw new Error(authorsResult.error.message);
-  return { publication, submission: object(stageResult.data), submissionAuthors: rows(authorsResult.data) };
+  const filesResult = await admin.from("submission_files")
+    .select("id,original_name,storage_bucket,storage_path,mime_type")
+    .eq("submission_id", submissionId).eq("file_kind", "authorPhoto");
+  if (filesResult.error) throw new Error(filesResult.error.message);
+  return { publication, submission: object(stageResult.data), submissionAuthors: rows(authorsResult.data), authorPhotos: rows(filesResult.data) };
 }
 
 function valueSet(publication: JsonRecord, submission: JsonRecord, sourceAuthor: JsonRecord, profile: JsonRecord, number: string) {
@@ -101,6 +107,7 @@ function valueSet(publication: JsonRecord, submission: JsonRecord, sourceAuthor:
     author_role: string(sourceAuthor.position_title),
     author_affiliation: string(sourceAuthor.institution) || string(profile.affiliation) || string(submission.affiliation),
     author_location: string(sourceAuthor.location),
+    author_photo: "",
     work_title: string(publication.title),
     doi: string(publication.doi),
     publication_name: string(journal.title),
@@ -118,8 +125,26 @@ function valueSet(publication: JsonRecord, submission: JsonRecord, sourceAuthor:
   };
 }
 
+async function copyAuthorPhoto(admin: SupabaseClient, authorPhotos: JsonRecord[], authorIndex: number, templateId: string): Promise<string> {
+  const expectedName = `author-${String(authorIndex + 1).padStart(3, "0")}`;
+  const file = authorPhotos.find((f) => string(f.original_name).startsWith(expectedName)) || authorPhotos[authorIndex] || authorPhotos[0];
+  if (!file) return "";
+  const bucket = string(file.storage_bucket);
+  const path = string(file.storage_path);
+  if (!bucket || !path) return "";
+  const download = await admin.storage.from(bucket).download(path);
+  if (download.error || !download.data) return "";
+  const bytes = new Uint8Array(await download.data.arrayBuffer());
+  const mime = string(file.mime_type);
+  const ext = mime === "image/png" ? "png" : "jpg";
+  const destPath = `templates/${templateId}/images/${randomUUID()}.${ext}`;
+  const upload = await admin.storage.from(CERTIFICATE_ASSET_BUCKET).upload(destPath, bytes, { contentType: mime || "image/jpeg", upsert: false });
+  if (upload.error) return "";
+  return destPath;
+}
+
 export async function importPublicationCertificates(admin: SupabaseClient, templateId: string, publicationId: string) {
-  const { publication, submission, submissionAuthors } = await sourceForPublication(admin, publicationId);
+  const { publication, submission, submissionAuthors, authorPhotos } = await sourceForPublication(admin, publicationId);
   const publicationAuthors = rows(publication.publication_authors).sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
   if (!publicationAuthors.length) throw new Error("This publication has no linked authors.");
   const imported: JsonRecord[] = [];
@@ -136,6 +161,9 @@ export async function importPublicationCertificates(admin: SupabaseClient, templ
     if (allocation.error || !allocation.data) throw new Error(allocation.error?.message || "Could not allocate a certificate number.");
     const number = string(allocation.data);
     const values = valueSet(publication, submission, sourceAuthor, profile, number);
+    const authorIndex = submissionAuthors.findIndex((a) => Number(a.position || 0) === Number(linked.position || 0));
+    const photoPath = await copyAuthorPhoto(admin, authorPhotos, authorIndex >= 0 ? authorIndex : 0, templateId);
+    if (photoPath) values.author_photo = photoPath;
     const inserted = await admin.from("certificate_records").insert({
       template_id: templateId, publication_id: publicationId, author_id: authorId, submission_id: string(submission.id),
       certificate_number: number, reference_number: number, field_values: values, status: "draft",
@@ -155,12 +183,15 @@ export async function refreshCertificateRecord(admin: SupabaseClient, recordId: 
   const existing = await admin.from("certificate_records").select("id,template_id,publication_id,author_id,status,certificate_number").eq("id", recordId).single();
   if (existing.error || !existing.data) throw new Error(existing.error?.message || "Certificate record not found.");
   if (existing.data.status === "issued") throw new Error("Issued certificates are immutable.");
-  const { publication, submission, submissionAuthors } = await sourceForPublication(admin, existing.data.publication_id);
+  const { publication, submission, submissionAuthors, authorPhotos } = await sourceForPublication(admin, existing.data.publication_id);
   const linked = rows(publication.publication_authors).find((item) => string(firstRow(item.author).id) === existing.data.author_id);
   if (!linked) throw new Error("The certificate author is no longer linked to this publication.");
   const profile = firstRow(linked.author);
   const sourceAuthor = submissionAuthors.find((author) => Number(author.position || 0) === Number(linked.position || 0)) || {};
   const values = valueSet(publication, submission, sourceAuthor, profile, existing.data.certificate_number);
+  const authorIndex = submissionAuthors.findIndex((a) => Number(a.position || 0) === Number(linked.position || 0));
+  const photoPath = await copyAuthorPhoto(admin, authorPhotos, authorIndex >= 0 ? authorIndex : 0, existing.data.template_id);
+  if (photoPath) values.author_photo = photoPath;
   const update = await admin.from("certificate_records").update({ field_values: values }).eq("id", recordId).select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id").single();
   if (update.error || !update.data) throw new Error(update.error?.message || "Could not refresh certificate record.");
   return update.data;

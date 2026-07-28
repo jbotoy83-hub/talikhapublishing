@@ -84,7 +84,7 @@ export function mapTemplate(template: Row, pages: Row[], fields: Row[], blocks: 
       overflowBehavior: text(block.overflow_behavior, "auto_fit"), locked: Boolean(block.locked),
       hidden: false, name: text(block.name, "Text"), imageShape: rawStyle.imageShape === "circle" ? "circle" : "rectangle", assetBucket: block.asset_bucket ?? null,
       assetPath: block.asset_path ?? null, assetUrl: block.asset_path ? signedUrls.get(`${text(block.asset_bucket, CERTIFICATE_ASSET_BUCKET)}:${text(block.asset_path)}`) : undefined,
-      linkedFieldKey: content.segments.length === 1 && content.segments[0].t === "f" ? (content.segments[0] as { k: string }).k : null,
+      linkedFieldKey: text(block.block_type) === "image" && typeof rawStyle.linkedFieldKey === "string" ? rawStyle.linkedFieldKey : content.segments.length === 1 && content.segments[0].t === "f" ? (content.segments[0] as { k: string }).k : null,
     };
     }),
     fonts: fonts.map((font) => ({ family: text(font.family), weight: number(font.weight, 400), style: text(font.style, "normal"), url: signedUrls.get(`${text(font.storage_bucket, CERTIFICATE_ASSET_BUCKET)}:${text(font.storage_path)}`) || "" })).filter((font) => font.url),
