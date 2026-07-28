@@ -87,7 +87,10 @@ export function InlineTextEditor({ segments, fields, fieldValues, style, zoom, o
     const children = Array.from(el.childNodes);
     children.forEach((node, i) => {
       walkNode(node, i > 0 && topBlockSeen);
-      topBlockSeen = true;
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = (node as HTMLElement).tagName;
+        if (tag === "DIV" || tag === "P" || tag === "BR") topBlockSeen = true;
+      }
     });
 
     return normalizeSegments(out);
