@@ -54,6 +54,27 @@ export async function POST(request: NextRequest) {
 
   const hasOpenRevision = (requests || []).some((r) => r.request_type === "revision" && r.status === "open");
 
+  const REPEATABLE_TITLES = new Set(["Publication information updated", "Certificate available"]);
+  const allEvents = events || [];
+  const seenTitles = new Set<string>();
+  const dedupedEvents: typeof allEvents = [];
+  for (const ev of allEvents) {
+    const title = ev.public_title || "";
+    if (!REPEATABLE_TITLES.has(title)) {
+      if (seenTitles.has(title)) continue;
+      seenTitles.add(title);
+    }
+    dedupedEvents.push(ev);
+  }
+  dedupedEvents.sort((a, b) => {
+    const ta = new Date(a.created_at).getTime();
+    const tb = new Date(b.created_at).getTime();
+    if (ta !== tb) return ta - tb;
+    const ia = Number((a.metadata as Record<string, unknown> | null)?.batch_index ?? 0);
+    const ib = Number((b.metadata as Record<string, unknown> | null)?.batch_index ?? 0);
+    return ia - ib;
+  });
+
   return NextResponse.json({
     trackingNumber: submission.tracking_number,
     reference: submission.reference,
@@ -61,7 +82,7 @@ export async function POST(request: NextRequest) {
     currentStage: submission.current_stage,
     currentStageLabel: deriveAuthorStatus(submission.current_stage, hasOpenRevision),
     progress: getAuthorProgress(submission.current_stage),
-    events: events || [],
+    events: dedupedEvents,
     requests: requests || []
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

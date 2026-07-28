@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { advanceSubmissionProgress } from "@/lib/editorial-workflow-server";
+import { setSubmissionPriority } from "@/lib/editorial-workflow-server";
 import { apiErrorResponse, isApiError, readJsonBody, requireEditorApi } from "@/lib/admin-api";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -9,9 +9,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (isApiError(body)) return body;
   const { id } = await params;
   try {
-    const data = await advanceSubmissionProgress({ submissionId: id, targetProgress: Number(body.targetProgress), silent: Boolean(body.silent) });
-    return NextResponse.json({ ok: true, data });
+    await setSubmissionPriority({ submissionId: id, priority: body.priority as "normal" | "high" | "urgent" });
+    return NextResponse.json({ ok: true });
   } catch (error) {
-    return apiErrorResponse(error, "The workflow could not be advanced.");
+    return apiErrorResponse(error, "The priority could not be updated.");
   }
 }

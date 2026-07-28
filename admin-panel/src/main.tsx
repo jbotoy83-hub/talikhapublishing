@@ -201,6 +201,7 @@ type EditorialSubmission = {
   authorDetails?: { firstName?: string; surname?: string; middleInitial?: string; email?: string; institution?: string; affiliation?: string; academicTitle?: string; position?: string; orcid?: string; location?: string }[];
   proofFileId?: string;
   manuscriptFileId?: string;
+  priority?: "normal" | "high" | "urgent";
 };
 type PublicationRecord = {
   id: string;
@@ -1772,6 +1773,10 @@ function ProductionWorkspaceV2({
   const selected = submissions.find((submission) => submission.id === selectedId);
   const visible = submissions.filter((submission) => view === "Needs action" ? ["In progress", "Review", "Revise", "Accepted"].includes(submission.status) : view === "Approval" ? ["For approval", "Scheduled for publishing"].includes(submission.status) : view === "Published" ? submission.status === "Published" : submission.status === "Rejected");
   const sortedVisible = [...visible].sort((a, b) => {
+    const priorityWeight: Record<string, number> = { urgent: 0, high: 1, normal: 2 };
+    const aPriority = priorityWeight[a.priority || "normal"] ?? 2;
+    const bPriority = priorityWeight[b.priority || "normal"] ?? 2;
+    if (aPriority !== bPriority) return aPriority - bPriority;
     if (view === "Approval") {
       const publishingOrder: Record<string, number> = { "For approval": 0, "Scheduled for publishing": 1, Published: 2 };
       const aOrder = publishingOrder[a.status] ?? 9;
@@ -1791,7 +1796,7 @@ function ProductionWorkspaceV2({
     onSelect(id);
   };
   if (selected) return <LegacySubmissionReview submission={selected} onBack={() => onSelect(null)} onUpdate={onUpdate} onDelete={onDelete} publicationRecords={publicationRecords} onPublicationRecordsChange={onPublicationRecordsChange} publicationOnly initialTab="publication" accessRole={accessRole} />;
-  return <section className="studies-page"><div className="studies-hero"><div><span>Editorial workspace</span><h1>Publication production</h1><p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p></div><div className="hero-shapes"><i /><i /><i /></div></div><ProductionViewTabs view={view} /><div key={view} className="production-list-enter production-record-list mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">{sortedVisible.map((submission) => <div key={submission.id} className="production-record-row"><div className="production-record-copy"><strong>{submission.title}</strong><small>{submission.author} · {submission.id}</small></div><div className="production-record-meta"><span className={`production-journal ${submission.journal.toLowerCase().replaceAll(" ", "-")}`}><BookOpen size={14} aria-hidden="true" />{submission.journal}</span><span className="production-accepted-date"><CalendarDays size={14} aria-hidden="true" />{acceptedDateLabel(submission)}</span></div><span className={`production-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}>{submission.status}</span><button type="button" className="production-record-open" onClick={() => openRecord(submission.id)}><FileText size={16} aria-hidden="true" /><span>Open publication record</span></button></div>)}{!sortedVisible.length && <p className="p-10 text-center text-sm text-slate-500">No shared production records are available.</p>}</div></section>;
+  return <section className="studies-page"><div className="studies-hero"><div><span>Editorial workspace</span><h1>Publication production</h1><p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p></div><div className="hero-shapes"><i /><i /><i /></div></div><ProductionViewTabs view={view} /><div key={view} className="production-list-enter production-record-list mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">{sortedVisible.map((submission) => <div key={submission.id} className="production-record-row"><div className="production-record-copy"><strong>{submission.title}{(submission.priority === "high" || submission.priority === "urgent") && <span className="priority-badge" data-priority={submission.priority}>{submission.priority === "urgent" ? "URGENT" : "HIGH PRIORITY"}</span>}</strong><small>{submission.author} · {submission.id}</small></div><div className="production-record-meta"><span className={`production-journal ${submission.journal.toLowerCase().replaceAll(" ", "-")}`}><BookOpen size={14} aria-hidden="true" />{submission.journal}</span><span className="production-accepted-date"><CalendarDays size={14} aria-hidden="true" />{acceptedDateLabel(submission)}</span></div><span className={`production-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}>{submission.status}</span><button type="button" className="production-record-open" onClick={() => openRecord(submission.id)}><FileText size={16} aria-hidden="true" /><span>Open publication record</span></button></div>)}{!sortedVisible.length && <p className="p-10 text-center text-sm text-slate-500">No shared production records are available.</p>}</div></section>;
 }
 
 function MediaWorkspace({ assets }: { assets: Record<string, unknown>[] }) {
@@ -2043,13 +2048,11 @@ function statusActions(status: SubmissionStatus) {
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     "In progress": [
-      { label: "Send to review", status: "Review" },
-      { label: "Request revision", status: "Revise" },
+      { label: "Accept & start production", status: "Accepted" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Review: [
       { label: "Accept & start production", status: "Accepted" },
-      { label: "Request revision", status: "Revise" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Revise: [
@@ -2057,7 +2060,10 @@ function statusActions(status: SubmissionStatus) {
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Accepted: [{ label: "Ready to publish", status: "For approval" }],
-    "For approval": [{ label: "Publish", status: "Published" }],
+    "For approval": [
+      { label: "Schedule for publication", status: "Scheduled for publishing" },
+      { label: "Return to revise", status: "In progress", tone: "danger" },
+    ],
     "Scheduled for publishing": [{ label: "Publish", status: "Published" }],
     Published: [],
     Rejected: [],
@@ -2327,29 +2333,30 @@ function LegacySubmissionReview({
     let newStage = stage;
     try {
       if (status === "In progress" && stage === "review_new") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1 }) });
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1, silent: true }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "Review" && (stage === "review_in_progress" || stage === "review_final" || stage === "review_new")) {
-        if (stage === "review_new") {
-          const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1 }) });
-          if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-          const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage;
-        } else if (stage === "review_in_progress") {
-          const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "review_final" }) });
-          if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-          newStage = "review_final";
-        } else { newStage = stage; }
-        ok = true;
-      } else if (status === "Accepted" && stage === "review_final") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2 }) });
+      } else if (status === "In progress" && stage === "production_ready_to_publish") {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_records", silent: true, visibility: "internal" }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        await fetch(`/api/admin/submissions/${submission.id}/priority`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: "high" }) });
+        newStage = "production_records"; ok = true;
+      } else if (status === "Accepted" && (stage === "review_in_progress" || stage === "review_final")) {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2, silent: true }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "For approval" && stage === "review_accepted") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3 }) });
+      } else if (status === "For approval" && (stage === "review_accepted" || stage?.startsWith("production_"))) {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3, silent: true }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "Published" && (stage === "production_ready_to_publish" || stage === "production_scheduled")) {
+      } else if (status === "Scheduled for publishing" && stage === "production_ready_to_publish") {
+        const scheduledFor = window.prompt("Enter publication date and time (YYYY-MM-DD HH:MM):", new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16).replace("T", " "));
+        if (!scheduledFor) return;
+        const isoDate = scheduledFor.replace(" ", "T") + ":00.000Z";
+        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: isoDate } }) });
+        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
+        newStage = "production_scheduled"; ok = true;
+      } else if (status === "Published" && stage === "production_scheduled") {
         const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 4 }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
@@ -6777,7 +6784,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
             const authorPhotos = files.filter((f) => f.file_kind === "authorPhoto").sort((a, b) => String(a.original_name || "").localeCompare(String(b.original_name || "")));
             const primaryPhotoId = authorPhotos.length ? String(authorPhotos[0].id) : null;
-            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined } satisfies EditorialSubmission;
+            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined, priority: (["normal", "high", "urgent"].includes(String(submission.priority || "")) ? String(submission.priority) as "normal" | "high" | "urgent" : "normal") } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;

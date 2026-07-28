@@ -22,7 +22,8 @@ const transitionInput = z.object({
   publicTitle: optionalText(200),
   publicDescription: optionalText(5000),
   visibility: z.enum(["internal", "author"]).default("internal"),
-  metadata: z.record(z.string(), z.unknown()).default({})
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  silent: z.boolean().default(false)
 });
 
 const publicationRecordInput = z.object({
@@ -247,6 +248,15 @@ async function emitProgressActivity(
   actorId: string,
   batchLabel: string
 ) {
+  const { data: existing } = await admin
+    .from("workflow_events")
+    .select("id")
+    .eq("submission_id", submissionId)
+    .eq("event_type", "progress_activity")
+    .eq("metadata->>batch", batchLabel)
+    .limit(1);
+  if (existing && existing.length > 0) return;
+
   for (let i = 0; i < activities.length; i++) {
     await admin.from("workflow_events").insert({
       submission_id: submissionId,
@@ -286,14 +296,16 @@ export async function transitionSubmission(input: z.input<typeof transitionInput
 
   if (error) throw new Error(workflowFailure(error));
 
-  const toProgress = progressIndexOf(parsed.toStage);
-  if (fromProgress >= 0 && toProgress >= 0 && toProgress > fromProgress) {
-    const activities = progressBoundary(fromProgress, toProgress);
-    if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `boundary_${fromProgress}_${toProgress}`);
-  }
+  if (!parsed.silent) {
+    const toProgress = progressIndexOf(parsed.toStage);
+    if (fromProgress >= 0 && toProgress >= 0 && toProgress > fromProgress) {
+      const activities = progressBoundary(fromProgress, toProgress);
+      if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `boundary_${fromProgress}_${toProgress}`);
+    }
 
-  if (parsed.toStage === "production_scheduled" && before?.current_stage === "production_ready_to_publish") {
-    await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+    if (parsed.toStage === "production_scheduled" && before?.current_stage === "production_ready_to_publish") {
+      await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+    }
   }
 
   refreshWorkflowPages(parsed.submissionId);
@@ -302,7 +314,8 @@ export async function transitionSubmission(input: z.input<typeof transitionInput
 
 const advanceInput = z.object({
   submissionId: uuid,
-  targetProgress: z.number().int().min(0).max(4)
+  targetProgress: z.number().int().min(0).max(4),
+  silent: z.boolean().default(false)
 });
 
 export async function advanceSubmissionProgress(input: z.input<typeof advanceInput>) {
@@ -342,20 +355,38 @@ export async function advanceSubmissionProgress(input: z.input<typeof advanceInp
     if (error) {
       return { stage: lastStage, progress: lastProgress, blocked: workflowFailure(error), blockedAt: nextStage };
     }
-    const nextProgress = progressIndexOf(nextStage);
-    if (nextProgress > lastProgress) {
-      const activities = progressBoundary(lastProgress, nextProgress);
-      if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `advance_${lastProgress}_${nextProgress}`);
-    }
-    if (nextStage === "production_scheduled" && lastProgress < 3) {
-      await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+    if (!parsed.silent) {
+      const nextProgress = progressIndexOf(nextStage);
+      if (nextProgress > lastProgress) {
+        const activities = progressBoundary(lastProgress, nextProgress);
+        if (activities.length) await emitProgressActivity(admin, parsed.submissionId, activities, user.role, user.id, `advance_${lastProgress}_${nextProgress}`);
+      }
+      if (nextStage === "production_scheduled" && lastProgress < 3) {
+        await emitProgressActivity(admin, parsed.submissionId, [SCHEDULE_FIRST], user.role, user.id, "schedule_first");
+      }
     }
     lastStage = nextStage;
-    lastProgress = nextProgress;
+    lastProgress = progressIndexOf(nextStage);
   }
 
   refreshWorkflowPages(parsed.submissionId);
   return { stage: lastStage, progress: lastProgress };
+}
+
+const priorityInput = z.object({
+  submissionId: uuid,
+  priority: z.enum(["normal", "high", "urgent"])
+});
+
+export async function setSubmissionPriority(input: z.input<typeof priorityInput>) {
+  const parsed = priorityInput.parse(input);
+  await requireAdmin();
+  const admin = getSupabaseAdmin();
+  if (!admin) throw new Error("The editorial database is not configured.");
+
+  const { error } = await admin.from("submissions").update({ priority: parsed.priority }).eq("id", parsed.submissionId);
+  if (error) throw new Error("The priority could not be updated.");
+  refreshWorkflowPages(parsed.submissionId);
 }
 
 const rescheduleInput = z.object({

@@ -22,3 +22,10 @@ supabase/.temp/
 public/admin/
 admin-panel/dist-verify*/
 tmp/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

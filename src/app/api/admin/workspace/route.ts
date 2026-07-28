@@ -14,7 +14,7 @@ export async function GET() {
   if (!admin) return NextResponse.json({ connected: false, data: null });
 
   const [submissions, publicationRecords, journals, issues, authors, templates, certificateRecords, media] = await Promise.all([
-    admin.from("submissions").select("id, reference, tracking_number, title, author_name, author_email, affiliation, abstract, author_details, current_stage, submitted_at, created_at, preferred_journal:journals(title), payments(id, payment_reference, provider, amount, currency, status, metadata, confirmed_at), submission_files(id, file_kind, storage_path, original_name, mime_type, size_bytes)").order("created_at", { ascending: false }),
+    admin.from("submissions").select("id, reference, tracking_number, title, author_name, author_email, affiliation, abstract, author_details, current_stage, priority, submitted_at, created_at, preferred_journal:journals(title), payments(id, payment_reference, provider, amount, currency, status, metadata, confirmed_at), submission_files(id, file_kind, storage_path, original_name, mime_type, size_bytes)").order("created_at", { ascending: false }),
     admin.from("publication_records").select("id, submission_id, doi, scheduled_for, published_at, journals(title), issues(volume, issue_number), publications(views, downloads)").order("created_at", { ascending: false }),
     admin.from("journals").select("id, title, slug, description, scope, issn, issn_online, issn_print, status, accent, hero_image_url, current_issue_id").order("title"),
     admin.from("issues").select("id, journal_id, title, volume, issue_number, description, publication_date, status, cover_image_url").order("publication_date", { ascending: false }),
