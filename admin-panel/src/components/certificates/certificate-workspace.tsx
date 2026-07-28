@@ -196,6 +196,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   let cropPreviewW = 480;
   let cropPreviewH = cropBlock ? 480 * (cropBlock.height / cropBlock.width) : 280;
   if (cropPreviewH > 440) { cropPreviewH = 440; cropPreviewW = cropBlock ? 440 * (cropBlock.width / cropBlock.height) : 480; }
+  if (cropBlock?.imageShape === "circle") { const side = Math.min(cropPreviewW, cropPreviewH); cropPreviewW = side; cropPreviewH = side; }
   templateRef.current = template;
   editingRef.current = editingBlockId;
   currentPageIdxRef.current = currentPageIdx;
