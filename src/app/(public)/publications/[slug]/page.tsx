@@ -4,13 +4,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icon";
 import { JsonLd } from "@/components/json-ld";
-import { PublicationTools } from "@/components/publication-tools";
 import { RelatedPublicationsCarousel } from "@/components/related-publications-carousel";
 import { PublicationViewTracker } from "@/components/publication-view-tracker";
 import { PublicationPdfReader } from "@/components/publication-pdf-reader";
 import { DemoPublicationPdfReader } from "@/components/demo-publication-pdf-reader";
-import { DoiBadge } from "@/components/doi-badge";
-import { LicenseBadge, OpenAccessBadge } from "@/components/license-badge";
+import { OpenAccessBadge } from "@/components/license-badge";
 import { CitationPanel } from "@/components/citation-panel";
 import { ShareButtons } from "@/components/share-buttons";
 import { getPublication, getPublications } from "@/lib/content";
@@ -128,7 +126,7 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
             <div className="publication-detail-hero-copy">
               <nav className="publication-breadcrumbs" aria-label="Breadcrumb"><Link href="/">Home</Link><span aria-hidden="true">/</span><Link href="/publications">Publications</Link><span aria-hidden="true">/</span><Link href={`/journals/${publication.journal.slug}`}>{publication.journal.title}</Link></nav>
               <p className="publication-detail-type">{typeLabel}</p>
-              <div className="pub-badges-row"><OpenAccessBadge licenseName={publication.licenseName} /><DoiBadge doi={publication.doi} /><LicenseBadge name={publication.licenseName} url={publication.licenseUrl} /></div>
+              {openAccess && <div className="pub-badges-row"><OpenAccessBadge licenseName={publication.licenseName} /></div>}
               <h1>{publication.title}</h1>
               <div className="publication-detail-record-line"><span>{typeLabel}</span><i aria-hidden="true"/><time dateTime={publication.publicationDate}>Published {displayDate}</time></div>
               {(publication.volume || publication.issue || publication.pages) && <p className="publication-detail-pages">{publication.volume ? `Vol. ${publication.volume}` : ""}{publication.issue ? `${publication.volume ? ", " : ""}No. ${publication.issue}` : ""}{publication.pages ? `${publication.volume || publication.issue ? " · " : ""}pp. ${publication.pages}` : ""}</p>}
@@ -148,7 +146,7 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
           </div>
           <aside className="publication-detail-sidebar">
             <section className="publication-access-panel publication-activity-panel"><div className="publication-activity-heading"><span className="publication-activity-icon"><Icon name="eye" className="h-4 w-4" /></span><span className="publication-activity-label">Publication reach</span></div><div className="publication-activity-metrics" aria-label="Publication analytics"><div><span>Views</span><strong>{publication.views.toLocaleString("en-PH")}</strong><small>all time</small></div><div><span>Downloads</span><strong>{publication.downloads.toLocaleString("en-PH")}</strong><small>all time</small></div></div><div className="publication-activity-action">{publication.pdfUrl ? <a href={publication.pdfUrl} target="_blank" rel="noopener noreferrer"><Icon name="file" className="h-4 w-4" /> Download publication</a> : <p>The full-text PDF for this record is not available yet.</p>}</div></section>
-            <section className="article-rights-panel"><div className="publication-panel-heading">Rights and reuse</div><div className="rights-row"><span>License</span>{publication.licenseUrl ? <a href={publication.licenseUrl} target="_blank" rel="noopener noreferrer"><strong>{publication.licenseName}</strong></a> : <strong>{publication.licenseName}</strong>}<div className="pub-badges-row" style={{marginTop:"6px"}}><LicenseBadge name={publication.licenseName} url={publication.licenseUrl} /><OpenAccessBadge licenseName={publication.licenseName} /></div></div><div className="rights-row"><span>Publisher</span><strong>{SITE_NAME}</strong></div></section>
+            <section className="article-rights-panel"><div className="publication-panel-heading">Rights and reuse</div><div className="rights-row"><span>License</span>{publication.licenseUrl ? <a href={publication.licenseUrl} target="_blank" rel="noopener noreferrer"><strong>{publication.licenseName}</strong></a> : <strong>{publication.licenseName}</strong>}{openAccess && <div className="pub-badges-row" style={{marginTop:"6px"}}><OpenAccessBadge licenseName={publication.licenseName} /></div>}</div><div className="rights-row"><span>Publisher</span><strong>{SITE_NAME}</strong></div></section>
           </aside>
         </div>
         <section className="publication-about-section"><div className="section-shell"><header><p className="eyebrow">About this publication</p><h2>Publication record and citation</h2></header><div className="publication-about-grid"><div className="publication-about-mark" aria-hidden="true"><Icon name="book" className="h-8 w-8" /></div><div className="publication-about-content"><div className="publication-about-citation"><p className="eyebrow">Cite this publication</p><CitationPanel publication={publication} /><ShareButtons title={publication.title} abstract={publication.abstract} /></div><dl className="publication-about-facts"><div><dt>DOI</dt><dd>{doiUrl ? <a href={doiUrl} target="_blank" rel="noopener noreferrer">{publication.doi}</a> : "Not listed"}</dd></div><div><dt>Published</dt><dd><time dateTime={publication.publicationDate}>{displayDate}</time></dd></div><div><dt>Journal</dt><dd><Link href={`/journals/${publication.journal.slug}`}>{publication.journal.title}</Link></dd></div><div><dt>Rights</dt><dd>{publication.licenseUrl ? <a href={publication.licenseUrl} target="_blank" rel="noopener noreferrer">{publication.licenseName}</a> : publication.licenseName}</dd></div></dl>{publication.keywords.length > 0 && <div className="publication-about-keywords"><h3>Keywords</h3><div>{publication.keywords.map((keyword) => <Link href={`/search?q=${encodeURIComponent(keyword)}`} key={keyword}>{keyword}</Link>)}</div></div>}</div></div></div></section>

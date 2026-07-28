@@ -167,12 +167,16 @@
 .publication-folio-journal { display:flex; align-items:center; justify-content:space-between; gap:.8rem; color:#8d4b32; font-size:.78rem; font-weight:850; letter-spacing:.055em; text-transform:uppercase; }
 .publication-folio-journal a { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .publication-folio-journal time { flex:0 0 auto; color:#68766f; }
+.publication-folio-journal-left { display:inline-flex; align-items:center; gap:.55rem; min-width:0; flex:1 1 auto; }
+.publication-folio-journal-left > a { min-width:0; }
+.publication-folio-journal .pub-badge--oa { font-size:.66rem; font-weight:750; letter-spacing:.04em; text-transform:uppercase; line-height:1; padding:1px 7px; border:1px solid rgba(154,106,20,.4); border-radius:100px; background:transparent; color:#9a6a14; box-shadow:none; flex:0 0 auto; }
+.publication-folio-journal .pub-badge--oa:hover { transform:none; box-shadow:none; background:rgba(154,106,20,.07); }
 .publication-folio-card h2 { margin-top:.65rem; color:var(--publication-deep); font-family:Literata,Georgia,serif; font-size:1.2rem; font-weight:770; letter-spacing:-.02em; line-height:1.32; }
 .publication-folio-card h2 a { background-image:linear-gradient(var(--publication-clay),var(--publication-clay)); background-position:0 100%; background-repeat:no-repeat; background-size:0 1px; transition:color .2s ease,background-size .25s ease; }
 .publication-folio-card h2 a:hover { color:var(--publication-clay); background-size:100% 1px; }
 .publication-folio-authors { margin-top:.55rem; color:#315241; font-size:.9rem; font-weight:750; line-height:1.55; }
 .publication-folio-abstract { display:-webkit-box; overflow:hidden; margin-top:.7rem; color:#617068; font-size:.91rem; line-height:1.65; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
-.publication-folio-metadata { display:grid; grid-template-columns:1fr .7fr .75fr; margin-top:1rem; border-block:1px solid #e1e6e3; }
+.publication-folio-metadata { display:grid; grid-template-columns:1fr 1fr; margin-top:1rem; border-block:1px solid #e1e6e3; }
 .publication-folio-metadata div { padding:.65rem .45rem .65rem 0; }
 .publication-folio-metadata div + div { border-left:1px solid #e1e6e3; padding-left:.55rem; }
 .publication-folio-metadata dt { color:#78847e; font-size:.66rem; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
@@ -319,7 +323,7 @@
   .publication-filter-panel button { width:100%; }
   .publication-folio-card { display:block; }
   .publication-folio-image { display:block; min-height:155px; }
-  .publication-folio-metadata { grid-template-columns:1fr 1fr 1fr; }
+  .publication-folio-metadata { grid-template-columns:1fr 1fr; }
   .publication-detail-folio { display:block; }
   .publication-detail-folio div:nth-child(odd) { border-right:0; }
   .publication-tools { display:grid; grid-template-columns:1fr 1fr; }
@@ -5161,6 +5165,7 @@ body:has(.track-page) { background:#f7f7f8; }
 .pub-badge--oa:hover { box-shadow:0 2px 10px rgba(212,160,23,.18); }
 .pub-badge--muted { border-color:#c9d2cd; color:#78847e; background:rgba(201,210,205,.15); }
 .pub-badges-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.pub-badges-row:empty { display:none; }
 
 /* ==========================================================================
    CITATION PANEL — tabbed APA / MLA / Chicago with copy + export
@@ -5172,7 +5177,8 @@ body:has(.track-page) { background:#f7f7f8; }
 .cite-tab--active { color:#1a5c3a; }
 .cite-tab-indicator { position:absolute; bottom:0; left:0; width:calc(100% / 3); height:2.5px; background:#2f6e59; border-radius:2px 2px 0 0; transition:transform .3s cubic-bezier(.16,1,.3,1); }
 .cite-body { padding:1rem 1.25rem 1.1rem; }
-.cite-text { margin:0; padding:.8rem 1rem; border-left:3px solid rgba(163,71,46,.3); background:rgba(247,243,234,.5); border-radius:0 8px 8px 0; font-family:'Courier New',Consolas,monospace; font-size:.82rem; line-height:1.75; color:#263c32; word-break:break-word; }
+.cite-text { margin:0; padding:.55rem 0 .55rem 1.15rem; border-left:2px solid rgba(163,71,46,.35); background:transparent; font-family:Literata,Georgia,serif; font-size:1.02rem; line-height:1.8; color:#304039; word-break:break-word; }
+.cite-text em { font-style:italic; }
 .cite-actions { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.8rem; align-items:center; }
 .cite-copy { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border:1.5px solid #2f6e59; border-radius:8px; background:#fff; color:#1a5c3a; font-size:.76rem; font-weight:700; cursor:pointer; transition:background .15s ease, transform .15s ease; }
 .cite-copy:hover { background:rgba(47,110,89,.06); transform:translateY(-1px); }

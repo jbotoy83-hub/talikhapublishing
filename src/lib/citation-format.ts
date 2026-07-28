@@ -1,5 +1,7 @@
 import type { Publication } from "./types";
 
+export type CitationSeg = { t: string; em?: boolean };
+
 function year(date: string) {
   const m = date.match(/^(\d{4})/);
   return m ? m[1] : date;
@@ -30,12 +32,16 @@ function doiUrl(doi?: string) {
   return `https://doi.org/${doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")}`;
 }
 
+function authorsOrDisplay(p: Publication) {
+  return p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
+}
+
 function authorListApa(authors: { name: string }[]) {
   if (!authors.length) return "";
-  if (authors.length === 1) return `${lastName(authors[0].name)}, ${initials(firstName(authors[0].name))}`;
-  if (authors.length === 2) return `${lastName(authors[0].name)}, ${initials(firstName(authors[0].name))}, & ${lastName(authors[1].name)}, ${initials(firstName(authors[1].name))}`;
-  const all = authors.map((a) => `${lastName(a.name)}, ${initials(firstName(a.name))}`);
-  return `${all.slice(0, -1).join(", ")}, & ${all[all.length - 1]}`;
+  const fmt = (a: { name: string }) => `${lastName(a.name)}, ${initials(firstName(a.name))}`;
+  if (authors.length === 1) return fmt(authors[0]);
+  if (authors.length === 2) return `${fmt(authors[0])}, & ${fmt(authors[1])}`;
+  return `${authors.slice(0, -1).map(fmt).join(", ")}, & ${fmt(authors[authors.length - 1])}`;
 }
 
 function authorListMla(authors: { name: string }[]) {
@@ -53,50 +59,64 @@ function authorListChicago(authors: { name: string }[]) {
   return `${all.slice(0, -1).join(", ")}, and ${all[all.length - 1]}`;
 }
 
-export function formatApa(p: Publication) {
-  const y = year(p.publicationDate);
-  const d = doiUrl(p.doi);
-  const authors = p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
-  const parts = [authorListApa(authors), ` (${y}).`, ` ${p.title}.`, ` *${p.journal.title}*`];
-  if (p.volume) parts[parts.length - 1] += `, *${p.volume}*`;
-  if (p.issue) parts[parts.length - 1] += `(${p.issue})`;
-  if (p.pages) parts.push(`, ${p.pages}`);
-  parts.push(".");
-  if (d) parts.push(` ${d}`);
-  return parts.join("");
+export function segsToPlain(segs: CitationSeg[]) {
+  return segs.map((s) => s.t).join("");
 }
 
-export function formatMla(p: Publication) {
+export function formatApa(p: Publication): CitationSeg[] {
   const y = year(p.publicationDate);
   const d = doiUrl(p.doi);
-  const authors = p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
-  const parts = [`${authorListMla(authors)}.`, ` "${p.title}."`, ` *${p.journal.title}*`];
-  if (p.volume) parts.push(`, vol. ${p.volume}`);
-  if (p.issue) parts.push(`, no. ${p.issue}`);
-  parts.push(`, ${y}`);
-  if (p.pages) parts.push(`, pp. ${p.pages}`);
-  parts.push(".");
-  if (d) parts.push(` *${d}*.`);
-  return parts.join("");
+  const authors = authorsOrDisplay(p);
+  const segs: CitationSeg[] = [
+    { t: `${authorListApa(authors)} (${y}). ${p.title}. ` },
+    { t: p.journal.title, em: true }
+  ];
+  if (p.volume) segs.push({ t: ", " }, { t: p.volume, em: true });
+  if (p.issue) segs.push({ t: `(${p.issue})` });
+  if (p.volume || p.issue) segs.push({ t: ", " });
+  if (p.pages) segs.push({ t: `${p.pages}. ` });
+  else segs.push({ t: ". " });
+  if (d) segs.push({ t: d });
+  return segs;
 }
 
-export function formatChicago(p: Publication) {
+export function formatMla(p: Publication): CitationSeg[] {
   const y = year(p.publicationDate);
   const d = doiUrl(p.doi);
-  const authors = p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
-  const parts = [`${authorListChicago(authors)}.`, ` "${p.title}."`, ` *${p.journal.title}*`];
-  if (p.volume) parts.push(` ${p.volume}`);
-  if (p.issue) parts.push(`, no. ${p.issue}`);
-  parts.push(` (${y})`);
-  if (p.pages) parts.push(`: ${p.pages}`);
-  parts.push(".");
-  if (d) parts.push(` ${d}.`);
-  return parts.join("");
+  const authors = authorsOrDisplay(p);
+  const segs: CitationSeg[] = [
+    { t: `${authorListMla(authors)}. “${p.title}.” ` },
+    { t: p.journal.title, em: true }
+  ];
+  if (p.volume) segs.push({ t: `, vol. ${p.volume}` });
+  if (p.issue) segs.push({ t: `, no. ${p.issue}` });
+  segs.push({ t: `, ${y}` });
+  if (p.pages) segs.push({ t: `, pp. ${p.pages}` });
+  segs.push({ t: "." });
+  if (d) segs.push({ t: ` ${d}.` });
+  return segs;
+}
+
+export function formatChicago(p: Publication): CitationSeg[] {
+  const y = year(p.publicationDate);
+  const d = doiUrl(p.doi);
+  const authors = authorsOrDisplay(p);
+  const segs: CitationSeg[] = [
+    { t: `${authorListChicago(authors)}. “${p.title}.” ` },
+    { t: p.journal.title, em: true }
+  ];
+  if (p.volume) segs.push({ t: ` ${p.volume}` });
+  if (p.issue) segs.push({ t: `, no. ${p.issue}` });
+  segs.push({ t: ` (${y})` });
+  if (p.pages) segs.push({ t: `: ${p.pages}` });
+  segs.push({ t: "." });
+  if (d) segs.push({ t: ` ${d}.` });
+  return segs;
 }
 
 export function formatBibtex(p: Publication) {
   const y = year(p.publicationDate);
-  const authors = p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
+  const authors = authorsOrDisplay(p);
   const key = `${lastName(authors[0]?.name || "unknown")}${y}`.toLowerCase().replace(/[^a-z0-9]/g, "");
   const authorStr = authors.map((a) => `${lastName(a.name)}, ${firstName(a.name)}`).join(" and ");
   const lines = [`@article{${key},`, `  author = {${authorStr}},`, `  title = {${p.title}},`, `  journal = {${p.journal.title}},`];
@@ -111,7 +131,7 @@ export function formatBibtex(p: Publication) {
 
 export function formatRis(p: Publication) {
   const y = year(p.publicationDate);
-  const authors = p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
+  const authors = authorsOrDisplay(p);
   const { start, end } = parsePages(p.pages);
   const lines = ["TY  - JOUR"];
   for (const a of authors) lines.push(`AU  - ${lastName(a.name)}, ${firstName(a.name)}`);
@@ -128,9 +148,4 @@ export function formatRis(p: Publication) {
 
 export function isOpenAccess(licenseName: string) {
   return /creative\s*commons|^cc\s/i.test(licenseName);
-}
-
-export function ccType(licenseName: string) {
-  const m = licenseName.match(/cc\s*(by(?:-nc(?:-nd|-sa)?|-nd|-sa)?)/i);
-  return m ? m[1].toUpperCase().replace(/-/g, "-") : null;
 }

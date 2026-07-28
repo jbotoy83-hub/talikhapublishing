@@ -1,8 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Publication } from "@/lib/types";
-import { Icon } from "./icon";
-import { DoiBadge } from "./doi-badge";
 import { OpenAccessBadge } from "./license-badge";
 
 function publicationDate(publication: Publication) {
@@ -35,13 +33,15 @@ export function PublicationCard({ publication }: { publication: Publication }) {
       </Link>
       <div className="publication-folio-body">
         <div className="publication-folio-journal">
-          <Link href={`/journals/${publication.journal.slug}`}>{publication.journal.title}</Link>
+          <span className="publication-folio-journal-left">
+            <Link href={`/journals/${publication.journal.slug}`}>{publication.journal.title}</Link>
+            <OpenAccessBadge licenseName={publication.licenseName} />
+          </span>
           <time dateTime={publication.publicationDate}>{date}</time>
         </div>
         <h2>
           <Link href={`/publications/${publication.slug}`}>{publication.title}</Link>
         </h2>
-        <div className="pub-badges-row"><OpenAccessBadge licenseName={publication.licenseName} /><DoiBadge doi={publication.doi} /></div>
         <p className="publication-folio-authors">{publication.authorDisplay}</p>
         <p className="publication-folio-abstract">
           {publication.abstract || "This historical record is preserved with its journal, authorship, and citation details."}
@@ -55,14 +55,7 @@ export function PublicationCard({ publication }: { publication: Publication }) {
             <dt>Pages</dt>
             <dd>{publication.pages || "Not listed"}</dd>
           </div>
-          <div>
-            <dt>DOI</dt>
-            <dd>{publication.doi ? "Registered" : "Not listed"}</dd>
-          </div>
         </dl>
-        <Link href={`/publications/${publication.slug}`} className="publication-folio-link">
-          View publication <Icon name="arrow" className="h-4 w-4" />
-        </Link>
       </div>
     </article>
   );

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { Publication } from "@/lib/types";
-import { formatApa, formatMla, formatChicago, formatBibtex, formatRis } from "@/lib/citation-format";
+import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, segsToPlain, type CitationSeg } from "@/lib/citation-format";
 
 const TABS = ["APA", "MLA", "Chicago"] as const;
 type Tab = (typeof TABS)[number];
@@ -19,6 +19,10 @@ function downloadFile(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+function renderSegs(segs: CitationSeg[]) {
+  return segs.map((s, i) => s.em ? <em key={i}>{s.t}</em> : <span key={i}>{s.t}</span>);
+}
+
 export function CitationPanel({ publication }: { publication: Publication }) {
   const [tab, setTab] = useState<Tab>("APA");
   const [copied, setCopied] = useState(false);
@@ -26,7 +30,8 @@ export function CitationPanel({ publication }: { publication: Publication }) {
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
-  const formatted = tab === "APA" ? formatApa(publication) : tab === "MLA" ? formatMla(publication) : formatChicago(publication);
+  const segs = tab === "APA" ? formatApa(publication) : tab === "MLA" ? formatMla(publication) : formatChicago(publication);
+  const plain = segsToPlain(segs);
 
   const flash = useCallback(() => {
     setCopied(true);
@@ -35,7 +40,7 @@ export function CitationPanel({ publication }: { publication: Publication }) {
   }, []);
 
   async function copyCitation() {
-    try { await navigator.clipboard.writeText(formatted); flash(); } catch {}
+    try { await navigator.clipboard.writeText(plain); flash(); } catch {}
   }
 
   const slug = publication.slug;
@@ -49,7 +54,7 @@ export function CitationPanel({ publication }: { publication: Publication }) {
         <span className="cite-tab-indicator" style={{ transform: `translateX(${TABS.indexOf(tab) * 100}%)` }} aria-hidden="true" />
       </div>
       <div className="cite-body">
-        <blockquote className="cite-text">{formatted}</blockquote>
+        <blockquote className="cite-text">{renderSegs(segs)}</blockquote>
         <div className="cite-actions">
           <button type="button" className="cite-copy" onClick={copyCitation}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{copied ? <path d="M20 6 9 17l-5-5"/> : <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>}</svg>
