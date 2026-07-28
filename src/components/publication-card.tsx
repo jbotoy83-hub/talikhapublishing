@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Publication } from "@/lib/types";
 import { Icon } from "./icon";
+import { DoiBadge } from "./doi-badge";
+import { OpenAccessBadge } from "./license-badge";
 
 function publicationDate(publication: Publication) {
   return publication.publicationDatePrecision === "year"
@@ -39,6 +41,7 @@ export function PublicationCard({ publication }: { publication: Publication }) {
         <h2>
           <Link href={`/publications/${publication.slug}`}>{publication.title}</Link>
         </h2>
+        <div className="pub-badges-row"><OpenAccessBadge licenseName={publication.licenseName} /><DoiBadge doi={publication.doi} /></div>
         <p className="publication-folio-authors">{publication.authorDisplay}</p>
         <p className="publication-folio-abstract">
           {publication.abstract || "This historical record is preserved with its journal, authorship, and citation details."}
