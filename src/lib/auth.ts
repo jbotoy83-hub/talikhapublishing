@@ -26,7 +26,11 @@ function isLocalAdminBypassEnabled() {
 }
 
 function configuredAdminEmails() {
-  return new Set(["jbotoy83@gmail.com"]);
+  return new Set(
+    ["jbotoy83@gmail.com", ...(process.env.ADMIN_EMAILS || "").split(",")]
+      .map((email) => email.trim().toLocaleLowerCase())
+      .filter(Boolean)
+  );
 }
 
 export async function getAdminUser(): Promise<AdminUser | null> {
@@ -68,7 +72,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     if (error) return null;
   }
 
-  const effectiveRole = configured ? "admin" : role === "admin" ? "editor" : role;
+  const effectiveRole = configured ? "admin" : role;
   return {
     id: userId,
     email,

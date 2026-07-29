@@ -17,7 +17,7 @@ import { LoaderCircleIcon } from "@/components/icons/loader-circle";
 import { Trash2Icon } from "@/components/icons/trash-2";
 import { FileUploadSystem, FileChecklist, PreviewModal, hasAllRequiredFiles, hasActiveUploads } from "./file-upload-system";
 import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cropper";
-import { SubmissionProcessing, type ProcessingPhase } from "./processing-overlay";
+import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
 import { validateFile, saveBlob, saveMeta, deleteFile, getBlob, formatBytes, sanitizeFilename, PURPOSE_ACCEPT, PURPOSE_MAX_SIZE } from "@/lib/file-storage";
 
@@ -288,6 +288,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const [submitError, setSubmitError] = useState("");
   const [serverSubmitted, setServerSubmitted] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>("idle");
+  const [processingStep, setProcessingStep] = useState<ProcessingStep>("preparing");
   const [attempt, setAttempt] = useState(1);
 
   useEffect(() => {
@@ -442,7 +443,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
   async function runServerSubmission(
     sj: { slug: string; id: string; issueId: string },
-    supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>
+    supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+    onStep: (step: ProcessingStep) => void
   ): Promise<string> {
       const completed = uploadedFiles.filter((f) => f.status === "completed");
       const manuscript = completed.find((f) => f.purpose === "manuscript");
@@ -513,6 +515,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const init = (await initRes.json().catch(() => ({}))) as { submissionId?: string; reference?: string; uploads?: { key: string; field: string; path: string; token: string }[]; error?: string };
       if (!initRes.ok || !init.submissionId || !init.uploads) throw new Error(init.error || "The submission service could not start your record. Please try again.");
 
+      onStep("uploading");
       for (const ins of init.uploads) {
         const make = blobFor.get(ins.key);
         if (!make) throw new Error("A prepared file is missing. Please try submitting again.");
@@ -521,15 +524,23 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         if (error) throw new Error(`Could not upload one of your files. ${error.message || "Please try again."}`);
       }
 
+      onStep("verifying");
       const completeRes = await fetch("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
       const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; error?: string };
       if (!completeRes.ok || !complete.reference) throw new Error(complete.error || "Your files were uploaded, but the record could not be finalized. Please contact the editorial team.");
 
+      onStep("finalizing");
       return complete.reference;
   }
 
-  async function runLocalSubmission(): Promise<string> {
-    await wait(2200);
+  async function runLocalSubmission(onStep: (step: ProcessingStep) => void): Promise<string> {
+    await wait(700);
+    onStep("uploading");
+    await wait(700);
+    onStep("verifying");
+    await wait(700);
+    onStep("finalizing");
+    await wait(700);
     const now = new Date();
     const nextReference = `TP-${now.getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     const stored = JSON.parse(localStorage.getItem(localSubmissionKey) || "[]");
@@ -593,6 +604,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     setSubmitting(true);
     setSubmitError("");
     setProcessingPhase("working");
+    setProcessingStep("preparing");
     setAttempt(1);
 
     const sj = (serverJournals ?? []).find((j) => j.slug === form.journal);
@@ -610,8 +622,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       try {
         const startedAt = Date.now();
         const ref = isServer
-          ? await runServerSubmission(sj!, supabase!)
-          : await runLocalSubmission();
+          ? await runServerSubmission(sj!, supabase!, setProcessingStep)
+          : await runLocalSubmission(setProcessingStep);
         const elapsed = Date.now() - startedAt;
         if (elapsed < MIN_PROCESS_MS) await wait(MIN_PROCESS_MS - elapsed);
         setServerSubmitted(isServer);
@@ -1477,7 +1489,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       </div>
     )}
     <AnimatePresence>
-      {submitting && <SubmissionProcessing key="lsf-processing" phase={processingPhase} attempt={attempt} totalAttempts={MAX_SUBMIT_ATTEMPTS} reference={reference} serverSubmitted={serverSubmitted} errorMessage={submitError} onRetry={retrySubmit} onBack={cancelProcessing} />}
+      {submitting && <SubmissionProcessing key="lsf-processing" phase={processingPhase} step={processingStep} attempt={attempt} totalAttempts={MAX_SUBMIT_ATTEMPTS} reference={reference} serverSubmitted={serverSubmitted} errorMessage={submitError} onRetry={retrySubmit} onBack={cancelProcessing} />}
     </AnimatePresence>
   </>;
 }

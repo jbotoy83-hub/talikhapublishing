@@ -1,18 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 export type ProcessingPhase = "idle" | "working" | "succeeded" | "failed";
+export type ProcessingStep = "preparing" | "uploading" | "verifying" | "finalizing";
 
-const STATUS_MESSAGES = [
-  "Preparing your manuscript",
-  "Validating submission details",
-  "Checking payment information",
-  "Securing your files to protected storage",
-  "Verifying document integrity",
-  "Registering with the editorial desk",
-  "Finalizing your submission",
+const PROCESSING_STEPS: { id: ProcessingStep; title: string; description: string }[] = [
+  { id: "preparing", title: "Preparing submission", description: "Checking your manuscript, author details, and payment proof." },
+  { id: "uploading", title: "Uploading protected files", description: "Sending your manuscript and proof of payment to private storage." },
+  { id: "verifying", title: "Verifying payment details", description: "Confirming the transaction information and uploaded files." },
+  { id: "finalizing", title: "Issuing tracking reference", description: "Creating your submission record and unique tracking number." },
 ];
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -80,6 +77,7 @@ function AlertMark() {
 
 type Props = {
   phase: ProcessingPhase;
+  step: ProcessingStep;
   attempt: number;
   totalAttempts: number;
   reference: string;
@@ -89,21 +87,11 @@ type Props = {
   onBack?: () => void;
 };
 
-export function SubmissionProcessing({ phase, attempt, totalAttempts, reference, errorMessage, onRetry, onBack }: Props) {
-  const [msgIndex, setMsgIndex] = useState(0);
+export function SubmissionProcessing({ phase, step, attempt, totalAttempts, reference, errorMessage, onRetry, onBack }: Props) {
   const active = phase === "working";
-
-  useEffect(() => {
-    if (!active) return;
-    setMsgIndex(0);
-    const id = window.setInterval(() => {
-      setMsgIndex((i) => (i + 1) % STATUS_MESSAGES.length);
-    }, 2100);
-    return () => window.clearInterval(id);
-  }, [active, phase]);
-
   const retrying = active && attempt > 1;
-  const statusText = STATUS_MESSAGES[msgIndex];
+  const activeStepIndex = PROCESSING_STEPS.findIndex((item) => item.id === step);
+  const activeStep = PROCESSING_STEPS[activeStepIndex] || PROCESSING_STEPS[0];
 
   return (
     <motion.div
@@ -155,10 +143,34 @@ export function SubmissionProcessing({ phase, attempt, totalAttempts, reference,
                 {errorMessage ? <p className="mt-3 max-w-sm text-sm leading-6 text-zinc-400">{errorMessage}</p> : null}
               </motion.div>
             ) : (
-              <motion.p key={statusText} className="text-sm text-zinc-400" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.32, ease: EASE }}>{statusText}</motion.p>
+              <motion.div key={activeStep.id} className="text-center" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.32, ease: EASE }}>
+                <p className="text-base font-medium text-white">{activeStep.title}</p>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-400">{activeStep.description}</p>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
+
+        {active && (
+          <div className="mt-8 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[.035] p-4 text-left">
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">Submission progress</p>
+              <p className="text-xs text-zinc-500">Usually 10–30 seconds</p>
+            </div>
+            <ol className="mt-3 space-y-3" aria-label="Submission processing stages">
+              {PROCESSING_STEPS.map((item, index) => {
+                const complete = index < activeStepIndex;
+                const current = index === activeStepIndex;
+                return (
+                  <li key={item.id} className={`flex items-start gap-3 ${current ? "text-white" : complete ? "text-zinc-400" : "text-zinc-600"}`}>
+                    <span className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${complete ? "border-white/40 bg-white/15" : current ? "border-white/70" : "border-white/10"}`} aria-hidden="true">{complete ? "✓" : index + 1}</span>
+                    <span className="min-w-0"><strong className="block text-sm font-medium">{item.title}</strong><span className="mt-0.5 block text-xs leading-5 text-zinc-500">{current ? item.description : complete ? "Complete" : "Up next"}</span></span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
 
         <AnimatePresence>
           {retrying && (
