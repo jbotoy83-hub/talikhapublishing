@@ -2459,7 +2459,7 @@ function LegacySubmissionReview({
         />
       ) : <>
         <div className={`review-layout${reviewUnlocked ? "" : " review-layout--locked"}`}>
-        <div className="review-form review-content-lock" aria-disabled={!reviewUnlocked}>
+        <div className="review-form" aria-disabled={!reviewUnlocked}>
           <section>
             <header>
               <div>
