@@ -144,6 +144,7 @@ const journalIssueDefaults: Record<string, JournalIssueDefault> = {
   Lumera: { volume: "1", issue: "1" },
 };
 const normalizeJournal = (journal: string) => journal === "Lumera" ? "Lumera" : "InQuira";
+const submissionReference = (submission: EditorialSubmission) => submission.reference || submission.id;
 const initialPublicationRecords: PublicationRecord[] = [
   {
     id: "PUB-2026-0001",
@@ -2615,7 +2616,7 @@ function LegacySubmissionReview({
               <div className="review-fields two review-reference-fields">
               <ReviewField label="Submitted date" value={submittedDateTimeLabel(submission).replace(/^Submitted\s+/, "")} />
               <ReviewField label="Journal" value={submission.journal} />
-              <ReviewField label="Submission reference" value={submission.id} />
+              <ReviewField label="Submission reference" value={submissionReference(submission)} />
             </div>
             <label className="review-textarea review-manuscript-secondary">
               Manuscript title
@@ -3009,12 +3010,12 @@ function PublicationRecordEditor({
   return (
     <div className="publication-record">
       <section className="publication-card publication-summary">
-        <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>This record was opened from the author’s selected journal and is linked to {submission.id}.</p></div><span className="publication-state">{record.status}</span></header>
+        <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>This record was opened from the author’s selected journal and is linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
         <div className="publication-copy-grid">
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
           <div><span>Manuscript files</span><strong>{submission.fileName}</strong></div>
           <div><span>Title</span><strong>{manuscriptTitle}</strong></div>
-          <div><span>Submission reference</span><strong>{submission.id}</strong></div>
+          <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
         </div>
       </section>
       <section className="publication-card publication-author-card">
@@ -3314,7 +3315,7 @@ async function downloadReceiptPdf(
   pdf.setFontSize(28);
   pdf.text("Official receipt", 48, 98);
   pdf.setFontSize(11);
-  pdf.text(`Invoice: LS-INV-${submission.id.replace("LS-", "")}`, 48, 132);
+   pdf.text(`Submission reference: ${submissionReference(submission)}`, 48, 132);
   pdf.text(`Issued: ${submission.displayDate}`, 48, 150);
   pdf.text(`Received from: ${author.name}`, 48, 184);
   pdf.text(author.email, 48, 202);
@@ -3427,7 +3428,7 @@ function paymentProofPreviewSrc(submission: EditorialSubmission) {
     <text x="140" y="486" fill="#111827" font-family="Arial, sans-serif" font-size="82" font-weight="700">₱2,500.00</text>
     <line x1="140" y1="554" x2="1060" y2="554" stroke="#e2e5ec" stroke-width="3"/>
     <text x="140" y="642" fill="#6b7280" font-family="Arial, sans-serif" font-size="28">Reference number</text>
-    <text x="140" y="694" fill="#111827" font-family="Arial, sans-serif" font-size="40" font-weight="700">${safe(submission.id)}</text>
+     <text x="140" y="694" fill="#111827" font-family="Arial, sans-serif" font-size="40" font-weight="700">${safe(submissionReference(submission))}</text>
     <text x="140" y="798" fill="#6b7280" font-family="Arial, sans-serif" font-size="28">Date</text>
     <text x="140" y="850" fill="#111827" font-family="Arial, sans-serif" font-size="40" font-weight="700">${safe(submission.displayDate)}</text>
     <text x="140" y="954" fill="#6b7280" font-family="Arial, sans-serif" font-size="28">Sender</text>
@@ -3465,7 +3466,7 @@ function ReceiptPreview({
         </header>
         <div className="receipt-number">
           <span>Submission reference</span>
-          <strong>{submission.id}</strong>
+          <strong>{submissionReference(submission)}</strong>
         </div>
         <div className="receipt-parties">
           <div>
@@ -3509,7 +3510,7 @@ function ReceiptPreview({
           <div>
             <span>
               <strong>{receipt.feeLabel}</strong>
-              <small>{`${submission.journal} · ${submission.id} · ${manuscriptTitle}`}</small>
+              <small>{`${submission.journal} · ${submissionReference(submission)} · ${manuscriptTitle}`}</small>
             </span>
             <span>1</span>
             <span>{`₱${receipt.fee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</span>
