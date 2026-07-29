@@ -1,115 +1,100 @@
 # Technology Stack
 
-**Analysis Date:** 2026-07-27
+**Analysis Date:** 2026-07-30
+
+## Repository Shape
+
+- Two applications share one repository and backend: the Next.js public site in `src/` and the Vite/React admin SPA in `admin-panel/`.
+- The admin SPA is compiled into `admin-panel/dist/`, copied to `public/admin/` by `scripts/copy-admin-build.mjs`, and served by the Next.js application at `/admin/`.
+- Server-side APIs, server actions, authentication, content loading, and Supabase clients live in `src/app/` and `src/lib/`.
 
 ## Languages
 
 **Primary:**
-- TypeScript ^6.0.3 (root) / latest (admin-panel) - All application code in both apps
+- TypeScript 6.x declared at the root in `package.json`, used by `src/`, `components/`-equivalent files under `src/components/`, and root configuration.
+- TypeScript 7.x declared by `admin-panel/package.json`, used by `admin-panel/src/` and the Vite admin configuration.
 
 **Secondary:**
-- JavaScript (ESM) - Build scripts (`scripts/*.mjs`), config files (`tailwind.config.js`, `postcss.config.js`, `eslint.config.mjs`)
-- SQL - Supabase migrations (`supabase/migrations/*.sql`)
-- CSS - Tailwind utility classes + custom stylesheets (`src/styles.css`, `admin-panel/src/styles.css`)
+- JavaScript/ES modules for `scripts/*.mjs`, `tailwind.config.js`, `postcss.config.js`, and `admin-panel/postcss.config.js`.
+- SQL for the 36 ordered migrations in `supabase/migrations/` and the development seed in `supabase/seed.sql`.
+- CSS for `src/styles.css`, `admin-panel/src/styles.css`, and certificate/inbox stylesheets.
 
 ## Runtime
 
 **Environment:**
-- Node.js (ES2022 target in both tsconfigs)
-- Next.js 16 server runtime (Turbopack enabled in dev)
+- Node.js with ES modules; both `tsconfig.json` and `admin-panel/tsconfig.app.json` target ES2022.
+- Next.js server/runtime for the public site and route handlers; Vite serves the admin development app.
 
 **Package Manager:**
-- npm (lockfiles present: `package-lock.json` at root and `admin-panel/package-lock.json`)
-- Root `postinstall` script auto-installs admin-panel dependencies
+- npm, with root lockfile `package-lock.json` and admin lockfile `admin-panel/package-lock.json`.
+- The root `postinstall` script installs admin dependencies through `admin-panel/package.json`.
 
 ## Frameworks
 
 **Core:**
-- Next.js ^16.2.10 - Public-facing site, API routes, server components (`src/app/`)
-- React ^19.2.7 - UI layer for both apps
-- Vite latest - Admin panel dev server and bundler (`admin-panel/vite.config.ts`)
+- Next.js 16.x in `package.json` - App Router pages, layouts, route handlers, server actions, metadata, and deployment entry point under `src/app/`.
+- React 19.x in `package.json` and `admin-panel/package.json` - public components and the admin SPA.
+- Vite 8.x in `admin-panel/package.json` - admin development server and production bundler.
+- Tailwind CSS 3.x with `tailwind.config.js` and `postcss.config.js` - root site styling.
+- Tailwind CSS 4.x with `@tailwindcss/vite` in `admin-panel/vite.config.ts` - admin styling.
+- Radix UI/shadcn-style primitives configured by `components.json` and `admin-panel/components.json`.
 
 **Testing:**
-- Not detected (no test framework configured in either app)
+- Vitest 4.x in `vitest.config.ts`, with tests in `src/__tests__/`.
+- Playwright 1.x in `playwright.config.ts`, with browser tests in `tests/`.
+- The root `package.json` exposes `npm run test` and `npm run test:watch`; no separate coverage gate is configured.
 
 **Build/Dev:**
-- Turbopack - Next.js dev bundler (configured in `next.config.ts`)
-- Vite ^latest + @vitejs/plugin-react - Admin panel HMR and production build
-- PostCSS ^8.5.6 + Autoprefixer ^10.4.21 - CSS processing (root)
-- @tailwindcss/vite ^4.3.3 - Tailwind v4 Vite plugin (admin-panel)
+- Root build flow is `npm run build:admin` -> `npm run copy:admin` -> `next build`, defined in `package.json`.
+- `admin-panel/vite.config.ts` uses `/admin/` as the production base path and proxies `/api` to `http://localhost:3000` during development.
+- `scripts/copy-admin-build.mjs` replaces `public/admin/` with the current Vite output.
+- `next.config.ts` configures Turbopack, CSP/security headers, remote images, compression, and `/admin` rewrites.
+- `npm run check` runs root typecheck, lint, and the combined production build; admin typechecking is separately available through `admin-panel/package.json`.
 
 ## Key Dependencies
 
-**Critical:**
-- @supabase/supabase-js ^2.110.3 - Database, auth, and storage client
-- @supabase/ssr ^0.12.1 - Server-side Supabase client with cookie handling
-- zod ^4.3.6 - Runtime request validation in API routes
-- radix-ui ^1.6.2 (root) / ^1.6.4 (admin) - Headless UI primitives (shadcn/ui base)
+**Backend and validation:**
+- `@supabase/supabase-js` and `@supabase/ssr` in `package.json` - database, Auth, Storage, browser clients, cookie-aware server clients, and service-role operations.
+- `zod` in `package.json` - request and form validation used by `src/app/api/` and `src/lib/submission.ts`.
+- `@upstash/redis` and `@upstash/ratelimit` in `package.json` - optional distributed rate limiting in `src/lib/rate-limit.ts`.
 
-**UI & Animation:**
-- framer-motion ^12.42.2 + motion ^12.42.2 - Component animation (root)
-- motion ^12.42.2 - Animation (admin-panel)
-- lucide-react ^1.25.0 (root) / latest (admin) - Icon library
-- @hugeicons/core-free-icons ^4.2.3 + @hugeicons/react ^1.1.9 - Additional icon set (root)
-- class-variance-authority ^0.7.1 + clsx ^2.1.1 + tailwind-merge ^3.6.0 - Variant styling utilities
-- tailwindcss-animate ^1.0.7 + tw-animate-css ^1.4.0 - Animation utilities
+**UI and motion:**
+- `framer-motion` and `motion` in `package.json` - public and admin transitions, overlays, and interaction motion.
+- `lucide-react`, `@hugeicons/react`, `class-variance-authority`, `clsx`, and `tailwind-merge` - icons, variants, and class composition across `src/` and `admin-panel/src/`.
+- `@fontsource-variable/inter` and `@fontsource-variable/newsreader` in `admin-panel/package.json` - self-hosted admin typography.
 
-**Document Processing:**
-- pdf-lib ^1.17.1 + @pdf-lib/fontkit ^1.1.1 - PDF generation (certificates, receipts)
-- @react-pdf/renderer ^4.5.1 - React-based PDF rendering
-- pdfjs-dist ^5.4.624 - PDF viewing/rendering (both apps)
-- @embedpdf/* ^2.14.4 (12 packages) - PDF viewer plugin system (root)
-- docx-preview ^0.4.0 - DOCX preview rendering (root)
-- mammoth ^1.12.0 - DOCX-to-HTML conversion (both apps)
-
-**Admin Panel Specific:**
-- jspdf ^4.2.1 - Client-side PDF generation
-- html2canvas ^1.4.1 - DOM-to-canvas capture for PDF export
-- @fontsource-variable/inter ^5.2.8 + @fontsource-variable/newsreader ^5.3.0 - Self-hosted fonts
-
-**Infrastructure:**
-- server-only ^0.0.1 - Prevents server modules from bundling into client
-- react-easy-crop ^6.2.2 - Image cropping (root)
+**Documents and media:**
+- `pdf-lib`, `@pdf-lib/fontkit`, and `@react-pdf/renderer` - receipts, certificates, and generated PDF output in `src/lib/`.
+- `pdfjs-dist`, `@embedpdf/*`, `docx-preview`, and `mammoth` - PDF/DOCX viewing and conversion in the public and admin applications.
+- `jspdf` and `html2canvas` in `admin-panel/package.json` - client-side admin certificate/PDF export.
+- `sharp` in `package.json` - server-side image processing support.
 
 ## Configuration
 
-**Environment:**
-- `.env.local` (present, gitignored) - Active environment configuration
-- `.env.example` - Documented template with all required variables
-- Key env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TURNSTILE_SECRET_KEY`, `ADMIN_EMAILS`
-- Feature flags: `SITE_INDEXING_ENABLED`, `SUBMISSIONS_ENABLED`, `DEMO_CONTENT_ENABLED`, `NEXT_PUBLIC_ANALYTICS_ENABLED`
+**Application and styling:**
+- `next.config.ts` - CSP, security headers, image hosts, `/admin` rewrites, and production behavior.
+- `admin-panel/vite.config.ts` - admin base path, aliases, plugins, API proxy, and watch exclusions.
+- `tsconfig.json`, `admin-panel/tsconfig.json`, and `admin-panel/tsconfig.app.json` - strict TypeScript project configuration and `@/*` aliases.
+- `eslint.config.mjs`, `components.json`, `admin-panel/components.json`, `tailwind.config.js`, and `postcss.config.js` - linting, component conventions, and styling.
+- `vitest.config.ts` and `playwright.config.ts` - automated test runners.
 
-**Build:**
-- `next.config.ts` - Next.js config with CSP headers, image remote patterns, admin rewrites
-- `admin-panel/vite.config.ts` - Vite config with `/admin/` base path, API proxy to localhost:3000
-- `tailwind.config.js` - Tailwind v3 theme (root, custom forest/clay/parchment palette)
-- `admin-panel/postcss.config.js` - Empty plugins (Tailwind v4 handled by Vite plugin)
-- `tsconfig.json` - Root TS config with `@/*` → `./src/*` path alias
-- `admin-panel/tsconfig.app.json` - Admin TS config with `@/*` → `./src/*` path alias
-- `components.json` - shadcn/ui config (root: RSC enabled, style "radix-nova")
-- `admin-panel/components.json` - shadcn/ui config (admin: RSC disabled)
-- `eslint.config.mjs` - ESLint flat config with next/core-web-vitals + typescript
-- `vercel.json` - Vercel cron job + admin cache headers
-
-**Component System:**
-- shadcn/ui (radix-nova style) - Both apps use `@/components/ui/` for primitives
-- Aceternity UI registry configured (root only, `components.json`)
+**Environment and launch controls:**
+- `.env.local` and `.env.example` are present; their values are not part of this map.
+- Runtime feature flags are read by `src/lib/launch.ts` and `next.config.ts`, including `SITE_INDEXING_ENABLED`, `SUBMISSIONS_ENABLED`, `DEMO_CONTENT_ENABLED`, `AI_TRAINING_ALLOWED`, and `NEXT_PUBLIC_ANALYTICS_ENABLED`.
+- `scripts/check-launch-readiness.mjs` validates production launch approvals, public identity, security configuration, submissions, and indexing settings.
 
 ## Platform Requirements
 
 **Development:**
-- Node.js (ES2022+ required by tsconfig target)
-- npm (workspaces not used; root postinstall chains admin-panel install)
-- Supabase project (cloud or local via `supabase/config.toml`)
-- Both apps run concurrently: `next dev` on :3000, `vite` on :5173
-- `launch.ps1` / `launch.bat` - Automated dev environment launcher
+- Node.js/npm, a configured Supabase project or local Supabase stack from `supabase/config.toml`, and ports 3000/5173 for Next.js and Vite.
+- `launch.ps1` and `launch.bat` provide the local startup path; `README.md` and `docs/DEPLOYMENT.md` document deployment assumptions.
 
 **Production:**
-- Vercel (Next.js hosting with admin panel served as static files under `/admin/`)
-- Build pipeline: `npm run build` → builds admin (Vite) → copies to `public/admin/` → builds Next.js
-- Supabase cloud (region: ap-southeast-1, project: talikha-publishing)
-- Vercel Cron: daily journal lifecycle job at `/api/cron/journal-lifecycle`
+- Vercel is configured by `vercel.json` and the linked `.vercel/project.json` project metadata.
+- The production deployment runs the root `build` script so the admin SPA is present before `next build`.
+- Supabase is the backend platform configured by `supabase/config.toml`, `supabase/migrations/`, and the clients under `src/lib/supabase/`.
+- A daily Vercel Cron invokes `/api/cron/journal-lifecycle`, configured in `vercel.json` and implemented in `src/app/api/cron/journal-lifecycle/route.ts`.
 
 ---
 
-*Stack analysis: 2026-07-27*
+*Stack analysis: 2026-07-30*

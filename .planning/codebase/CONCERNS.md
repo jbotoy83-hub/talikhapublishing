@@ -1,157 +1,195 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-07-27
+**Analysis Date:** 2026-07-30
 
 ## Tech Debt
 
-**Monolithic admin panel (7117 lines in one file):**
-- Issue: The entire admin panel UI lives in a single file with all views, types, helpers, and state management inlined.
-- Files: `admin-panel/src/main.tsx`
-- Impact: Extremely difficult to modify, review, or test any single feature. Any change risks regressions across unrelated views. IDE performance degrades. Merge conflicts are constant.
-- Fix approach: Extract each workspace view (Bank, Journals, Studies, Certificates, Inbox, TeamAccounts) into its own component file under `admin-panel/src/components/`. Move shared types to `admin-panel/src/types.ts`. Move journal-catalog state logic into a dedicated hook or store module.
+**Monolithic admin workspace:**
+- Issue: The primary admin SPA still combines navigation, data loading, state, seed data, and most workspace views in one 6,963-line module.
+- Files: `admin-panel/src/main.tsx`, `admin-panel/src/components/certificates/certificate-workspace.tsx`
+- Impact: Changes are difficult to isolate and test; unrelated admin surfaces can regress together, and the main bundle remains expensive to load.
+- Fix approach: Extract each workspace into focused modules and hooks, move shared types/state out of `main.tsx`, and load certificate/editorial tools on demand.
 
-**Duplicate icon component libraries:**
-- Issue: Animated icon components are duplicated between the Next.js site and the Vite admin panel with identical implementations.
-- Files: `src/components/icons/` (~40 files), `admin-panel/src/components/icons/` (~40 files)
-- Impact: Bug fixes or new icons must be applied twice. Drift between the two sets is inevitable.
-- Fix approach: Extract icons into a shared package or use a single source directory referenced by both build configs.
+**Two submission implementations:**
+- Issue: The active `/submit` page renders `LocalSubmissionForm`, while the older `SubmissionForm` remains as a second API-backed form implementation with overlapping upload and completion logic.
+- Files: `src/app/(public)/submit/page.tsx`, `src/components/local-submission-form.tsx`, `src/components/submission-form.tsx`, `src/components/file-upload-system.tsx`
+- Impact: Validation, copy, processing states, and server payloads can drift; dead code also increases maintenance and bundle risk.
+- Fix approach: Confirm the production form, delete or isolate the unused implementation, and keep one shared submission/upload contract.
 
-**Hardcoded demo/seed data in admin panel:**
-- Issue: Sample submissions, publication records, bank transactions, and study records are defined inline in the main component file rather than loaded from the API or a fixture module.
-- Files: `admin-panel/src/main.tsx:229-749`
-- Impact: Dead weight in the production bundle. Confusing for developers. Cannot be tree-shaken.
-- Fix approach: Remove inline seed data. The workspace endpoint (`/api/admin/workspace`) already provides live data; use it exclusively.
+**Dual journal state model:**
+- Issue: The admin catalog keeps client/localStorage state while synchronizing a loosely validated JSONB metadata structure through the journal-store endpoint.
+- Files: `admin-panel/src/main.tsx`, `admin-panel/src/lib/journal-catalog.ts`, `src/app/api/journal-store/route.ts`, `src/data/journal-store.json`
+- Impact: Last-write-wins updates can overwrite edits, arbitrary metadata can accumulate, and local state can disagree with database state.
+- Fix approach: Make the database model authoritative, validate the complete payload with a schema, and add conflict/version handling.
+
+**Duplicated UI primitives and icons:**
+- Issue: Similar icon and UI implementations exist in both applications.
+- Files: `src/components/icons/`, `admin-panel/src/components/icons/`, `components/ui/`, `admin-panel/src/components/ui/`
+- Impact: Fixes and accessibility improvements must be repeated and can diverge.
+- Fix approach: Establish a small shared package or an explicitly shared source layer compatible with both build targets.
+
+**Documentation and map drift:**
+- Issue: Operational docs still describe a nonexistent `src/app/admin/page.tsx`, while the current admin entry is the Vite SPA copied to `public/admin`; project guidance also still says no test framework exists.
+- Files: `docs/DEPLOYMENT.md`, `AGENTS.md`, `.planning/codebase/TESTING.md`, `.planning/codebase/STRUCTURE.md`
+- Impact: Future changes may be made in the wrong surface or skip the tests that now exist.
+- Fix approach: Keep deployment/runbook and codebase-map docs synchronized with `src/app/(public)/submit/page.tsx`, `admin-panel/src/main.tsx`, and the actual test commands.
 
 ## Known Bugs
 
-**None confirmed at time of audit.**
+**Lint command is currently broken:**
+- Symptoms: `npm.cmd run lint` fails before linting because `react-hooks/set-state-in-effect` is configured but the `react-hooks` plugin is unavailable.
+- Files: `eslint.config.mjs`, `package.json`, `package-lock.json`
+- Trigger: Run `npm.cmd run lint` in a clean/current checkout.
+- Workaround: None in the repository; restore the plugin/config pairing or remove the unsupported rule.
+
+**Launch-readiness checks use the wrong Supabase variable names:**
+- Symptoms: `npm.cmd run readiness` reports missing `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`, while runtime code and `.env.example` use `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
+- Files: `scripts/check-launch-readiness.mjs`, `src/lib/supabase/config.ts`, `src/proxy.ts`, `.env.example`
+- Trigger: Run readiness with the documented runtime variables configured.
+- Workaround: The build can pass, but readiness remains blocked until the script and environment contract agree.
 
 ## Security Considerations
 
-**CRITICAL — Dashboard API route has no authentication:**
-- Risk: The `/api/admin/dashboard` endpoint returns submission counts, recent submissions (with author emails), journals, authors, and publication records to ANY unauthenticated request. It calls `getSupabaseAdmin()` (service-role client) directly without checking `getAdminUser()`.
-- Files: `src/app/api/admin/dashboard/route.ts:4-5`
-- Current mitigation: None. The route is publicly accessible.
-- Recommendations: Add `const user = await getAdminUser(); if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });` at the top of the GET handler, matching the pattern in `src/app/api/admin/workspace/route.ts:10-11`.
+**Hardcoded administrator allowlist bypass:**
+- Risk: `jbotoy83@gmail.com` is always included in the administrator set, independent of `ADMIN_EMAILS`; authenticating as that address can auto-promote the profile to admin.
+- Files: `src/lib/auth.ts:28-75`, `.env.example:46`, `docs/DEPLOYMENT.md:64`
+- Current mitigation: The user must still authenticate through Supabase.
+- Recommendations: Remove the hardcoded address and require explicit, audited `ADMIN_EMAILS` or a database role; preserve the existing role on allowlist removal.
 
-**CRITICAL — Hardcoded admin email bypasses env configuration:**
-- Risk: `configuredAdminEmails()` returns a hardcoded set `["jbotoy83@gmail.com"]` instead of reading the `ADMIN_EMAILS` environment variable. The `ADMIN_EMAILS` var is documented in `.env.example:42` but never consumed. Any user authenticating with that email is auto-promoted to admin role regardless of their database profile.
-- Files: `src/lib/auth.ts:28-30`
-- Current mitigation: The email is presumably the project owner's. No runtime configuration is possible without a code change.
-- Recommendations: Replace the hardcoded set with `new Set((process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean))`. Remove the hardcoded value.
+**Viewer can upload workflow files:**
+- Risk: The workflow-file upload route checks only that a user exists, not that the user is an editor or administrator. A viewer session can attach production files to a submission.
+- Files: `src/app/api/admin/workflow-files/route.ts:36-56`, `src/lib/admin-api.ts:7-13`
+- Current mitigation: The route validates file kind, MIME type, size, and same-origin `Origin` when present.
+- Recommendations: Use `requireEditorApi()` or an equivalent role check before accepting the upload.
 
-**HIGH — In-memory rate limiter ineffective in serverless:**
-- Risk: Rate limiting uses a module-level `Map` that resets on every cold start and is not shared across Vercel's distributed serverless instances. An attacker can bypass limits by hitting different instances or waiting for recycling.
-- Files: `src/lib/rate-limit.ts:3`
-- Current mitigation: Provides minimal protection in single-instance dev. No protection in production multi-instance deployment.
-- Recommendations: Replace with Vercel KV / Upstash Redis rate limiting, or use Supabase row-level counters with TTL. At minimum, document that production rate limiting is not enforced.
+**Reference-only public tracking exposes private artifacts:**
+- Risk: `/api/track` accepts a submission reference, tracking number, or receipt number and returns author-visible events, signed manuscript/supporting-file URLs valid for one hour, and certificate download URLs. The submission reference contains only an eight-hex-character random suffix, and rate limiting is optional.
+- Files: `src/app/api/track/route.ts:21-122`, `src/app/api/track/requests/respond/route.ts:57-97`, `src/lib/rate-limit.ts:21-28`, `src/app/api/submissions/init/route.ts:46-84`
+- Current mitigation: Zod input validation, private/no-store responses, signed storage URLs, and an Upstash-backed limiter when configured.
+- Recommendations: Require a second factor such as author email/OTP, make shared rate limiting mandatory for production, and avoid returning file links from a reference-only lookup.
 
-**HIGH — CRON_SECRET not documented in .env.example:**
-- Risk: The cron endpoint (`/api/cron/journal-lifecycle`) checks `CRON_SECRET` but this variable is absent from `.env.example`. Deployers may not set it, leaving the cron open (the route returns `true` for auth when no secret is configured and `NODE_ENV !== "production"`).
-- Files: `src/app/api/cron/journal-lifecycle/route.ts:6-8`, `.env.example` (missing entry)
-- Current mitigation: In production, if `CRON_SECRET` is empty, the `authorized()` function returns `false` (safe). But the variable is undocumented.
-- Recommendations: Add `CRON_SECRET=` to `.env.example` under the server-only section with a comment explaining Vercel cron sends an `Authorization: Bearer <secret>` header.
+**Rate limiting fails open without Redis:**
+- Risk: When `UPSTASH_REDIS_REST_URL` or `UPSTASH_REDIS_REST_TOKEN` is absent, `allowRequest()` returns `true`; submission creation, completion, tracking, and author-response endpoints then have no effective distributed limit.
+- Files: `src/lib/rate-limit.ts:3-28`, `src/app/api/submissions/init/route.ts:21-24`, `src/app/api/submissions/complete/route.ts:27-30`, `src/app/api/track/route.ts:21-24`
+- Current mitigation: Upstash sliding-window limiting is implemented when both variables exist.
+- Recommendations: Fail closed for public abuse-sensitive routes or provide a platform-backed limiter, and make the dependency a deployment readiness requirement.
 
-**MEDIUM — LOCAL_ADMIN_BYPASS auto-enables when Supabase is unconfigured:**
-- Risk: In non-production environments, if `SUPABASE_SERVICE_ROLE_KEY` is missing, `isLocalAdminBypassEnabled()` returns `true` automatically, granting full admin access without credentials. If a staging/preview deployment accidentally lacks the key, it becomes fully open.
-- Files: `src/lib/auth.ts:21-26`
-- Current mitigation: Guarded by `NODE_ENV !== "production"` check on line 22.
-- Recommendations: Require explicit `LOCAL_ADMIN_BYPASS=true` rather than auto-enabling. Log a warning when bypass is active.
+**Implicit local admin bypass:**
+- Risk: Any non-production process without a Supabase service-role key receives a synthetic admin from `getAdminUser()`. A shared staging environment with incomplete configuration could expose admin API routes.
+- Files: `src/lib/auth.ts:16-43`, `src/app/api/admin/*.ts`
+- Current mitigation: Disabled when `NODE_ENV` is `production`.
+- Recommendations: Require explicit `LOCAL_ADMIN_BYPASS=true`, restrict it to loopback development, and fail closed in preview/staging.
 
-**MEDIUM — Journal-store route has its own dev bypass:**
-- Risk: `requireEditor()` in the journal-store route independently grants admin access in non-production when `getAdminUser()` returns null, duplicating and diverging from the central auth logic.
-- Files: `src/app/api/journal-store/route.ts:69-76`
-- Current mitigation: Non-production only.
-- Recommendations: Remove the local bypass. Use the central `getAdminUser()` / `requireEditorApi()` pattern consistently.
-
-**MEDIUM — No rate limiting on admin API routes:**
-- Risk: All `/api/admin/*` routes lack rate limiting. A compromised or leaked admin session could brute-force transitions, file uploads, or account creation without throttling.
-- Files: All files under `src/app/api/admin/`
-- Current mitigation: Supabase auth session required (except dashboard — see above).
-- Recommendations: Add per-user rate limiting on mutation endpoints (POST/PATCH/DELETE), especially `accounts`, `workflow-files`, and `transition`.
-
-**LOW — innerHTML usage in submission form:**
-- Risk: `details.innerHTML = ...` injects a static HTML string. Currently safe (no user input interpolated), but fragile if future edits introduce dynamic values.
-- Files: `src/components/submission-form.tsx:51`
-- Current mitigation: Static string only, no interpolation.
-- Recommendations: Replace with React JSX to eliminate the pattern entirely.
+**Cron secret is an undocumented operational dependency:**
+- Risk: `/api/cron/journal-lifecycle` requires `CRON_SECRET` in production but `.env.example` does not document it. A production deployment without the secret will silently return 401 to the configured Vercel cron and stop lifecycle publication work.
+- Files: `src/app/api/cron/journal-lifecycle/route.ts:5-17`, `vercel.json`, `.env.example`
+- Current mitigation: Missing secrets fail closed in production.
+- Recommendations: Document and validate `CRON_SECRET`, then monitor cron failures and lifecycle freshness.
 
 ## Performance Bottlenecks
 
-**Workspace endpoint loads entire database without pagination:**
-- Problem: `/api/admin/workspace` fetches ALL submissions, publication records, journals, issues, authors, certificate templates, certificate records, and media assets in a single request with no `.limit()` or cursor.
-- Files: `src/app/api/admin/workspace/route.ts:16-25`
-- Cause: Designed for the current small dataset. No pagination or lazy-loading strategy.
-- Improvement path: Add `.limit()` with cursor-based pagination. Split into per-view endpoints that load on demand. The admin panel already has separate views; each should fetch only its own data.
+**Unbounded admin workspace read model:**
+- Problem: The initial workspace request loads all submissions, publication records, journals, issues, authors, certificate records, and media assets in parallel.
+- Files: `src/app/api/admin/workspace/route.ts:16-25`, `admin-panel/src/main.tsx`
+- Cause: All admin views share one read model and most queries have no limit or cursor.
+- Improvement path: Split by workspace, paginate large collections, select only view-specific fields, and lazy-load certificates/media.
 
-**Submission completion downloads files for signature validation:**
-- Problem: The `/api/submissions/complete` route downloads each uploaded file's full bytes to verify magic-number signatures, doubling storage I/O for every submission.
-- Files: `src/app/api/submissions/complete/route.ts:65-66`
-- Cause: Supabase Storage metadata does not expose magic bytes; full download is the only verification path.
-- Improvement path: Accept the trade-off for now (files are ≤15 MB). If volume grows, validate signatures client-side before upload and trust the storage metadata.
+**Large admin client bundle:**
+- Problem: The production build emits an approximately 998 kB minified main JavaScript chunk and a 368 kB CSS chunk; Vite warns about chunks over 500 kB.
+- Files: `admin-panel/src/main.tsx`, `admin-panel/src/components/certificates/certificate-workspace.tsx`, `admin-panel/vite.config.ts`
+- Cause: The SPA eagerly includes certificate editing, PDF generation, document parsing, and multiple workspaces.
+- Improvement path: Use route/view-level dynamic imports and keep PDF/editor tooling out of the initial dashboard chunk.
+
+**Full-file signature validation during completion:**
+- Problem: Submission completion downloads every uploaded file and reads the entire blob into memory to check magic bytes.
+- Files: `src/app/api/submissions/complete/route.ts:44-70`
+- Cause: Validation is performed after storage upload and supports files up to the configured limits.
+- Improvement path: Enforce a bounded file count, stream or inspect only required header bytes where possible, and move expensive validation to an asynchronous verification path for larger submissions.
+
+**Unbounded base64 image handling in journal sync:**
+- Problem: Journal-store accepts data URLs, decodes the complete base64 payload, and uploads it without a request or decoded-image size limit.
+- Files: `src/app/api/journal-store/route.ts:87-105`, `src/app/api/journal-store/route.ts:212-246`
+- Cause: The endpoint is designed to persist edited covers from the admin UI.
+- Improvement path: Enforce request/image dimensions and byte limits before decoding, then use direct signed uploads for larger assets.
 
 ## Fragile Areas
 
-**Journal-store sync (bidirectional local + database):**
-- Files: `src/app/api/journal-store/route.ts`, `admin-panel/src/main.tsx:869-896`
-- Why fragile: The admin panel maintains a localStorage mirror of the journal catalog AND syncs to the database via POST. Conflict resolution is last-write-wins. The `editorial_metadata` JSONB column stores a growing blob of UI state (status, changelog, dates, flags) with no schema validation.
-- Safe modification: Always test the full round-trip: load from DB → edit in admin → save → reload. Never rename metadata keys without a migration.
-- Test coverage: None. No automated tests exist for this flow.
-
 **Editorial workflow state machine:**
-- Files: `src/lib/editorial-workflow-server.ts` (488 lines)
-- Why fragile: Stage transitions are validated in application code, not enforced by database constraints. A direct service-role update could put a submission into an invalid stage.
-- Safe modification: Read the full transition map before adding stages. Add a database CHECK constraint on `current_stage` as a safety net.
-- Test coverage: None.
+- Files: `src/lib/editorial-workflow.ts`, `src/lib/editorial-workflow-server.ts`, `src/app/api/admin/submissions/[id]/transition/route.ts`, `supabase/migrations/20260718114052_unified_editorial_workflow.sql`
+- Why fragile: Stage transitions, payment gates, author-facing labels, events, and database functions span application code and migrations; only pure helper behavior is unit-tested.
+- Safe modification: Update the transition map, server route, SQL constraints/functions, and author-status projections together; add transition integration tests before changing gates.
+- Test coverage: No API, database, RLS, payment, or end-to-end workflow coverage.
+
+**Multi-step submission and browser staging:**
+- Files: `src/components/local-submission-form.tsx`, `src/components/file-upload-system.tsx`, `src/lib/file-storage.ts`, `src/app/api/submissions/init/route.ts`, `src/app/api/submissions/complete/route.ts`
+- Why fragile: IndexedDB staging, signed uploads, retries, payment metadata, and final status changes are coordinated across browser and server requests. Partial failures can leave `uploading`/`upload_failed` records or orphaned objects.
+- Safe modification: Test refresh, retry, duplicate completion, partial upload, and cleanup paths against a real storage project; add idempotency and reconciliation for abandoned uploads.
+- Test coverage: No automated submission-flow tests.
+
+**Certificate generation pipeline:**
+- Files: `admin-panel/src/components/certificates/certificate-workspace.tsx`, `src/app/api/admin/certificates/records/[recordId]/issue/route.ts`, `src/lib/render-certificate.ts`, `src/lib/certificate-import.ts`
+- Why fragile: Editing, PDF rendering, storage writes, certificate numbering, previews, publication attachment, and workflow events are coordinated in large client/server modules.
+- Safe modification: Treat issuance as an idempotent transaction, verify storage/database cleanup on each failure, and test real PDF output after template changes.
+- Test coverage: Playwright covers a local certificate editor interaction, not issuance, storage, numbering, or delivery.
 
 ## Scaling Limits
 
-**Single-file admin panel:**
-- Current capacity: Works for 1–2 developers making infrequent changes.
-- Limit: Any team growth or feature acceleration will produce constant merge conflicts and review bottlenecks.
-- Scaling path: Decompose into per-view modules before adding new workspace views.
+**Admin read model and client memory:**
+- Current capacity: Suitable for a small catalogue and a single initial workspace load.
+- Limit: Dataset growth increases response size, query time, browser memory, and render cost because the workspace is not paginated.
+- Scaling path: Introduce per-view endpoints, cursors, server-side filtering, and virtualized lists.
 
-**In-memory rate limiter:**
-- Current capacity: Effective only in single-process dev.
-- Limit: Zero protection in Vercel's multi-instance serverless environment.
-- Scaling path: Move to a shared store (Upstash, Vercel KV) before enabling public submissions in production.
+**Serverless public abuse controls:**
+- Current capacity: Distributed only when Upstash is configured.
+- Limit: With no Redis credentials, the public submission/tracking limits are effectively zero.
+- Scaling path: Make shared rate limiting mandatory and add abuse metrics/alerts.
 
 ## Dependencies at Risk
 
-**`latest` version pins in admin-panel:**
-- Risk: `admin-panel/package.json` pins `@vitejs/plugin-react`, `lucide-react`, `typescript`, and `vite` to `"latest"`. Every fresh install may pull breaking changes.
-- Impact: Non-reproducible builds. A bad upstream publish breaks the next `npm install`.
-- Migration plan: Pin to specific semver ranges (e.g., `"^6.0.0"`) and use the lockfile.
+**Install and version skew across two package manifests:**
+- Risk: Both manifests use caret ranges, the root `postinstall` runs a nested `npm install`, and the root admin build invokes `npx --yes vite build`; root TypeScript and admin TypeScript are on different major versions.
+- Files: `package.json`, `admin-panel/package.json`, `package-lock.json`, `admin-panel/package-lock.json`
+- Impact: Fresh Vercel installs can resolve different dependency graphs or expose type/build differences between the two apps.
+- Migration plan: Use lockfile-only CI installs, pin the admin build to the local package script, align compatible toolchain versions, and verify both lockfiles in CI.
 
-**Dual PDF libraries:**
-- Risk: Both `pdfjs-dist` and `@react-pdf/renderer` + `pdf-lib` + `@embedpdf/*` (13 packages) are installed. Overlapping functionality increases bundle size and maintenance surface.
-- Impact: ~2 MB+ of PDF-related JavaScript shipped to clients.
-- Migration plan: Audit which viewer/renderer is actually used per route. Remove unused libraries.
+**PDF/document dependency surface:**
+- Risk: PDF viewing, generation, DOCX parsing, canvas capture, and embedded PDF tooling are spread across multiple large packages.
+- Files: `package.json`, `admin-panel/package.json`, `src/components/ui/pdf-viewer.tsx`, `admin-panel/src/components/certificates/certificate-workspace.tsx`
+- Impact: Large bundles, browser memory pressure, and upgrade compatibility issues.
+- Migration plan: Audit actual consumers, lazy-load each tool, and remove overlapping libraries only after output parity is verified.
 
 ## Missing Critical Features
 
-**No automated test suite:**
-- Problem: Zero test files exist in either the Next.js app or the admin panel. No test runner is configured (no vitest, jest, or playwright config in `package.json`).
-- Blocks: Confident refactoring, dependency upgrades, and regression detection. Every change is manual-verify-only.
+**Transactional email and delivery history:**
+- Problem: Submission confirmation and editorial notifications are not connected to an email provider; the user must retain the reference manually.
+- Files: `src/components/local-submission-form.tsx`, `src/components/submission-form.tsx`, `admin-panel/src/main.tsx`, `docs/production-readiness.md`
+- Blocks: Reliable author receipt delivery, revision notifications, and operational delivery tracking.
 
-**No email/notification service:**
-- Problem: The submission form displays "Email receipts will be available once an email service is connected." Authors receive no confirmation email.
-- Blocks: Production submission workflow. Authors must screenshot their reference number.
+**Production monitoring and CI:**
+- Problem: No GitHub Actions workflow or external error-tracking service is present; operational logs are console-based.
+- Files: `.github/` (not detected), `src/lib/rate-limit.ts`, `docs/DEPLOYMENT.md`
+- Blocks: Automatic lint/build/test/migration gates and fast detection of failed cron, submission, or admin operations.
 
 ## Test Coverage Gaps
 
-**All application code is untested:**
-- What's not tested: Every API route, every React component, every library module, every database migration.
-- Files: Entire `src/` and `admin-panel/src/` trees.
-- Risk: Regressions in auth, submission flow, payment confirmation, or file handling will reach production undetected.
-- Priority: High — start with API route integration tests for `/api/submissions/*` and `/api/admin/*` auth checks.
+**API and authorization paths:**
+- What's not tested: Admin role boundaries, viewer restrictions, public tracking confidentiality, cron authentication, signed file access, submission init/complete, payment confirmation, and certificate issuance.
+- Files: `src/app/api/`, `src/lib/auth.ts`, `src/lib/admin-api.ts`, `src/proxy.ts`
+- Risk: Security and workflow regressions can reach production while the current unit suite still passes.
+- Priority: High — add route-level tests with mocked auth/storage and representative unauthorized/role cases.
 
-**RLS policies untested:**
-- What's not tested: The 30+ row-level-security policies across 12 migrations have no automated verification.
-- Files: `supabase/migrations/20260714010000_harden_security_and_indexes.sql`, `supabase/migrations/20260718114053_unified_editorial_workflow_security.sql`
-- Risk: A future migration could accidentally open a table to anon or authenticated users without detection.
-- Priority: High — add pgTAP or supabase-js test assertions that anon cannot read submissions and editors cannot escalate to admin.
+**Database and RLS behavior:**
+- What's not tested: The 36 migration chain, storage policies, workflow triggers/functions, payment gates, and author/editor/admin access separation.
+- Files: `supabase/migrations/`, `supabase/seed.sql`, `src/types/database.generated.ts`
+- Risk: Application code relies heavily on service-role access, so policy or migration drift may not be caught by TypeScript or UI tests.
+- Priority: High — add disposable-database migration checks and pgTAP or Supabase integration assertions.
+
+**Current verification baseline:**
+- What's tested: `npm.cmd test` passes 25 Vitest tests in one workflow-helper file; two Playwright specs exist, but the certificate spec assumes a separately running Vite server and the example spec targets `playwright.dev`.
+- Files: `src/__tests__/workflow-transitions.test.ts`, `tests/certificate-convert-to-field.spec.ts`, `tests/example.spec.ts`, `playwright.config.ts`, `vitest.config.ts`
+- Risk: The suite does not represent the production public/admin flows.
+- Priority: Medium — replace the external example with an application smoke test and configure a reproducible app web server.
 
 ---
 
-*Concerns audit: 2026-07-27*
+*Concerns audit: 2026-07-30*

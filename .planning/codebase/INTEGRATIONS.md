@@ -1,162 +1,133 @@
 # External Integrations
 
-**Analysis Date:** 2026-07-27
+**Analysis Date:** 2026-07-30
 
 ## APIs & External Services
 
-**Backend-as-a-Service:**
-- Supabase (project: `talikha-publishing`, region: ap-southeast-1)
-  - SDK/Client: `@supabase/supabase-js` ^2.110.3 + `@supabase/ssr` ^0.12.1
-  - Auth: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-  - Config: `src/lib/supabase/config.ts` (env reader), `supabase/config.toml` (local dev)
-  - Provides: PostgreSQL database, authentication, file storage
+**Supabase:**
+- Supabase provides PostgreSQL, Auth, and Storage for the public submission flow, editorial workspace, publication catalogue, journals, certificates, receipts, and audit/workflow data.
+- SDKs: `@supabase/supabase-js` and `@supabase/ssr` in `package.json`.
+- Configuration and clients: `src/lib/supabase/config.ts`, `src/lib/supabase/server.ts`, `src/lib/supabase/public.ts`, `src/lib/supabase/browser.ts`, and `src/lib/supabase/admin.ts`.
+- Public/browser access uses `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; privileged server work uses `SUPABASE_SERVICE_ROLE_KEY` and is kept in server-only modules.
+- Database types are generated into `src/types/database.generated.ts` by `npm run db:types`.
 
-**Bot Protection:**
-- Cloudflare Turnstile
-  - SDK/Client: Direct `fetch()` to `https://challenges.cloudflare.com/turnstile/v0/siteverify`
-  - Auth: `TURNSTILE_SECRET_KEY` (server), `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (client widget)
-  - Implementation: `src/lib/turnstile.ts`
-  - Purpose: Protects public submission forms from automated abuse
+**Cloudflare Turnstile:**
+- `src/lib/turnstile.ts` verifies tokens with `https://challenges.cloudflare.com/turnstile/v0/siteverify`.
+- Server configuration uses `TURNSTILE_SECRET_KEY`; the readiness script also expects `NEXT_PUBLIC_TURNSTILE_SITE_KEY` for the client widget.
+- The token check is optional in `src/app/api/submissions/init/route.ts` when the server secret is absent; the active `/submit` page renders `src/components/local-submission-form.tsx`, while `src/components/submission-form.tsx` contains the alternate widget-based form.
+
+**Upstash Redis:**
+- `src/lib/rate-limit.ts` uses `@upstash/redis` and `@upstash/ratelimit` when `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are configured.
+- Submission initialization/completion call the limiter; without both variables the limiter fails open and requests proceed.
 
 ## Data Storage
 
-**Databases:**
-- Supabase PostgreSQL 17
-  - Connection: `NEXT_PUBLIC_SUPABASE_URL` (REST/PostgREST via SDK)
-  - Client: Four tiered clients in `src/lib/supabase/`:
-    - `server.ts` - Cookie-aware server client for authenticated requests (Server Components, API routes)
-    - `admin.ts` - Service-role client bypassing RLS (server-only, `getSupabaseAdmin()`)
-    - `public.ts` - Anon-key client without session persistence (server-only, public reads)
-    - `browser.ts` - Browser client for client components (`"use client"`)
-  - Types: `src/types/database.generated.ts` (generated via `npm run db:types`)
-  - Migrations: `supabase/migrations/` (34 migration files, schema managed via SQL)
-  - Seed: `supabase/seed.sql`
+**Database:**
+- Supabase PostgreSQL is configured for major version 17 in `supabase/config.toml`.
+- Schema changes are ordered in the 36 files under `supabase/migrations/`, covering journals/issues/publications, authors, submissions/files/history, editorial workflow, payments/receipts, certificates, media, metrics, announcements, and team accounts.
+- `supabase/seed.sql` is the local seed entry point; production content is expected to be managed through the authenticated editorial workspace.
 
-**File Storage:**
-- Supabase Storage (6 buckets):
-  - `submission-files` - Author manuscript uploads and supporting documents
-  - `submission-proofs` - Author proof files (editorial workflow)
-  - `editorial-media` - Public images, site assets (public URLs via `getPublicUrl`)
-  - `certificate-assets` - Certificate template backgrounds, fonts, rendered PDFs
-  - `certificates` - Issued certificate PDFs and previews
-  - `receipts` - Generated payment receipt PDFs
-  - File size limit: 15 MiB (configured in `supabase/config.toml`)
-  - Access patterns: signed upload URLs for public submissions, service-role for admin operations
-  - Key files: `src/app/api/submissions/init/route.ts` (signed URL creation), `src/app/api/admin/files/[id]/route.ts` (authenticated download)
+**Storage buckets:**
+- `submission-files` - private manuscript, author-photo, and payment-proof uploads created through signed upload URLs in `src/app/api/submissions/init/route.ts`.
+- `submission-proofs` - private editorial proof files defined by `supabase/migrations/20260718114053_unified_editorial_workflow_security.sql`.
+- `receipts` - private generated receipt PDFs written by `src/lib/editorial-workflow-server.ts`.
+- `certificates` - private certificate outputs defined by the unified workflow migration.
+- `certificate-assets` - private certificate backgrounds, fonts, and template assets managed by `src/lib/certificate-import.ts`, `src/lib/render-certificate.ts`, and `src/app/api/admin/certificates/`.
+- `editorial-media` - public editorial images and journal covers written by `src/app/api/journal-store/route.ts` and exposed through Supabase public URLs.
+- Bucket creation and policies are defined in `supabase/migrations/20260714000000_initial_production_schema.sql`, `20260715135118_editorial_admin_foundation.sql`, `20260718114053_unified_editorial_workflow_security.sql`, and `20260721180759_certificate_editor.sql`.
+- The local Storage default file limit is 15 MiB in `supabase/config.toml`; individual bucket limits are set by the migration SQL.
 
-**Client-Side Storage:**
-- IndexedDB (`talikha-file-storage` database) - Temporary file staging in browser before upload
-  - Implementation: `src/lib/file-storage.ts`
-  - Stores: blob data + file metadata in two object stores
+**Browser-local storage:**
+- IndexedDB stages files before protected upload in `src/lib/file-storage.ts`.
+- The fallback/local submission path uses browser storage under `src/components/local-submission-form.tsx`; production submission requests use the `/api/submissions/init` and `/api/submissions/complete` routes.
 
 **Caching:**
-- None (no Redis/Memcached; in-memory rate limiting only)
+- No Redis/Memcached application cache is used; Upstash is only the optional rate-limit backend.
+- Admin responses and `/admin` are marked private/no-store by `src/proxy.ts`, `next.config.ts`, and `vercel.json`.
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Supabase Auth (email/password)
-  - Implementation: `src/lib/auth.ts` (server-side session resolution)
-  - Login UI: `src/components/admin-login-form.tsx` (client-side `signInWithPassword`)
-  - Middleware: `src/proxy.ts` (session refresh + `/admin` route protection)
-  - Signup: Disabled (`enable_signup = false` in `supabase/config.toml`)
-  - Team accounts: Provisioned via admin API (`src/app/api/admin/accounts/route.ts`, `src/lib/team-accounts.ts`)
-  - Username scheme: `{username}@team.talikha.internal` (synthetic emails for non-email usernames)
+**Auth provider:**
+- Supabase Auth email/password is used by `src/components/admin-login-form.tsx` through the browser client.
+- `src/proxy.ts` refreshes the Supabase session cookie and protects `/admin` except `/admin/login` and `/admin/welcome`.
+- `src/app/auth/callback/route.ts` exchanges the Auth code for a session and redirects to the requested internal admin path.
+- Signup is disabled in `supabase/config.toml`; `src/app/api/admin/accounts/route.ts` provisions team accounts through the service-role client.
 
 **Authorization:**
-- Role-based: `admin`, `editor`, `viewer` (stored in `profiles` table)
-- View-level access: `access_views` array on profiles controls admin panel sections
-- Hardcoded owner email: `jbotoy83@gmail.com` auto-promoted to admin (`src/lib/auth.ts:29`)
-- Local dev bypass: `LOCAL_ADMIN_BYPASS=true` or absent Supabase config → synthetic admin user
-- Admin email allowlist: `ADMIN_EMAILS` env var (comma-separated)
+- `src/lib/auth.ts` resolves `admin`, `editor`, and `viewer` roles from `profiles`, with `ADMIN_EMAILS` as an allowlist that promotes configured users to admin.
+- `src/lib/admin-api.ts` provides the API-level editor gate; individual admin routes under `src/app/api/admin/` call it or `getAdminUser()`.
+- Supabase RLS and Storage policies in `supabase/migrations/` provide the database-side authorization boundary.
+- The development-only local bypass is disabled whenever `NODE_ENV` is production in `src/lib/auth.ts`.
 
 ## Monitoring & Observability
 
-**Error Tracking:**
-- None (no Sentry, LogRocket, or similar)
+**Error tracking:**
+- No Sentry, hosted error tracker, or external APM integration is configured.
 
-**Logs:**
-- Console-based (no structured logging framework)
-- Dev server logs: `dev-server.log`, `dev-server-error.log` (gitignored)
-- Admin activity tracking: `src/app/api/admin/activity/route.ts` (writes to Supabase)
+**Logs and activity:**
+- Server and client diagnostics use console output; local launcher logs are `dev-server.log` and `dev-server-error.log`.
+- Admin activity is recorded through `src/app/api/admin/activity/route.ts` and Supabase audit/workflow tables.
+- `src/app/api/admin/audit/route.ts` exposes editorial audit information to authorized users.
 
 **Analytics:**
-- Not implemented (consent UI exists but provider is disabled)
-- Gate: `NEXT_PUBLIC_ANALYTICS_ENABLED=false` enforced by `src/lib/launch.ts`
-- Consent components: `src/components/privacy-banner.tsx`, `src/components/privacy-preferences.tsx`
-- Publication metrics (views/downloads) tracked in-database, not via external analytics
+- No external analytics provider is implemented. `NEXT_PUBLIC_ANALYTICS_ENABLED` is guarded by `src/lib/launch.ts`, and publication views/downloads are stored in Supabase through `src/app/api/publications/[slug]/view/route.ts`.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- Vercel (Next.js platform)
-  - Config: `vercel.json` (cron schedule, admin headers)
-  - `.vercel/` directory present (project linked)
-  - Admin panel: built as static SPA, copied to `public/admin/`, served by Next.js
+- Vercel hosts the Next.js application and the copied admin SPA; project linkage is recorded in `.vercel/project.json` and deployment guidance is in `docs/DEPLOYMENT.md`.
+- `vercel.json` adds the daily `/api/cron/journal-lifecycle` schedule and admin cache/indexing headers.
+- `next.config.ts` supplies global CSP, HSTS, frame, content-type, robots, and admin no-store headers.
 
-**CI Pipeline:**
-- None detected (no GitHub Actions, no `.github/workflows/`)
-- Local checks: `npm run check` (typecheck + lint + build)
-- Launch readiness: `npm run readiness` → `scripts/check-launch-readiness.mjs`
+**Build/deployment pipeline:**
+- `package.json` builds Vite admin assets, copies them to `public/admin/`, then runs Next.js production build.
+- `scripts/check-launch-readiness.mjs` is the explicit pre-launch configuration gate.
+- No GitHub Actions workflow is present under `.github/workflows/`; deployment is Vercel-driven and the repository remote is documented by Git configuration rather than an in-repo CI file.
 
-**Scheduled Jobs:**
-- Vercel Cron: `0 0 * * *` → `/api/cron/journal-lifecycle` (daily journal state transitions)
-  - Implementation: `src/app/api/cron/journal-lifecycle/route.ts`
-  - Logic: `src/lib/journal-lifecycle.ts`
+**Scheduled job:**
+- Vercel Cron calls `GET /api/cron/journal-lifecycle` daily.
+- `src/app/api/cron/journal-lifecycle/route.ts` accepts `Authorization: Bearer <CRON_SECRET>` in production and runs `synchronizeJournalLifecycles` plus `publishDuePublications`.
 
 ## Environment Configuration
 
-**Required env vars (production):**
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public API key
-- `SUPABASE_SERVICE_ROLE_KEY` - Server-only admin key (never expose to client)
-- `SUPABASE_PROJECT_REF` - Project identifier
-- `TURNSTILE_SECRET_KEY` - Cloudflare Turnstile server verification
-- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` - Turnstile client widget key
-- `ADMIN_EMAILS` - Comma-separated admin allowlist
-- `JOURNAL_STORE_TOKEN` - Auth token for journal store writes
+**Runtime variables read by application code:**
+- Supabase/Auth: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_EMAILS`, and `LOCAL_ADMIN_BYPASS` for local development only.
+- Site/launch: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_NAME`, `NEXT_PUBLIC_SITE_SHORT_NAME`, `NEXT_PUBLIC_SITE_TAGLINE`, `NEXT_PUBLIC_SITE_DESCRIPTION`, `NEXT_PUBLIC_SITE_LOCALE`, `NEXT_PUBLIC_SITE_LOCATION`, `NEXT_PUBLIC_SITE_AREA_SERVED`, `NEXT_PUBLIC_SITE_FOUNDING_YEAR`, `NEXT_PUBLIC_SITE_OG_IMAGE`, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_FACEBOOK_URL`, `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`, `SITE_INDEXING_ENABLED`, `DEMO_CONTENT_ENABLED`, `SUBMISSIONS_ENABLED`, `AI_TRAINING_ALLOWED`, and `NEXT_PUBLIC_ANALYTICS_ENABLED`.
+- Security/operations: `TURNSTILE_SECRET_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `CRON_SECRET`, `REMOTE_IMAGE_HOSTS`, `GOOGLE_SITE_VERIFICATION`, and `BING_SITE_VERIFICATION`.
 
-**Feature flags:**
-- `SITE_INDEXING_ENABLED` - Controls robots/X-Robots-Tag headers
-- `SUBMISSIONS_ENABLED` - Gates public submission forms
-- `DEMO_CONTENT_ENABLED` - Shows/hides demo content
-- `NEXT_PUBLIC_ANALYTICS_ENABLED` - Must remain false until provider chosen
-- `CONTENT_APPROVED`, `LEGAL_APPROVED`, `OWNER_LAUNCH_APPROVED` - Manual launch gates
-- `DATABASE_SECURITY_APPROVED` - DB security review gate
-
-**Public site identity (NEXT_PUBLIC_):**
-- `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_NAME`, `NEXT_PUBLIC_SITE_TAGLINE`
-- `NEXT_PUBLIC_CONTACT_EMAIL` - editor@talikhapublishing.com
-- `REMOTE_IMAGE_HOSTS` - Comma-separated allowlist for external image hosts
+**Readiness-script alignment:**
+- `scripts/check-launch-readiness.mjs` currently requires `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`, while the running clients in `src/lib/supabase/config.ts` and `src/lib/supabase/admin.ts` use `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
+- The same script checks approval flags `BACKEND_ISOLATION_CONFIRMED`, `DATABASE_SECURITY_APPROVED`, `CONTENT_APPROVED`, `LEGAL_APPROVED`, and `OWNER_LAUNCH_APPROVED`; those are deployment gates rather than application integrations.
 
 **Secrets location:**
-- `.env.local` (gitignored, present in workspace)
-- `.env.example` documents all variables without values
+- Local values are supplied through ignored `.env.local`; deployment values are configured in the Vercel project and Supabase dashboard as described in `docs/DEPLOYMENT.md`.
+- Secret values are intentionally excluded from this map.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- `/auth/callback` - Supabase Auth redirect target (configured in `supabase/config.toml`)
-- `/api/cron/journal-lifecycle` - Vercel Cron trigger (daily)
+- `/auth/callback` receives Supabase Auth redirects in `src/app/auth/callback/route.ts`.
+- `/api/cron/journal-lifecycle` receives the Vercel Cron request and bearer secret in `src/app/api/cron/journal-lifecycle/route.ts`.
+- `/api/submissions/init` and `/api/submissions/complete` receive browser submission requests and validate them with `src/lib/submission.ts` and the Supabase service-role client.
 
 **Outgoing:**
-- None (no outbound webhooks configured)
+- The application calls Supabase REST/Auth/Storage through the SDK, Cloudflare Turnstile through `src/lib/turnstile.ts`, and Upstash Redis through `src/lib/rate-limit.ts`.
+- No outgoing webhook receiver, email provider, payment gateway, or transactional mail service is configured.
 
 ## Payment Processing
 
-**Status:** Manual (no payment gateway integrated)
-- Payment proof: Authors upload image/PDF proof via submission form
-- Confirmation: Admin manually confirms via `/api/admin/submissions/[id]/payment/confirm`
-- Receipts: Generated server-side as PDF, stored in `receipts` bucket
-- Implementation: `src/lib/editorial-workflow-server.ts` (receipt generation), `src/app/api/admin/submissions/[id]/payment/confirm/route.ts`
+**Status:** Manual payment confirmation; no gateway SDK is installed in `package.json`.
+- Public submitters select GCash, Maya, or bank transfer in `src/components/local-submission-form.tsx` and submit a payment reference plus proof file.
+- `/api/submissions/init` creates a pending `payments` row; an administrator confirms it through `/api/admin/submissions/[id]/payment/confirm` and the database RPCs in `supabase/migrations/20260726114250_allow_manual_payment_review_confirmation.sql`.
+- `src/lib/editorial-workflow-server.ts` generates the official PDF receipt and stores it in the private `receipts` bucket.
+- Database guards in `supabase/migrations/20260726113036_payment_gate_and_certificate_delivery.sql` prevent review from starting before payment confirmation.
 
 ## Email
 
-**Status:** Not implemented
-- No email service (Resend, SendGrid, etc.) configured
-- No transactional email for submission confirmations or notifications
-- Contact email is static: `NEXT_PUBLIC_CONTACT_EMAIL`
+**Status:** Not implemented as a server integration.
+- The site displays contact and follow-up addresses through `src/lib/site.ts` and uses `mailto:` links in public sharing/contact surfaces.
+- No Resend, SendGrid, Mailgun, SMTP, or Nodemailer dependency/configuration is present; submission follow-up is currently represented by the tracking record and the admin workflow.
 
 ---
 
-*Integration audit: 2026-07-27*
+*Integration audit: 2026-07-30*

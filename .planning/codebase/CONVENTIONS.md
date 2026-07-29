@@ -1,302 +1,125 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-07-27
+**Analysis Date:** 2026-07-30
 
 ## Naming Patterns
 
 **Files:**
-- kebab-case for all source files: `publication-card.tsx`, `rate-limit.ts`, `journal-lifecycle.ts`
-- Page routes follow Next.js App Router conventions: `page.tsx`, `layout.tsx`, `route.ts`, `not-found.tsx`
-- Route groups use parentheses: `src/app/(public)/`, `src/app/admin/`
-- Dynamic segments use brackets: `src/app/api/admin/certificates/[templateId]/route.ts`
-- Generated types: `database.generated.ts` (suffix `.generated.ts`)
-
-**Components:**
-- PascalCase for React component functions: `PublicationCard`, `HomeFaq`, `FlipWords`
-- File name matches the component in kebab-case: `publication-card.tsx` exports `PublicationCard`
-- shadcn/ui primitives in `src/components/ui/` keep their lowercase file names: `button.tsx`, `dialog.tsx`
+- Use lowercase kebab-case for new application files, for example `src/lib/editorial-workflow.ts` and `src/app/api/submissions/init/route.ts`.
+- Keep Next.js route segment conventions such as `page.tsx`, `layout.tsx`, `route.ts`, and bracketed dynamic folders such as `src/app/api/admin/submissions/[id]/`.
+- Admin feature files follow the same lowercase style, with feature folders such as `admin-panel/src/components/certificates/` and `admin-panel/src/components/inbox/`.
 
 **Functions:**
-- camelCase for all functions: `getSupabaseAdmin`, `createServerSupabase`, `allowRequest`
-- Data-fetching functions prefixed with `get`: `getJournals`, `getHomePublications`, `getPublicContentCounts`
-- Boolean helpers prefixed with `is` or `has`: `isSubmissionsEnabled`, `hasAdminSupabaseConfig`, `isLocalAdminBypassEnabled`
-- Mapping helpers prefixed with `map`: `mapStoreJournal`, `mapStoreIssueSummary`
+- Use camelCase for functions and handlers: `getAdminUser`, `synchronizeJournalLifecycles`, and `validateCertificate`.
+- Use PascalCase for React components: `CertificateWorkspace`, `InboxWorkspace`, and `SubmissionWorkspace`.
+- Short pure helpers may be arrow functions, especially in admin utility modules such as `admin-panel/src/lib/date.ts` and `admin-panel/src/lib/journal-catalog.ts`.
 
 **Variables:**
-- camelCase: `journalCards`, `submissionCounts`, `cookieStore`
-- Constants in UPPER_SNAKE_CASE at module level: `JOURNAL_STORE_PATH`, `MAX_INIT_BODY_BYTES`, `JOURNAL_CATALOG_KEY`
-- Short-lived destructured query results use descriptive names: `submissionCounts`, `recentSubmissions`
+- Use camelCase for local variables and object properties.
+- Use descriptive constants in `UPPER_SNAKE_CASE` for limits, storage keys, and static configuration, for example `MAX_INIT_BODY_BYTES` in `src/app/api/submissions/init/route.ts`.
 
 **Types:**
-- PascalCase with `type` keyword (not `interface`): `type Publication = { ... }`, `type AdminUser = { ... }`
-- Exported types live in `src/lib/types.ts` for shared domain models
-- Route-local types defined inline at the top of the route file
-- Zod-inferred types use `z.infer<typeof schema>`: `type SubmissionFileField = z.infer<typeof submissionFileFieldSchema>`
+- Use PascalCase for `type`, `interface`, and inferred public type names.
+- Prefer string unions for finite workflow and UI states, as in `src/lib/editorial-workflow.ts` and `admin-panel/src/components/certificates/types.ts`.
+- Use `type` imports for type-only dependencies where practical.
 
 ## Code Style
 
 **Formatting:**
-- No Prettier config detected; formatting is consistent but not enforced by tooling
-- Double quotes for strings in TypeScript/TSX
-- Semicolons used consistently
-- 2-space indentation
-- Trailing commas in multi-line objects and arrays
+- No Prettier or Biome configuration is present. Preserve the local file style when editing.
+- Root application files commonly use semicolons and double quotes; generated/admin UI files contain both semicolon-terminated and semicolon-free styles, so do not reformat unrelated code.
+- TypeScript is strict in the root app (`tsconfig.json`) and the admin app (`admin-panel/tsconfig.app.json`).
 
 **Linting:**
-- ESLint 9 flat config: `eslint.config.mjs`
-- Extends: `eslint-config-next/core-web-vitals` + `eslint-config-next/typescript`
-- Two react-hooks rules downgraded to `warn` (non-blocking): `set-state-in-effect`, `purity`
-- `rules-of-hooks` remains an error
-- Global ignores: `.next/`, `dist/`, `node_modules/`, `output/`, legacy JS files, `components/` (root-level)
-- Run: `npm run lint`
-
-**TypeScript Strictness:**
-- `"strict": true` in both `tsconfig.json` (root) and `admin-panel/tsconfig.app.json`
-- `"isolatedModules": true` in both
-- `"skipLibCheck": true` in both
-- Root allows JS (`"allowJs": true`); admin panel does not (`"allowJs": false`)
-- Run: `npm run typecheck` (root), `npm run typecheck` (admin-panel via `tsc -b`)
+- Root linting is configured in `eslint.config.mjs` with `eslint-config-next/core-web-vitals` and `eslint-config-next/typescript`.
+- `react-hooks/set-state-in-effect` and `react-hooks/purity` are warnings; `react-hooks/rules-of-hooks` remains enforced by the Next configuration.
+- Generated output, `node_modules`, selected legacy files, and `components/**` are ignored by `eslint.config.mjs`.
+- Keep lint scope in mind: the root `npm run lint` command scans the repository, while admin correctness is separately covered by TypeScript/Vite build checks.
 
 ## Import Organization
 
-**Order (observed pattern):**
-1. Node built-ins (`node:fs`, `node:path`, `node:crypto`)
-2. Framework imports (`next/server`, `next/image`, `next/link`, `react`)
-3. External packages (`@supabase/ssr`, `zod`, `class-variance-authority`)
-4. Internal `@/lib/*` modules
-5. Internal `@/components/*` modules
-6. Relative imports (`./icon`, `../src/lib/apa-citation`)
-7. Type-only imports use `import type { ... }` syntax
+**Order:**
+1. External packages and framework imports.
+2. Root aliases such as `@/lib/...`, `@/components/...`, and `@/types/...`.
+3. Relative feature imports such as `./types` and `../ui/...`.
+4. CSS imports and type-only imports follow the surrounding file's established style.
+
+There is no import-order plugin or formatter enforcing this order. Match the nearby module rather than performing broad import reordering.
 
 **Path Aliases:**
-- `@/*` maps to `./src/*` in both root and admin-panel tsconfigs
-- Admin panel also resolves `@/*` via Vite alias in `admin-panel/vite.config.ts`
-- shadcn aliases defined in `components.json`: `@/components`, `@/lib/utils`, `@/components/ui`, `@/lib`, `@/hooks`
+- Root app: `@/*` maps to `src/*` through `tsconfig.json`.
+- Admin app: `@/*` maps to `admin-panel/src/*` through `admin-panel/tsconfig.app.json` and `admin-panel/vite.config.ts`.
 
-**Cross-app imports:**
-- Admin panel imports shared logic from the Next.js app via relative path: `import { createApa7JournalCitation } from "../../src/lib/apa-citation"` (`admin-panel/src/main.tsx:5`)
+## Validation and Data Boundaries
 
-## Component Patterns
-
-**shadcn/ui (radix-nova style):**
-- Config: `components.json` (root) and `admin-panel/components.json`
-- Style: `radix-nova`, icon library: `lucide`
-- Root app: `rsc: true`; admin panel: `rsc: false`
-- UI primitives in `src/components/ui/` and `admin-panel/src/components/ui/`
-- Variants defined with `class-variance-authority` (CVA): see `src/components/ui/button.tsx`
-- Class merging via `cn()` from `@/lib/utils` (clsx + tailwind-merge)
-- Radix primitives imported from the unified `radix-ui` package: `import { Slot } from "radix-ui"`
-- Components use `data-slot` attributes for styling hooks: `data-slot="button"`
-
-**cn() helper:**
-```typescript
-// src/lib/utils.ts (identical in admin-panel/src/lib/utils.ts)
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
-```
-
-**Icon system (public site):**
-- Central `Icon` component at `src/components/icon.tsx` maps string names to animated icon components
-- Individual icons in `src/components/icons/` (one file per icon)
-- Usage: `<Icon name="arrow" className="h-4 w-4" />`
-- Admin panel imports lucide-react icons directly by name from `@/components/icons` barrel
-
-**Server vs Client components:**
-- Server-only modules start with `import "server-only";` (e.g., `src/lib/supabase/server.ts`, `src/lib/auth.ts`, `src/lib/content.ts`)
-- Client components start with `"use client";` directive (e.g., `src/lib/supabase/browser.ts`, `admin-panel/src/main.tsx`)
-- Pages in `src/app/(public)/` are async Server Components by default
-
-**Page component pattern:**
-```typescript
-// src/app/(public)/page.tsx
-export const revalidate = 300;
-
-export default async function HomePage() {
-  const [journals, publications, counts] = await Promise.all([
-    getJournals(),
-    getHomePublications(),
-    getPublicContentCounts(),
-  ]);
-  return <main id="main-content">...</main>;
-}
-```
-
-## Styling Approach
-
-**Public site (Tailwind CSS v3):**
-- Config: `tailwind.config.js`
-- Entry: `src/styles.css` with `@tailwind base/components/utilities` directives
-- CSS variables for theme tokens: `--border`, `--primary`, `--background`, etc.
-- Custom brand colors: `forest` (green scale), `clay` (terracotta scale), `parchment`, `ink`
-- Custom fonts: `--font-inter` (sans), `--font-literata` (serif)
-- Custom shadows: `paper`, `lift`
-- Plugin: `tailwindcss-animate`
-- Large custom CSS in `src/styles.css` (~5145 lines) with BEM-like class names: `.publication-folio-card`, `.journal-section-heading`, `.hero-stats-grid`
-- SIZE MAP comment system in `src/styles.css` for locating font-size rules by visible text
-
-**Admin panel (Tailwind CSS v4):**
-- No `tailwind.config.js`; uses `@tailwindcss/vite` plugin
-- Entry: `admin-panel/src/styles.css` with `@import "tailwindcss"` and `@theme inline` block
-- CSS variables mapped via `@theme inline` for shadcn token system
-- Custom component CSS in the same file (~10904 lines) with BEM-like naming: `.bank-page`, `.wallet-card`, `.jw-field`
-- Dark mode via `@custom-variant dark (&:is(.dark *))`
-
-**When to use what:**
-- Use Tailwind utility classes for layout, spacing, responsive behavior
-- Use `cn()` for conditional class merging in components
-- Use custom CSS classes in `styles.css` for complex, multi-element component styling
-- Use CSS variables for theme tokens; reference them via Tailwind color names (`bg-primary`, `text-muted-foreground`)
-
-## Supabase Query Patterns
-
-**Client factories (all in `src/lib/supabase/`):**
-| Factory | File | Use case |
-|---------|------|----------|
-| `createServerSupabase()` | `src/lib/supabase/server.ts` | Authenticated user context (cookies) |
-| `getSupabaseAdmin()` | `src/lib/supabase/admin.ts` | Service-role operations (bypasses RLS) |
-| `getSupabaseBrowser()` | `src/lib/supabase/browser.ts` | Client-side queries |
-| `getPublicSupabase()` | `src/lib/supabase/public.ts` | Anonymous server-side reads |
-| `getPublicSupabaseConfig()` | `src/lib/supabase/config.ts` | Shared env-var validation |
-
-**Null-guard pattern (all factories return `null` when env vars missing):**
-```typescript
-const admin = getSupabaseAdmin();
-if (!admin) return NextResponse.json({ connected: false, data: null });
-```
-
-**Query structure:**
-```typescript
-// Parallel queries with Promise.all + destructured results
-const [submissionCounts, recentSubmissions, journals] = await Promise.all([
-  admin.from("submissions").select("current_stage").in("current_stage", [...]),
-  admin.from("submissions").select("id, reference, title").order("created_at", { ascending: false }).limit(10),
-  admin.from("journals").select("id, title, slug").eq("status", "published").order("title"),
-]);
-```
-
-**Column selection:** Always explicit column lists in `.select()`, never `select("*")`
-
-**Relations:** Inline join syntax: `"preferred_journal:journals(title)"`
-
-**Fallback pattern (content layer):**
-- Try Supabase admin query first
-- On error or null client, fall back to local JSON store (`src/data/journal-store.json`) or demo content
-- See `src/lib/content.ts` for the canonical example
-
-**Generated types:**
-- `src/types/database.generated.ts` via `npm run db:types` (supabase gen types)
-
-## Validation
-
-**Zod schemas for API input:**
-- Schemas defined in `src/lib/submission.ts` (and similar domain modules)
-- Use `.safeParse()` — never `.parse()` — in route handlers
-- Return the first issue message on failure:
-```typescript
-const parsed = submissionInitSchema.safeParse(await request.json().catch(() => null));
-if (!parsed.success) {
-  return NextResponse.json(
-    { error: parsed.error.issues[0]?.message || "Please review the submission fields." },
-    { status: 400 }
-  );
-}
-```
+- Define reusable Zod schemas in `src/lib/` and validate external input at the boundary. `src/lib/submission.ts` contains shared submission/file schemas.
+- Use `safeParse` when an API should return a controlled field-level error, as in `src/app/api/submissions/init/route.ts` and `src/app/api/submissions/complete/route.ts`.
+- Use `.parse` inside trusted server workflow functions when invalid input should enter the route's error path, as in `src/lib/editorial-workflow-server.ts`.
+- Treat Supabase clients as nullable. Call `getSupabaseAdmin()` or the appropriate factory and return a clear unavailable/configuration response when it is absent.
+- Keep server-only modules explicit with `import "server-only"` when they access secrets, cookies, or service-role clients; see `src/lib/auth.ts`, `src/lib/turnstile.ts`, and `src/lib/certificate-import.ts`.
 
 ## Error Handling
 
-**API routes (`src/app/api/**/route.ts`):**
-- Wrap entire handler in try/catch
-- Return `NextResponse.json({ error: "..." }, { status: N })` on failure
-- Common status codes: 400 (validation), 409 (conflict/stale state), 413 (payload too large), 429 (rate limit), 500 (server error), 503 (not configured)
-- Catch blocks return a safe fallback, never leak internal errors:
-```typescript
-} catch {
-  return NextResponse.json({ connected: false, data: null });
-}
-```
+**API routes:**
+- Return early from route handlers with `NextResponse.json({ error: ... }, { status: ... })` for feature flags, authentication, rate limits, malformed input, missing records, and service failures.
+- Use status codes consistently: `400` for invalid input, `401`/`403` for access failures, `404` for missing records, `409` for state conflicts, `413` for oversized bodies, `429` for rate limits, `500` for internal failures, and `503` when a required service is unavailable.
+- Shared admin routes use `requireEditorApi`, `readJsonBody`, `isApiError`, and `apiErrorResponse` from `src/lib/admin-api.ts`; follow that pattern for new workflow mutations.
 
-**Server components / lib functions:**
-- Silent fallback with empty catch and comment:
-```typescript
-} catch {
-  /* store missing or unreadable on this request — use the built-in default */
-}
-```
-- React `cache()` wraps data-fetching functions for request deduplication: `export const getJournalIssues = cache(async (...) => { ... })`
+**Server/domain logic:**
+- Throw user-readable `Error` instances from workflow/domain functions when a transaction cannot proceed; `src/lib/editorial-workflow-server.ts` is the main example.
+- Preserve already-completed state when a secondary operation fails, and make the error explain the partial outcome when necessary.
 
-**Client-side (admin panel):**
-- `.catch((e) => { console.error("[journal-store] publish error", e); return false; })`
-- Prefixed console.error with bracketed module name: `[journal-store]`
-
-## API Route Conventions
-
-**File location:** `src/app/api/{domain}/{action}/route.ts`
-
-**Structure:**
-```typescript
-import { NextResponse, type NextRequest } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
-
-export async function POST(request: NextRequest) {
-  // 1. Feature flag check
-  // 2. Rate limit check
-  // 3. Client null-guard
-  // 4. Body size check
-  // 5. Zod validation
-  // 6. Business logic + Supabase queries
-  // 7. Return NextResponse.json({ ... })
-}
-```
-
-**Rate limiting:** In-memory token bucket via `src/lib/rate-limit.ts` (`allowRequest(key, limit, windowMs)`)
-
-**Security middleware (in `next.config.ts`):**
-- CSP headers, X-Frame-Options DENY, HSTS, nosniff, Permissions-Policy
-- `poweredByHeader: false`
+**Client code:**
+- Check `response.ok`, parse JSON defensively, and expose a concise user-facing message; log unexpected failures with a scoped prefix where useful, as in `admin-panel/src/lib/journal-catalog.ts` and `admin-panel/src/main.tsx`.
+- For localStorage-backed admin helpers, catch malformed JSON/storage failures and retain server state as authoritative; see `admin-panel/src/lib/journal-catalog.ts` and `admin-panel/src/components/inbox/mock-data.ts`.
 
 ## Logging
 
-**Framework:** console (no structured logging library)
+**Framework:** `console` only. No external error-tracking or structured logging package is configured.
 
 **Patterns:**
-- `console.error("[module-name] description", error)` for failures
-- No info/debug logging in production paths
-- Dev server logs written to `dev-server.log` / `dev-server-error.log` (gitignored)
+- Use `console.error` for failures that need diagnosis, preferably with a scoped prefix such as `[journal-store]` or `[content]`.
+- Do not log secrets, payment details, raw tokens, or private file contents.
+- User-facing API errors should be returned through the response contract; console logging is supplementary diagnostics, not the user notification mechanism.
 
 ## Comments
 
-**When to comment:**
-- Explain WHY, not WHAT: `// Read-only Server Component context; the proxy keeps the session cookie fresh.`
-- Mark intentional fallbacks: `/* store missing or unreadable on this request — use the built-in default */`
-- ESLint rule suppressions include justification (see `eslint.config.mjs` lines 9-12)
-- SIZE MAP comments in `src/styles.css` for locating font sizes by visible text
+**When to Comment:**
+- Comment only non-obvious security, compatibility, or architectural decisions. Examples include the server-only/local-admin explanation in `src/lib/auth.ts` and the unified read-model explanation in `src/app/api/admin/workspace/route.ts`.
+- Avoid comments that restate a function name or obvious control flow. Do not add broad documentation blocks to routine code.
 
 **JSDoc/TSDoc:**
-- Rare; used only for exported helpers with non-obvious behavior (e.g., `isLocalAdminBypassEnabled` in `src/lib/auth.ts`)
+- JSDoc is occasional and explanatory rather than systematic. There is no required API documentation format.
 
 ## Function Design
 
-**Size:** Functions range from 5-30 lines for utilities; page components and admin views can be 100+ lines (accepted pattern in this codebase)
+**Size:**
+- Keep pure helpers small and deterministic, as in `src/lib/apa-citation.ts` and `admin-panel/src/components/certificates/field-engine.ts`.
+- Route handlers may coordinate several boundary checks and persistence steps. Large React views remain in the admin monolith `admin-panel/src/main.tsx`; extract new reusable behavior to feature modules when adding code.
 
-**Parameters:** Destructured object params for components; positional params for utilities (max 3-4)
+**Parameters:**
+- Use typed object props for React components and positional parameters for small pure helpers.
+- Use explicit request/route parameter types in Next route handlers, including `Promise<{ id: string }>` for dynamic segments.
 
 **Return Values:**
-- Data functions return `T | null` (never throw)
-- API routes return `NextResponse.json(...)`
-- Components return JSX
+- Pure utilities return typed values and use `null` for an expected absence, as in `src/lib/apa-citation.ts` and `src/lib/certificate-security.ts`.
+- Server data helpers commonly return nullable results or throw a user-readable error, depending on whether absence is expected.
+- API handlers always return a `Response`, normally through `NextResponse.json`.
 
 ## Module Design
 
-**Exports:** Named exports preferred; default export only for page/layout/route files (Next.js requirement)
+**Exports:**
+- Prefer named exports for shared functions, schemas, types, and React components.
+- Use default exports where Next.js requires them, such as pages and metadata functions in `src/app/`.
 
-**Barrel files:** Not used except `admin-panel/src/components/icons` (re-exports lucide icons)
+**Barrel Files:**
+- Keep barrel usage limited. `admin-panel/src/components/icons/index.tsx` is the main intentional re-export surface.
 
-**Server-only enforcement:** Any module that touches `process.env` secrets, cookies, or service-role keys starts with `import "server-only";`
+**State and persistence:**
+- Public/server workflows use Supabase through `src/lib/` clients and server route handlers.
+- The admin UI consumes the unified workspace endpoint at `src/app/api/admin/workspace/route.ts`; localStorage remains a fallback/UX store for selected admin surfaces such as journals and Inbox mock data.
+- Keep workflow transitions centralized in `src/lib/editorial-workflow.ts` and `src/lib/editorial-workflow-server.ts` rather than duplicating state rules in components.
 
 ---
 
-*Convention analysis: 2026-07-27*
+*Convention analysis: 2026-07-30*
