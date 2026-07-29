@@ -7,10 +7,15 @@ export default defineConfig(({ command }) => ({
   base: command === "build" ? "/admin/" : "/",
   plugins: [react(), tailwindcss()],
   publicDir: "public",
-  resolve: {alias: {
-    "@/components/icons": fileURLToPath(new URL("../src/components/icons", import.meta.url)),
-    "@": fileURLToPath(new URL("./src", import.meta.url)),
-  }},
+  resolve: {
+    dedupe: ["react", "react-dom"],
+    alias: {
+      react: fileURLToPath(new URL("../node_modules/react", import.meta.url)),
+      "react-dom": fileURLToPath(new URL("../node_modules/react-dom", import.meta.url)),
+      "@/components/icons": fileURLToPath(new URL("../src/components/icons", import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },
