@@ -107,8 +107,8 @@ export function SubmissionProcessing({ phase, attempt, totalAttempts, reference,
 
   return (
     <motion.div
-      className="fixed inset-0 z-[120] flex items-center justify-center overflow-hidden px-6"
-      style={{ backgroundColor: "#1a1613" }}
+      className="flex items-center justify-center overflow-hidden px-6"
+      style={{ position: "fixed", inset: 0, zIndex: 120, backgroundColor: "#1a1613" }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

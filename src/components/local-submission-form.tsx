@@ -22,6 +22,7 @@ import type { StoredFile } from "@/lib/file-storage";
 import { validateFile, saveBlob, saveMeta, deleteFile, getBlob, formatBytes, sanitizeFilename, PURPOSE_ACCEPT, PURPOSE_MAX_SIZE } from "@/lib/file-storage";
 
 const MAX_SUBMIT_ATTEMPTS = 3;
+const MIN_PROCESS_MS = 2800;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 function isRetryable(err: unknown) {
@@ -607,9 +608,12 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     for (let current = 1; current <= MAX_SUBMIT_ATTEMPTS; current++) {
       setAttempt(current);
       try {
+        const startedAt = Date.now();
         const ref = isServer
           ? await runServerSubmission(sj!, supabase!)
           : await runLocalSubmission();
+        const elapsed = Date.now() - startedAt;
+        if (elapsed < MIN_PROCESS_MS) await wait(MIN_PROCESS_MS - elapsed);
         setServerSubmitted(isServer);
         setReference(ref);
         if (!isServer) setMessage("Saved only in this browser. Files are stored locally in your browser's database.");
