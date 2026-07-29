@@ -28,11 +28,14 @@ const transitionInput = z.object({
 
 const publicationRecordInput = z.object({
   submissionId: uuid,
+  title: optionalText(500),
   journalId: uuid.optional(),
   issueId: uuid.optional(),
   doi: doiField,
   finalPdfFileId: uuid.optional(),
   certificateFileId: uuid.optional(),
+  socialMediaFileId: uuid.optional(),
+  doiRegistrationStatus: z.enum(["assigned", "reserved", "registered"]).default("assigned"),
   volume: optionalText(20),
   issueNumber: optionalText(20),
   pageStart: optionalText(20),
@@ -201,18 +204,13 @@ async function syncPublicationAuthors(admin: AdminClient, publicationId: string,
     let authorId: string;
     if (existing) {
       authorId = existing.id;
-      const patch: Record<string, unknown> = {};
-      if (author.orcid) patch.orcid = author.orcid;
-      if (author.affiliation) patch.affiliation = author.affiliation;
-      if (author.credentials) patch.credentials = author.credentials;
-      if (Object.keys(patch).length) await admin.from("authors").update(patch).eq("id", authorId);
     } else {
       let created: { id: string } | null = null;
       for (let attempt = 0; attempt < 50 && !created; attempt += 1) {
         const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
         const { data, error } = await admin
           .from("authors")
-          .insert({ name: author.name, slug, orcid: author.orcid || null, affiliation: author.affiliation || null, credentials: author.credentials || null, bio: "", status: "published" })
+          .insert({ name: author.name, slug, orcid: author.orcid || null, affiliation: author.affiliation || null, credentials: author.credentials || null, bio: "", status: "draft" })
           .select("id")
           .maybeSingle();
         if (!error && data) created = data;
@@ -281,6 +279,16 @@ export async function transitionSubmission(input: z.input<typeof transitionInput
 
   const { data: before } = await admin.from("submissions").select("current_stage").eq("id", parsed.submissionId).maybeSingle();
   const fromProgress = before ? progressIndexOf(before.current_stage as WorkflowStage) : -1;
+  if (before && (
+    parsed.toStage === "production_scheduled"
+    || parsed.toStage === "published"
+    || (parsed.toStage === "production_records" && ["production_ready_to_publish", "production_scheduled"].includes(String(before.current_stage)))
+  ) && user.role !== "admin") {
+    throw new Error("Only an administrator may return, schedule, reschedule, or publish a production record.");
+  }
+  if (before?.current_stage === "production_records" && parsed.toStage === "production_ready_to_publish") {
+    throw new Error("Submit the publication through the quality-control workspace.");
+  }
 
   const { data, error } = await admin.rpc("transition_submission", {
     p_submission_id: parsed.submissionId,
@@ -330,6 +338,9 @@ export async function advanceSubmissionProgress(input: z.input<typeof advanceInp
   const currentStage = submission.current_stage as WorkflowStage;
   const currentProgress = progressIndexOf(currentStage);
   if (currentProgress >= parsed.targetProgress) return { stage: currentStage, progress: currentProgress };
+  if (currentStage.startsWith("production_") && parsed.targetProgress >= 3) {
+    throw new Error(parsed.targetProgress === 3 ? "Submit the publication through the quality-control workspace." : "Use the administrator publication controls.");
+  }
 
   const targetStage = canonicalStageForProgress(parsed.targetProgress);
   const currentIdx = STAGE_PATH.indexOf(currentStage);
@@ -397,6 +408,7 @@ const rescheduleInput = z.object({
 export async function rescheduleSubmission(input: z.input<typeof rescheduleInput>) {
   const parsed = rescheduleInput.parse(input);
   const user = await requireAdmin();
+  if (user.role !== "admin") throw new Error("Only an administrator may reschedule a publication.");
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("The editorial database is not configured.");
 
@@ -464,14 +476,15 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     const resolvedPages = parsed.pages || (parsed.pageStart ? [parsed.pageStart, parsed.pageEnd].filter(Boolean).join("-") : null);
     const resolvedAbstract = parsed.abstract || submission.abstract || "";
     const citationAuthors = (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).filter(Boolean);
-    citationData = createApa7JournalCitation({ authors: citationAuthors.length ? citationAuthors : [submission.author_name], title: submission.title, year: new Date().getFullYear(), journalTitle: journal?.title || "", volume: resolvedVolume, issue: resolvedIssueNumber, pages: resolvedPages, doi: parsed.doi });
-    const slug = existingPublication?.slug || publicationSlug(submission.title, submission.id);
+    const publicTitle = parsed.title || submission.title;
+    citationData = createApa7JournalCitation({ authors: citationAuthors.length ? citationAuthors : [submission.author_name], title: publicTitle, year: new Date().getFullYear(), journalTitle: journal?.title || "", volume: resolvedVolume, issue: resolvedIssueNumber, pages: resolvedPages, doi: parsed.doi });
+    const slug = existingPublication?.slug || publicationSlug(publicTitle, submission.id);
     const pdfUrl = new URL(`/api/publications/${slug}/pdf`, `${getSiteUrl()}/`).toString();
 
     const sharedColumns = {
       journal_id: resolvedJournalId,
       issue_id: resolvedIssueId || null,
-      title: submission.title,
+      title: publicTitle,
       abstract: resolvedAbstract,
       author_display: authorDisplay,
       doi: parsed.doi || null,
@@ -504,7 +517,17 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     if (publicationId) await syncPublicationAuthors(admin, publicationId, promotedAuthors);
   }
 
-  const { error } = await admin.from("publication_records").upsert({
+  const publicationMetadata = {
+    ...parsed.metadata,
+    volume: parsed.volume || submission.volume_snapshot || null,
+    issueNumber: parsed.issueNumber || submission.issue_snapshot || null,
+    pageStart: parsed.pageStart || null,
+    pageEnd: parsed.pageEnd || null,
+    pages: parsed.pages || (parsed.pageStart ? [parsed.pageStart, parsed.pageEnd].filter(Boolean).join("-") : null),
+    socialMediaFileId: parsed.socialMediaFileId || null,
+    doiRegistrationStatus: parsed.doiRegistrationStatus,
+  };
+  const { data: savedRecord, error } = await admin.from("publication_records").upsert({
     submission_id: parsed.submissionId,
     publication_id: publicationId,
     journal_id: resolvedJournalId || null,
@@ -514,8 +537,8 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     final_pdf_file_id: parsed.finalPdfFileId || null,
     certificate_file_id: parsed.certificateFileId || null,
     citation_data: citationData,
-    metadata: parsed.metadata
-  }, { onConflict: "submission_id" });
+    metadata: publicationMetadata
+  }, { onConflict: "submission_id" }).select("id").single();
   if (error) throw new Error("The publication record could not be saved.");
 
   await admin.from("workflow_events").insert({
@@ -534,6 +557,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
   }
 
   refreshWorkflowPages(parsed.submissionId);
+  return { id: savedRecord?.id, publicationId, publicArticleUrl };
 }
 
 export async function createWorkflowUpdate(input: z.input<typeof workflowUpdateInput>) {

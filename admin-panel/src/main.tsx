@@ -7,6 +7,7 @@ import { FloatingDock } from "./components/floating-dock";
 import { TeamAccounts } from "./components/team-accounts";
 import { CertificateWorkspace } from "./components/certificates/certificate-workspace";
 import { InboxWorkspace } from "./components/inbox/inbox-workspace";
+import { PreflightWorkspace } from "./components/preflight/preflight-workspace";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -2141,7 +2142,8 @@ function LegacySubmissionReview({
       revisionChecklist: false,
     }),
     [reviewTab, setReviewTab] = useState<"review" | "publication">(() => initialTab || "review"),
-    [scheduleUnlocked, setScheduleUnlocked] = useState(false);
+    [scheduleUnlocked, setScheduleUnlocked] = useState(false),
+    [preflightOpen, setPreflightOpen] = useState(false);
   useEffect(() => { let cancelled = false; void fetch(`/api/admin/submissions/${submission.id}/review-settings`, { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (cancelled || !body?.settings) return; const saved = body.settings; if (saved.receipt) setReceipt({ ...defaultReceiptSettings, ...saved.receipt }); if (saved.instructions) setInstructions((current) => ({ ...current, ...saved.instructions })); }).catch(() => {}); return () => { cancelled = true; }; }, [submission.id]);
   const paymentConfirmed = submission.paymentConfirmed === true;
   const reviewUnlocked = submission.workflowStage ? submission.workflowStage !== "review_new" : submission.status !== "New";
@@ -2283,6 +2285,8 @@ function LegacySubmissionReview({
           id: `PUB-${submission.id}`,
           submissionId: submission.id,
           journal: submission.journal,
+          journalId: submission.preferredJournalId,
+          issueId: submission.assignedIssueId,
           volume: defaults.volume,
           issue: defaults.issue,
           doi: "",
@@ -2290,6 +2294,10 @@ function LegacySubmissionReview({
           pageEnd: "",
           readCount: 0,
           downloadCount: 0,
+          publicTitle: submission.title,
+          publicAbstract: submission.abstract,
+          keywords: [],
+          doiRegistrationStatus: "assigned",
           status: "Draft",
         },
       ]);
@@ -2313,8 +2321,10 @@ function LegacySubmissionReview({
   const revisePublication = async () => {
     if (publicationRecord) updatePublicationRecord({ ...publicationRecord, status: "Draft" });
     try {
-      const r = await fetch(`/api/admin/submissions/${submission.id}/requests`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestType: "revision", title: "Revision required", description: "The editorial team has requested revisions to your submission. Please review the details and respond." }) });
-      if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not create revision request."); }
+      const reason = window.prompt("Internal reason for returning this record to production:", "Publication quality corrections are required.");
+      if (!reason) return;
+      const r = await fetch(`/api/admin/submissions/${submission.id}/publication-actions`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "return", reason }) });
+      if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not return the record to production."); }
     } catch (error) { window.alert(error instanceof Error ? error.message : "Could not create revision request."); return; }
     onUpdate({
       ...submission,
@@ -2325,17 +2335,12 @@ function LegacySubmissionReview({
     onBack();
   };
   const schedulePublication = async (scheduledFor: string): Promise<boolean> => {
-    if (!publicationRecord || !scheduledFor) return false;
+    if (!publicationRecord || !scheduledFor || !isAdmin) return false;
     const scheduledIso = new Date(`${scheduledFor}T00:00:00`).toISOString();
     const isReschedule = submission.workflowStage === "production_scheduled";
     try {
-      if (isReschedule) {
-        const response = await fetch(`/api/admin/submissions/${submission.id}/reschedule`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheduledFor: scheduledIso }) });
-        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The schedule could not be updated."); }
-      } else {
-        const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: scheduledIso } }) });
-        if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The publication could not be scheduled."); }
-      }
+      const response = await fetch(`/api/admin/submissions/${submission.id}/publication-actions`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: isReschedule ? "reschedule" : "schedule", scheduledFor: scheduledIso }) });
+      if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The publication schedule could not be saved."); }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "The publication could not be scheduled.");
       return false;
@@ -2351,14 +2356,24 @@ function LegacySubmissionReview({
   };
   const publishSubmission = async () => {
     try {
-      const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 4 }) });
+      const r = await fetch(`/api/admin/submissions/${submission.id}/publication-actions`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) });
       if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not publish."); }
-      const d = await r.json();
-      if (d.data?.blocked) { window.alert(d.data.blocked); return; }
-      const ns = d.data?.stage || "published";
+      const ns = "published";
       onUpdate({ ...submission, status: stageToSubmissionStatus[ns] || "Published", workflowStage: ns, history: [...submission.history, `Published · ${new Date().toLocaleString("en-PH")}`] });
     } catch (error) { window.alert(error instanceof Error ? error.message : "Could not publish."); }
   };
+  if (preflightOpen) {
+    return <PreflightWorkspace
+      submissionId={submission.id}
+      reference={submission.reference || submission.id}
+      title={manuscriptTitle}
+      onClose={() => setPreflightOpen(false)}
+      onSubmitted={() => {
+        if (publicationRecord) updatePublicationRecord({ ...publicationRecord, status: "For approval" });
+        onUpdate({ ...submission, workflowStage: "production_ready_to_publish", status: "For approval" });
+      }}
+    />;
+  }
   return (
     <section className="submission-review">
       <div className="review-heading">
@@ -2423,7 +2438,7 @@ function LegacySubmissionReview({
             onChange={updatePublicationRecord}
             onSubmissionUpdate={onUpdate}
             onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
-            onMarkForApproval={markForApproval}
+            onOpenQualityCheck={() => setPreflightOpen(true)}
             onRevise={revisePublication}
             canManagePublication={isAdmin}
           />
@@ -2438,7 +2453,7 @@ function LegacySubmissionReview({
           onChange={updatePublicationRecord}
           onSubmissionUpdate={onUpdate}
           onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
-          onMarkForApproval={markForApproval}
+          onOpenQualityCheck={() => setPreflightOpen(true)}
           onRevise={revisePublication}
           canManagePublication={isAdmin}
         />
@@ -2873,7 +2888,7 @@ function PublicationRecordEditor({
   onChange,
   onSubmissionUpdate,
   onOpenPublish,
-  onMarkForApproval,
+  onOpenQualityCheck,
   onRevise,
   canManagePublication = true,
 }: {
@@ -2885,16 +2900,17 @@ function PublicationRecordEditor({
   onChange: (record: PublicationRecord) => void;
   onSubmissionUpdate: (submission: EditorialSubmission) => void;
   onOpenPublish: () => void;
-  onMarkForApproval?: () => void;
+  onOpenQualityCheck: () => void;
   onRevise?: () => void;
   canManagePublication?: boolean;
 }) {
   const isEditableRecord = (item: PublicationRecord | null) =>
     item
-      ? item.status === "Draft" ||
-        (!canManagePublication && item.status === "For approval")
+      ? item.status === "Draft"
       : false;
   const [activePublicationAuthor, setActivePublicationAuthor] = useState(0);
+  const [savingRecord, setSavingRecord] = useState(false);
+  const [recordMessage, setRecordMessage] = useState("");
   const [editingRecord, setEditingRecord] = useState(() =>
     isEditableRecord(record),
   );
@@ -2932,8 +2948,50 @@ function PublicationRecordEditor({
   };
   type PubAction = { key: string; label: string; variant: "default" | "outline" | "destructive"; tone?: "danger"; disabled: boolean; onClick: () => void };
   const editAction: PubAction = { key: "edit", label: "Edit publication record", variant: "outline", disabled: false, onClick: () => setEditingRecord(true) };
-  const saveAction: PubAction = { key: "save", label: "Save", variant: "default", disabled: false, onClick: () => { onChange({ ...record, status: record.status }); setEditingRecord(false); } };
-  const markAction: PubAction = { key: "mark", label: "Mark for approval", variant: "default", disabled: doiExists || pageProblem || !record.doi || !record.pageStart || !record.pageEnd, onClick: () => { onChange({ ...record, status: "For approval" }); onMarkForApproval?.(); setEditingRecord(false); } };
+  const saveRecord = async () => {
+    setSavingRecord(true);
+    setRecordMessage("");
+    const finalPdf = submission.files?.filter((file) => file.file_kind === "final_pdf").at(-1);
+    const certificate = submission.files?.filter((file) => file.file_kind === "publication_certificate").at(-1);
+    const social = submission.files?.filter((file) => file.file_kind === "social_media_artwork").at(-1);
+    const response = await fetch(`/api/admin/submissions/${submission.id}/publication-record`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: record.publicTitle || manuscriptTitle,
+        journalId: record.journalId || submission.preferredJournalId,
+        issueId: record.issueId || submission.assignedIssueId,
+        doi: record.doi,
+        volume: record.volume,
+        issueNumber: record.issue,
+        pageStart: record.pageStart,
+        pageEnd: record.pageEnd,
+        pages: record.pageStart && record.pageEnd ? `${record.pageStart}-${record.pageEnd}` : undefined,
+        abstract: record.publicAbstract || submission.abstract,
+        keywords: record.keywords || [],
+        licenseName: record.licenseName || "All rights reserved",
+        copyrightHolder: record.copyrightHolder || "The authors",
+        finalPdfFileId: record.finalPdfFileId || finalPdf?.id,
+        certificateFileId: record.certificateFileId || certificate?.id,
+        socialMediaFileId: record.socialMediaFileId || social?.id,
+        doiRegistrationStatus: record.doiRegistrationStatus || "assigned",
+        citationData: record.citationData || {},
+        metadata: {},
+      }),
+    }).catch(() => null);
+    const body = await response?.json().catch(() => null);
+    setSavingRecord(false);
+    if (!response?.ok) {
+      setRecordMessage(body?.error || "The publication record could not be saved.");
+      return;
+    }
+    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
+    setRecordMessage("Production record saved to the publication database.");
+    setEditingRecord(false);
+  };
+  const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
+  const markAction: PubAction = { key: "mark", label: "Run quality check", variant: "default", disabled: savingRecord || doiExists || pageProblem || !record.doi || !record.pageStart || !record.pageEnd, onClick: onOpenQualityCheck };
   const approveAction: PubAction = { key: "approve", label: "Approve and schedule", variant: "default", disabled: false, onClick: onOpenPublish };
   const reviseAction: PubAction = { key: "revise", label: "Revise", variant: "destructive", tone: "danger", disabled: false, onClick: () => onRevise?.() };
   const doiAction: PubAction = { key: "doi", label: "Generate unique DOI", variant: "outline", disabled: false, onClick: generateDoi };
@@ -3008,6 +3066,17 @@ function PublicationRecordEditor({
           {pageProblem && <p className="publication-warning">This page range overlaps another record or ends before it starts.</p>}
         </div>
         <div className="doi-row tp-pub-doi"><ReviewField label="DOI" value={record.doi} onChange={editingRecord ? (doi) => onChange({ ...record, doi }) : undefined} /></div>
+        <div className="publication-subsection">
+          <header><div><span>Final public edition</span><h3>Website metadata</h3><p>This is separate from the author’s immutable submission and is what readers will see.</p></div></header>
+          <div className="publication-fields">
+            <ReviewField label="Public title" value={record.publicTitle || manuscriptTitle} onChange={editingRecord ? (publicTitle) => onChange({ ...record, publicTitle }) : undefined} />
+            <label className="publication-wide-field">Public abstract<textarea value={record.publicAbstract || submission.abstract} readOnly={!editingRecord} onChange={(event) => onChange({ ...record, publicAbstract: event.target.value })} /></label>
+            <ReviewField label="Keywords (comma separated)" value={(record.keywords || []).join(", ")} onChange={editingRecord ? (value) => onChange({ ...record, keywords: value.split(",").map((item) => item.trim()).filter(Boolean) }) : undefined} />
+            <ReviewField label="License" value={record.licenseName || "All rights reserved"} onChange={editingRecord ? (licenseName) => onChange({ ...record, licenseName }) : undefined} />
+            <ReviewField label="Copyright holder" value={record.copyrightHolder || "The authors"} onChange={editingRecord ? (copyrightHolder) => onChange({ ...record, copyrightHolder }) : undefined} />
+            <label>DOI registration<select value={record.doiRegistrationStatus || "assigned"} disabled={!editingRecord} onChange={(event) => onChange({ ...record, doiRegistrationStatus: event.target.value as PublicationRecord["doiRegistrationStatus"] })}><option value="assigned">Assigned</option><option value="reserved">Reserved</option><option value="registered">Registered</option></select></label>
+          </div>
+        </div>
         {doiExists ? <p className="publication-warning">This DOI is already used by another local publication record.</p> : record.doi && <p className="publication-note">Unique in this local website record. It becomes an official DOI only after registration with your DOI provider.</p>}
         <div className="publication-subsection">
           <header><div><span>Publication engagement</span><h3>Reads and downloads</h3><p>Tracked automatically from reader activity on the public site.</p></div></header>
@@ -3016,6 +3085,7 @@ function PublicationRecordEditor({
       </section>
       <section className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA 7 citation preview</h2></div></header><ApaCitationPreview submission={submission} authors={authors} record={record} /></section>
       <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
+      {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
             <Button type="button" variant={primaryAction.variant} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
@@ -3063,12 +3133,12 @@ function PublicationSchedulePanel({
   })();
   return <section className="publication-record">
     <section className="publication-card publication-summary">
-      <header><div><span>Publishing schedule</span><h2>{isScheduled ? "Scheduled for publishing" : "Choose a publication date"}</h2><p>{isScheduled ? certificateIssued ? `${submission.title} will move to Published automatically on its scheduled date.` : "Certificate required before publication. This scheduled study will remain on hold until its certificate is issued." : "Choose when this approved record should be published."}</p></div><span className="publication-state">{isScheduled ? certificateIssued ? "Scheduled" : "Certificate hold" : "Ready"}</span></header>
+      <header><div><span>Publishing schedule</span><h2>{isScheduled ? "Scheduled for publishing" : "Choose a publication date"}</h2><p>{isScheduled ? certificateIssued ? `${submission.title} becomes eligible for the administrator’s final recheck on its scheduled date.` : "Certificate required before publication. This scheduled study will remain on hold until its certificate is issued." : "Choose when this approved record becomes eligible for manual publication."}</p></div><span className="publication-state">{isScheduled ? certificateIssued ? "Scheduled" : "Certificate hold" : "Ready"}</span></header>
       <div className="publication-copy-grid"><div><span>Journal</span><strong>{record.journal}</strong></div><div><span>Volume and issue</span><strong>Volume {record.volume}, Issue {record.issue}</strong></div><div><span>Pages</span><strong>{record.pageStart}–{record.pageEnd}</strong></div><div><span>DOI</span><strong>{record.doi}</strong></div></div>
     </section>
     <section className="publication-card">
       <header><div><span>Publication date</span><h2>Schedule this record</h2><p>The status becomes Scheduled for publishing until the chosen date.</p></div></header>
-      <div className="schedule-publication-control"><label>Publish on<input type="date" min={new Date().toISOString().slice(0, 10)} value={scheduledFor} disabled={!canManagePublication || !editingSchedule} onChange={(event) => { setScheduledFor(event.target.value); setSavedReview(false); }} /></label>{isScheduled ? <p className="publication-note">Scheduled for {new Date(`${scheduledFor || record.scheduledFor}T00:00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}. {certificateIssued ? "It will publish automatically when the date arrives." : "Issue the certificate to release the publication hold."}</p> : !canManagePublication ? <p className="publication-note">Admin approval is required before this record can be scheduled.</p> : null}{canManagePublication && isScheduled && !editingSchedule && <button type="button" onClick={() => { setEditingSchedule(true); setSavedReview(false); }}>Edit schedule</button>}{canManagePublication && editingSchedule && <button className="approve" disabled={!scheduledFor} onClick={async () => { const saved = await onSchedule(scheduledFor); if (saved) { setEditingSchedule(false); setSavedReview(true); } }}><Save /> {isScheduled ? "Save review" : "Schedule publication"}</button>}{savedReview && <p className="publication-note">Schedule review saved. This is the publication date currently in use.</p>}</div>
+      <div className="schedule-publication-control"><label>Eligible to publish on<input type="date" min={new Date().toISOString().slice(0, 10)} value={scheduledFor} disabled={!canManagePublication || !editingSchedule} onChange={(event) => { setScheduledFor(event.target.value); setSavedReview(false); }} /></label>{isScheduled ? <p className="publication-note">Scheduled for {new Date(`${scheduledFor || record.scheduledFor}T00:00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}. {certificateIssued ? "An administrator must rerun the final checks and explicitly publish it." : "Issue the certificate to release the publication hold."}</p> : !canManagePublication ? <p className="publication-note">Admin approval is required before this record can be scheduled.</p> : null}{canManagePublication && isScheduled && !editingSchedule && <button type="button" onClick={() => { setEditingSchedule(true); setSavedReview(false); }}>Edit schedule</button>}{canManagePublication && editingSchedule && <button className="approve" disabled={!scheduledFor} onClick={async () => { const saved = await onSchedule(scheduledFor); if (saved) { setEditingSchedule(false); setSavedReview(true); } }}><Save /> {isScheduled ? "Save schedule" : "Approve and schedule"}</button>}{savedReview && <p className="publication-note">Schedule review saved. This is the publication date currently in use.</p>}</div>
     </section>
   </section>;
 }
@@ -6657,12 +6727,16 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
             const authorPhotos = files.filter((f) => f.file_kind === "authorPhoto").sort((a, b) => String(a.original_name || "").localeCompare(String(b.original_name || "")));
             const primaryPhotoId = authorPhotos.length ? String(authorPhotos[0].id) : null;
-            return { id: String(submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0) })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined, priority: (["normal", "high", "urgent"].includes(String(submission.priority || "")) ? String(submission.priority) as "normal" | "high" | "urgent" : "normal") } satisfies EditorialSubmission;
+            return { id: String(submission.id), reference: String(submission.reference || submission.tracking_number || submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), preferredJournalId: typeof submission.preferred_journal_id === "string" ? submission.preferred_journal_id : undefined, assignedIssueId: typeof submission.assigned_issue_id === "string" ? submission.assigned_issue_id : undefined, workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), storage_bucket: String(f.storage_bucket || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0), sha256: typeof f.sha256 === "string" ? f.sha256 : undefined, version_number: Number(f.version_number || 1), supersedes_file_id: typeof f.supersedes_file_id === "string" ? f.supersedes_file_id : null, validation_status: String(f.validation_status || "pending") })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined, priority: (["normal", "high", "urgent"].includes(String(submission.priority || "")) ? String(submission.priority) as "normal" | "high" | "urgent" : "normal") } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;
             const issue = Array.isArray(record.issues) ? record.issues[0] : record.issues;
-            return { id: String(record.id), submissionId: String(record.submission_id), journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || "—"), doi: String(record.doi || ""), pageStart: "", pageEnd: "", scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : "Ready to publish", readCount: Number((record.publications as { views?: number } | null)?.views ?? 0), downloadCount: Number((record.publications as { downloads?: number } | null)?.downloads ?? 0) } satisfies PublicationRecord;
+            const publication = Array.isArray(record.publications) ? record.publications[0] : record.publications;
+            const metadata = (record.metadata as Record<string, unknown>) || {};
+            const pages = String((publication as { pages?: string } | null)?.pages || metadata.pages || "");
+            const [pageStart = "", pageEnd = ""] = pages.split(/[-–—]/).map((value) => value.trim());
+            return { id: String(record.id), submissionId: String(record.submission_id), publicationId: typeof record.publication_id === "string" ? record.publication_id : undefined, journalId: typeof record.journal_id === "string" ? record.journal_id : undefined, issueId: typeof record.issue_id === "string" ? record.issue_id : undefined, journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || metadata.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || metadata.issueNumber || "—"), doi: String(record.doi || ""), pageStart, pageEnd, publicTitle: String((publication as { title?: string } | null)?.title || ""), publicAbstract: String((publication as { abstract?: string } | null)?.abstract || ""), keywords: Array.isArray((publication as { keywords?: unknown } | null)?.keywords) ? (publication as { keywords: string[] }).keywords : [], licenseName: String((publication as { license_name?: string } | null)?.license_name || "All rights reserved"), copyrightHolder: String((publication as { copyright_holder?: string } | null)?.copyright_holder || "The authors"), citationData: (record.citation_data as Record<string, unknown>) || {}, finalPdfFileId: typeof record.final_pdf_file_id === "string" ? record.final_pdf_file_id : undefined, certificateFileId: typeof record.certificate_file_id === "string" ? record.certificate_file_id : undefined, socialMediaFileId: typeof record.social_media_file_id === "string" ? record.social_media_file_id : typeof metadata.socialMediaFileId === "string" ? metadata.socialMediaFileId : undefined, publicArticleUrl: typeof record.public_article_url === "string" ? record.public_article_url : undefined, doiRegistrationStatus: (["assigned", "reserved", "registered"].includes(String(record.doi_registration_status || metadata.doiRegistrationStatus || "")) ? String(record.doi_registration_status || metadata.doiRegistrationStatus) : "assigned") as PublicationRecord["doiRegistrationStatus"], latestPreflightRunId: typeof record.latest_preflight_run_id === "string" ? record.latest_preflight_run_id : undefined, submittedPreflightRunId: typeof record.submitted_preflight_run_id === "string" ? record.submitted_preflight_run_id : undefined, scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : record.submitted_preflight_run_id ? "For approval" : "Draft", readCount: Number((publication as { views?: number } | null)?.views ?? 0), downloadCount: Number((publication as { downloads?: number } | null)?.downloads ?? 0) } satisfies PublicationRecord;
           });
           setEditorialSubmissions(mergeLocalSamples(serverSubmissions));
           setPublicationRecords(serverRecords);

@@ -1172,62 +1172,248 @@ export type Database = {
           },
         ]
       }
+      publication_preflight_checks: {
+        Row: {
+          blocker: Json | null
+          blocking: boolean
+          check_group: string
+          check_key: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          evidence: Json
+          expected_summary: string | null
+          id: string
+          issue_note: string | null
+          mode: string
+          observed_summary: string | null
+          run_id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          blocker?: Json | null
+          blocking?: boolean
+          check_group: string
+          check_key: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          evidence?: Json
+          expected_summary?: string | null
+          id?: string
+          issue_note?: string | null
+          mode: string
+          observed_summary?: string | null
+          run_id: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          blocker?: Json | null
+          blocking?: boolean
+          check_group?: string
+          check_key?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          evidence?: Json
+          expected_summary?: string | null
+          id?: string
+          issue_note?: string | null
+          mode?: string
+          observed_summary?: string | null
+          run_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_preflight_checks_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_preflight_checks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "publication_preflight_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      publication_preflight_runs: {
+        Row: {
+          automatic_blocker_count: number
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          final_snapshot: Json
+          id: string
+          invalidated_at: string | null
+          publication_record_id: string
+          ruleset_version: string
+          source_fingerprint: string
+          source_snapshot: Json
+          status: string
+          submission_id: string
+          submitted_at: string | null
+          submitted_by: string | null
+          updated_at: string
+          warning_count: number
+        }
+        Insert: {
+          automatic_blocker_count?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          final_snapshot?: Json
+          id?: string
+          invalidated_at?: string | null
+          publication_record_id: string
+          ruleset_version: string
+          source_fingerprint: string
+          source_snapshot?: Json
+          status?: string
+          submission_id: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+          warning_count?: number
+        }
+        Update: {
+          automatic_blocker_count?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          final_snapshot?: Json
+          id?: string
+          invalidated_at?: string | null
+          publication_record_id?: string
+          ruleset_version?: string
+          source_fingerprint?: string
+          source_snapshot?: Json
+          status?: string
+          submission_id?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+          warning_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "publication_preflight_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_preflight_runs_publication_record_id_fkey"
+            columns: ["publication_record_id"]
+            isOneToOne: false
+            referencedRelation: "publication_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_preflight_runs_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_preflight_runs_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       publication_records: {
         Row: {
+          approved_preflight_run_id: string | null
           certificate_file_id: string | null
           citation_data: Json
           created_at: string
           doi: string | null
+          doi_registration_status: string
           final_pdf_file_id: string | null
           id: string
           issue_id: string | null
           journal_id: string | null
+          latest_preflight_run_id: string | null
           metadata: Json
           public_article_url: string | null
           publication_id: string | null
           published_at: string | null
           scheduled_by: string | null
           scheduled_for: string | null
+          social_media_file_id: string | null
           submission_id: string
+          submitted_preflight_run_id: string | null
           updated_at: string
         }
         Insert: {
+          approved_preflight_run_id?: string | null
           certificate_file_id?: string | null
           citation_data?: Json
           created_at?: string
           doi?: string | null
+          doi_registration_status?: string
           final_pdf_file_id?: string | null
           id?: string
           issue_id?: string | null
           journal_id?: string | null
+          latest_preflight_run_id?: string | null
           metadata?: Json
           public_article_url?: string | null
           publication_id?: string | null
           published_at?: string | null
           scheduled_by?: string | null
           scheduled_for?: string | null
+          social_media_file_id?: string | null
           submission_id: string
+          submitted_preflight_run_id?: string | null
           updated_at?: string
         }
         Update: {
+          approved_preflight_run_id?: string | null
           certificate_file_id?: string | null
           citation_data?: Json
           created_at?: string
           doi?: string | null
+          doi_registration_status?: string
           final_pdf_file_id?: string | null
           id?: string
           issue_id?: string | null
           journal_id?: string | null
+          latest_preflight_run_id?: string | null
           metadata?: Json
           public_article_url?: string | null
           publication_id?: string | null
           published_at?: string | null
           scheduled_by?: string | null
           scheduled_for?: string | null
+          social_media_file_id?: string | null
           submission_id?: string
+          submitted_preflight_run_id?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "publication_records_approved_preflight_run_id_fkey"
+            columns: ["approved_preflight_run_id"]
+            isOneToOne: false
+            referencedRelation: "publication_preflight_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "publication_records_certificate_file_id_fkey"
             columns: ["certificate_file_id"]
@@ -1257,6 +1443,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "publication_records_latest_preflight_run_id_fkey"
+            columns: ["latest_preflight_run_id"]
+            isOneToOne: false
+            referencedRelation: "publication_preflight_runs"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "publication_records_publication_id_fkey"
             columns: ["publication_id"]
             isOneToOne: true
@@ -1264,10 +1457,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "publication_records_social_media_file_id_fkey"
+            columns: ["social_media_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "publication_records_submission_id_fkey"
             columns: ["submission_id"]
             isOneToOne: true
             referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "publication_records_submitted_preflight_run_id_fkey"
+            columns: ["submitted_preflight_run_id"]
+            isOneToOne: false
+            referencedRelation: "publication_preflight_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -1509,43 +1716,78 @@ export type Database = {
       submission_files: {
         Row: {
           created_at: string
+          created_by: string | null
           file_kind: string
           id: string
           mime_type: string
           original_name: string
+          sha256: string | null
           size_bytes: number
           storage_bucket: string
           storage_path: string
           submission_id: string
+          supersedes_file_id: string | null
+          validated_at: string | null
+          validation_metadata: Json
+          validation_status: string
+          version_number: number
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           file_kind: string
           id?: string
           mime_type: string
           original_name: string
+          sha256?: string | null
           size_bytes: number
           storage_bucket?: string
           storage_path: string
           submission_id: string
+          supersedes_file_id?: string | null
+          validated_at?: string | null
+          validation_metadata?: Json
+          validation_status?: string
+          version_number?: number
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           file_kind?: string
           id?: string
           mime_type?: string
           original_name?: string
+          sha256?: string | null
           size_bytes?: number
           storage_bucket?: string
           storage_path?: string
           submission_id?: string
+          supersedes_file_id?: string | null
+          validated_at?: string | null
+          validation_metadata?: Json
+          validation_status?: string
+          version_number?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "submission_files_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "submission_files_submission_id_fkey"
             columns: ["submission_id"]
             isOneToOne: false
             referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submission_files_supersedes_file_id_fkey"
+            columns: ["supersedes_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
             referencedColumns: ["id"]
           },
         ]
@@ -1603,6 +1845,7 @@ export type Database = {
           journal_title_snapshot: string
           phone: string | null
           preferred_journal_id: string | null
+          priority: string
           publication_type: string
           reference: string
           review_settings: Json
@@ -1631,6 +1874,7 @@ export type Database = {
           journal_title_snapshot?: string
           phone?: string | null
           preferred_journal_id?: string | null
+          priority?: string
           publication_type: string
           reference: string
           review_settings?: Json
@@ -1659,6 +1903,7 @@ export type Database = {
           journal_title_snapshot?: string
           phone?: string | null
           preferred_journal_id?: string | null
+          priority?: string
           publication_type?: string
           reference?: string
           review_settings?: Json
@@ -1798,6 +2043,51 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_transition_publication: {
+        Args: {
+          p_actor_id: string
+          p_preflight_run_id?: string
+          p_reason?: string
+          p_scheduled_for?: string
+          p_submission_id: string
+          p_to_stage: Database["public"]["Enums"]["workflow_stage"]
+        }
+        Returns: {
+          abstract: string
+          affiliation: string | null
+          assigned_issue_id: string | null
+          author_details: Json
+          author_email: string
+          author_name: string
+          author_notes: string | null
+          author_user_id: string | null
+          consent_at: string
+          created_at: string
+          current_stage: Database["public"]["Enums"]["workflow_stage"]
+          id: string
+          issue_snapshot: string
+          journal_title_snapshot: string
+          phone: string | null
+          preferred_journal_id: string | null
+          priority: string
+          publication_type: string
+          reference: string
+          review_settings: Json
+          source_ip_hash: string | null
+          status: string
+          submitted_at: string | null
+          title: string
+          tracking_number: string
+          updated_at: string
+          volume_snapshot: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "submissions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       allocate_certificate_number: { Args: { p_year: number }; Returns: string }
       complete_workflow_checklist_item: {
         Args: {
@@ -2002,6 +2292,7 @@ export type Database = {
           journal_title_snapshot: string
           phone: string | null
           preferred_journal_id: string | null
+          priority: string
           publication_type: string
           reference: string
           review_settings: Json

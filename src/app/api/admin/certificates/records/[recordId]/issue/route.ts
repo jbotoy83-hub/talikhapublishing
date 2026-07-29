@@ -28,7 +28,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
     const blocksResult = await admin.from("certificate_text_blocks").select("id,page_id,content,x,y,width,height,rotation,z_index,style,overflow_behavior,locked,block_type,asset_bucket,asset_path").in("page_id", pagesResult.data.map((page) => page.id));
     if (blocksResult.error) throw new Error(blocksResult.error.message);
     const blocks = (blocksResult.data || []).map((block) => ({ id: block.id, pageId: block.page_id, pageNumber: pageNumbers.get(block.page_id), content: block.content, x: Number(block.x), y: Number(block.y), width: Number(block.width), height: Number(block.height), rotation: Number(block.rotation), zIndex: block.z_index, style: block.style || {}, overflowBehavior: block.overflow_behavior, locked: block.locked, blockType: block.block_type, assetBucket: block.asset_bucket, assetPath: block.asset_path }));
-    const { pdfBytes, warnings } = await renderCertificatePdf({ admin, template: templateResult.data, values, blocks, customFonts: fontsResult.data || [], pages: pagesResult.data.map((page) => ({ pageNumber: page.page_number, width: Number(page.width), height: Number(page.height), backgroundBucket: page.background_bucket, backgroundPath: page.background_path, backgroundMimeType: page.background_mime_type })), recordId });
+    const certificatePages = pagesResult.data.filter((page) => page.page_number <= 5);
+    const certificatePageIds = new Set(certificatePages.map((page) => page.id));
+    const certificateBlocks = blocks.filter((block) => certificatePageIds.has(block.pageId));
+    const { pdfBytes, warnings } = await renderCertificatePdf({ admin, template: templateResult.data, values, blocks: certificateBlocks, customFonts: fontsResult.data || [], pages: certificatePages.map((page) => ({ pageNumber: page.page_number, width: Number(page.width), height: Number(page.height), backgroundBucket: page.background_bucket, backgroundPath: page.background_path, backgroundMimeType: page.background_mime_type })), recordId });
     if (warnings.length) return NextResponse.json({ error: "The certificate has layout warnings and was not issued.", warnings }, { status: 422 });
     const latest = await admin.from("certificate_output_versions").select("version_number").eq("certificate_record_id", recordId).order("version_number", { ascending: false }).limit(1).maybeSingle();
     if (latest.error) throw new Error(latest.error.message);
@@ -40,6 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
 
     let certificateFileId: string | null = null;
     let previewFileId: string | null = null;
+    let socialMediaFileId: string | null = null;
     if (recordResult.data.submission_id) {
       const submissionId = recordResult.data.submission_id;
       const { data: officialPdf, error: downloadError } = await admin.storage.from("certificate-assets").download(pdfPath);
@@ -72,12 +76,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
         previewFileId = previewFile.id;
         await admin.from("certificate_output_versions").update({ preview_path: previewPath }).eq("certificate_record_id", recordId).eq("version_number", versionNumber);
       }
-      const { error: publicationUpdateError } = await admin.from("publication_records").update({ certificate_file_id: certificateFileId }).eq("submission_id", submissionId);
+      const social = form?.get("social");
+      if (social instanceof File && social.size > 0) {
+        if (!["image/jpeg", "image/png"].includes(social.type) || social.size > 15 * 1024 * 1024) throw new Error("Page 6 social artwork must be a JPG or PNG no larger than 15 MB.");
+        const extension = social.type === "image/png" ? "png" : "jpg";
+        const socialName = `social-${recordResult.data.certificate_number}.${extension}`;
+        const socialPath = `${submissionId}/social_media_artwork/${randomUUID()}-${socialName}`;
+        const { error: socialUploadError } = await admin.storage.from("certificates").upload(socialPath, new Uint8Array(await social.arrayBuffer()), { contentType: social.type, upsert: false });
+        if (socialUploadError) throw new Error(socialUploadError.message);
+        const { data: socialFile, error: socialFileError } = await admin.from("submission_files").insert({
+          submission_id: submissionId, file_kind: "social_media_artwork", storage_bucket: "certificates", storage_path: socialPath,
+          original_name: socialName, mime_type: social.type, size_bytes: social.size
+        }).select("id").single();
+        if (socialFileError || !socialFile) throw new Error(socialFileError?.message || "Could not attach the page 6 social artwork.");
+        socialMediaFileId = socialFile.id;
+      }
+      const { data: publicationRecord } = await admin.from("publication_records").select("metadata").eq("submission_id", submissionId).maybeSingle();
+      const { error: publicationUpdateError } = await admin.from("publication_records").update({
+        certificate_file_id: certificateFileId,
+        metadata: {
+          ...((publicationRecord?.metadata as Record<string, unknown>) || {}),
+          socialMediaFileId,
+          certificateTitle: String(values.work_title || ""),
+          certificateDoi: String(values.doi || ""),
+          socialTitle: String(values.work_title || ""),
+          socialDoi: String(values.doi || ""),
+          socialFieldsComplete: Boolean(values.author_name && values.work_title && values.doi && values.author_photo),
+          certificateNumber: recordResult.data.certificate_number,
+          certificateIssueDate: new Date().toISOString().slice(0, 10),
+        }
+      }).eq("submission_id", submissionId);
       if (publicationUpdateError) throw new Error(publicationUpdateError.message);
       await admin.from("workflow_events").insert({
         submission_id: submissionId, event_type: "publication_certificate_attached", internal_title: "Publication certificate attached",
         internal_description: "The issued certificate PDF and its preview were attached to this manuscript record.", visibility: "internal",
-        actor_type: user.role, actor_id: user.id, metadata: { certificate_record_id: recordId, certificate_file_id: certificateFileId, preview_file_id: previewFileId }
+        actor_type: user.role, actor_id: user.id, metadata: { certificate_record_id: recordId, certificate_file_id: certificateFileId, preview_file_id: previewFileId, social_media_file_id: socialMediaFileId }
       });
 
       const { data: subCheck } = await admin.from("submissions").select("current_stage").eq("id", submissionId).maybeSingle();
@@ -91,6 +124,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ rec
         });
       }
     }
-    return NextResponse.json({ issued: true, versionNumber, certificateFileId, previewFileId, submissionId: recordResult.data.submission_id });
+    return NextResponse.json({ issued: true, versionNumber, certificateFileId, previewFileId, socialMediaFileId, submissionId: recordResult.data.submission_id });
   } catch (error) { return apiErrorResponse(error, "Could not issue the certificate."); }
 }

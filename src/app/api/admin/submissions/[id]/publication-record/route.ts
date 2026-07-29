@@ -9,8 +9,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (isApiError(body)) return body;
   const { id } = await params;
   try {
-    await savePublicationRecord({ ...body, submissionId: id } as Parameters<typeof savePublicationRecord>[0]);
-    return NextResponse.json({ ok: true });
+    const result = await savePublicationRecord({ ...body, submissionId: id } as Parameters<typeof savePublicationRecord>[0]);
+    return NextResponse.json({ ok: true, record: result });
   } catch (error) {
     return apiErrorResponse(error, "The publication record could not be saved.");
   }

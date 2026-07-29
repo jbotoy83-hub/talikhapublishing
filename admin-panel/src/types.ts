@@ -31,6 +31,7 @@ export type ReceiptSettings = {
 
 export type EditorialSubmission = {
   id: string;
+  reference?: string;
   title: string;
   author: string;
   email: string;
@@ -62,7 +63,9 @@ export type EditorialSubmission = {
   manuscriptFileName?: string;
   manuscriptFilePath?: string;
   manuscriptBucket?: string;
-  files?: { id: string; file_kind: string; storage_path: string; original_name: string; mime_type: string; size_bytes: number }[];
+  preferredJournalId?: string;
+  assignedIssueId?: string;
+  files?: { id: string; file_kind: string; storage_path: string; storage_bucket?: string; original_name: string; mime_type: string; size_bytes: number; sha256?: string; version_number?: number; supersedes_file_id?: string | null; validation_status?: string }[];
   authorDetails?: { firstName?: string; surname?: string; middleInitial?: string; email?: string; institution?: string; affiliation?: string; academicTitle?: string; position?: string; orcid?: string; location?: string }[];
   proofFileId?: string;
   manuscriptFileId?: string;
@@ -73,6 +76,9 @@ export type PublicationRecord = {
   id: string;
   submissionId: string;
   journal: string;
+  journalId?: string;
+  issueId?: string;
+  publicationId?: string;
   volume: string;
   issue: string;
   doi: string;
@@ -81,6 +87,19 @@ export type PublicationRecord = {
   readCount?: number;
   downloadCount?: number;
   scheduledFor?: string;
+  publicTitle?: string;
+  publicAbstract?: string;
+  keywords?: string[];
+  licenseName?: string;
+  copyrightHolder?: string;
+  citationData?: Record<string, unknown>;
+  finalPdfFileId?: string;
+  certificateFileId?: string;
+  socialMediaFileId?: string;
+  publicArticleUrl?: string;
+  doiRegistrationStatus?: "assigned" | "reserved" | "registered";
+  latestPreflightRunId?: string;
+  submittedPreflightRunId?: string;
   status: "Draft" | "For approval" | "Ready to publish" | "Scheduled" | "Published";
 };
 

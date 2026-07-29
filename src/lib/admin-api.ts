@@ -13,6 +13,15 @@ export async function requireEditorApi(): Promise<AdminUser | NextResponse> {
   return user;
 }
 
+export async function requireAdminApi(): Promise<AdminUser | NextResponse> {
+  const user = await getAdminUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.role !== "admin") {
+    return NextResponse.json({ error: "Only an administrator may perform this publication action." }, { status: 403 });
+  }
+  return user;
+}
+
 export function isApiError(value: AdminUser | Record<string, unknown> | NextResponse): value is NextResponse {
   return value instanceof NextResponse;
 }

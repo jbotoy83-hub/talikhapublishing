@@ -1003,13 +1003,16 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     try {
       const saved = await saveRecord();
       if (!saved) return;
-      const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
       const form = new FormData();
-      if (pageEl) {
-        const html2canvas = (await import("html2canvas")).default;
-        const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-        const preview = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      const previewCanvas = await capturePage(0, 2);
+      const socialCanvas = await capturePage(5, renderScaleFor(compressQuality, 5));
+      if (previewCanvas) {
+        const preview = await new Promise<Blob | null>((resolve) => previewCanvas.toBlob(resolve, "image/png"));
         if (preview) form.set("preview", new File([preview], `${template.name || "certificate"}-preview.png`, { type: "image/png" }));
+      }
+      if (socialCanvas) {
+        const social = await new Promise<Blob | null>((resolve) => socialCanvas.toBlob(resolve, "image/jpeg", jpegQualityFor(compressQuality, 5)));
+        if (social) form.set("social", new File([social], `${template.name || "certificate"}-social.jpg`, { type: "image/jpeg" }));
       }
       const response = await fetch(`/api/admin/certificates/records/${record.id}/issue`, { method: "POST", credentials: "same-origin", body: form });
       if (!handleApiState(response)) return;
@@ -1020,7 +1023,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
         window.setTimeout(() => window.location.assign(`/admin?view=submissions&submission=${encodeURIComponent(payload.submissionId)}`), 650);
       }
     } catch { setServiceState("unavailable"); }
-  }, [record, template, currentPage, saveRecord, handleApiState]);
+  }, [record, template, currentPage, saveRecord, handleApiState, capturePage, compressQuality]);
 
   if (!template) {
     return (
