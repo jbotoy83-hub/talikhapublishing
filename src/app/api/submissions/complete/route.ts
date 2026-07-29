@@ -29,7 +29,7 @@ function hasExpectedStoragePath(path: string, submissionId: string, field: Submi
 export async function POST(request: Request) {
   if (!isSubmissionsEnabled()) return NextResponse.json({ error: "Public submissions are currently closed." }, { status: 503 });
   const ip = getRequestRateLimitKey(request.headers);
-  if (!allowRequest(`submission-complete:${ip}`)) return NextResponse.json({ error: "Too many completion attempts. Please wait before trying again." }, { status: 429 });
+  if (!await allowRequest(`submission-complete:${ip}`)) return NextResponse.json({ error: "Too many completion attempts. Please wait before trying again." }, { status: 429 });
   const admin = getSupabaseAdmin();
   if (!admin) return NextResponse.json({ error: "Secure submissions are not configured yet." }, { status: 503 });
   const contentLength = Number(request.headers.get("content-length"));

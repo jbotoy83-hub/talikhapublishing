@@ -69,9 +69,6 @@ function readLocalStore(): StoreShape {
 async function requireEditor() {
   const user = await getAdminUser();
   if (user && user.role !== "viewer") return user;
-  if (process.env.NODE_ENV !== "production") {
-    return { id: "local-development-admin", email: "local-admin@talikha.test", displayName: "Local development admin", role: "admin" as const };
-  }
   return null;
 }
 

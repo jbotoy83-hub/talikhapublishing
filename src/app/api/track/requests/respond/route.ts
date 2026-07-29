@@ -56,7 +56,7 @@ async function findTrackedSubmission(reference: string) {
 
 export async function POST(request: NextRequest) {
   const ip = getRequestRateLimitKey(request.headers);
-  if (!allowRequest(`track-response:${ip}`, 5, 15 * 60 * 1000)) {
+  if (!await allowRequest(`track-response:${ip}`, 5, 15 * 60 * 1000)) {
     return NextResponse.json({ error: "Too many response attempts. Please wait before trying again." }, { status: 429 });
   }
 
