@@ -2612,11 +2612,7 @@ function LegacySubmissionReview({
               />
             </label>
             <ManuscriptFileList files={submission.files} fallbackName={submission.fileName} className="review-manuscript-primary" onPreview={setPreviewFile} />
-            <div className="review-fields two review-reference-fields">
-              <ReviewField
-                label="Invoice number"
-                value={`LS-INV-${submission.id.replace("LS-", "")}`}
-              />
+              <div className="review-fields two review-reference-fields">
               <ReviewField label="Submitted date" value={submittedDateTimeLabel(submission).replace(/^Submitted\s+/, "")} />
               <ReviewField label="Journal" value={submission.journal} />
               <ReviewField label="Submission reference" value={submission.id} />
@@ -3468,8 +3464,8 @@ function ReceiptPreview({
           <div className="receipt-mark">TP</div>
         </header>
         <div className="receipt-number">
-          <span>Invoice number</span>
-          <strong>{`LS-INV-${submission.id.replace("LS-", "")}`}</strong>
+          <span>Submission reference</span>
+          <strong>{submission.id}</strong>
         </div>
         <div className="receipt-parties">
           <div>
