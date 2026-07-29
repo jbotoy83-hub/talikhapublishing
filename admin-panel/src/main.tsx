@@ -872,9 +872,10 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   const titleToId: Record<string, string> = {};
   catalog.journals.forEach((j) => { titleToId[j.title] = j.id; });
   const currentIssueByJournal: Record<string, string> = {};
-  catalog.issues.forEach((i) => { if (!i.deleted && i.isCurrent) currentIssueByJournal[i.journalId] = i.id; });
+  catalog.issues.forEach((i) => { if (!i.deleted && i.isCurrent) currentIssueByJournal[i.journalId] = i.databaseId || i.id; });
   const submissionIssueByJournal: Record<string, string> = {};
   catalog.journals.forEach((j) => { if (j.submissionIssueId) submissionIssueByJournal[j.id] = j.submissionIssueId; });
+  const issueKey = (i: IssueRecord) => i.databaseId || i.id;
   const effectiveTarget = (sub: EditorialSubmission): string | null => {
     const t = sub.targetIssueId;
     if (t === "UNASSIGNED") return "UNASSIGNED";
@@ -919,7 +920,7 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
       if (item.isSubmissionTarget) return { ...item, isSubmissionTarget: false, changelog: [...item.changelog, `Submissions closed because Vol ${target.volume} Issue ${target.issue} became the target ${jwStamp()}`] };
       return item;
     });
-    commit({ ...catalog, journals: catalog.journals.map((item) => item.id === journal.id ? { ...item, submissionIssueId: target.id } : item), issues: nextIssues });
+    commit({ ...catalog, journals: catalog.journals.map((item) => item.id === journal.id ? { ...item, submissionIssueId: issueKey(target) } : item), issues: nextIssues });
     setConfirm(null);
     if (previous && previous.id !== target.id) setCoverMsg(`New submissions now route to Vol ${target.volume} Issue ${target.issue}.`);
   };
@@ -947,13 +948,23 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
     patchIssue(i.id, (x) => ({ ...x, status: next, changelog: [...x.changelog, `Status → ${ISSUE_STATUS_META[next].label} ${jwStamp()}`] }));
   };
   const unpublish = (i: IssueRecord) => setConfirm({ title: "Unpublish this issue?", msg: "It returns to production and is removed as the current issue; previously published records are untouched.", onYes: () => { const fallback = catalog.issues.find((x) => x.journalId === i.journalId && x.id !== i.id && !x.deleted && x.status === "Published"); commit({ ...catalog, issues: catalog.issues.map((x) => (x.id === i.id ? { ...x, status: "Production" as IssueStatus, isCurrent: false, changelog: [...x.changelog, `Unpublished ${jwStamp()}`] } : x.id === fallback?.id ? { ...x, isCurrent: true, changelog: [...x.changelog, `Restored as current after unpublish ${jwStamp()}`] } : x)) }); setConfirm(null); } });
-  const moveSubmission = (sub: EditorialSubmission, target: string, note: string) => onUpdate({ ...sub, targetIssueId: target, issueHistory: [...(sub.issueHistory || []), `${note} ${jwStamp()}`] });
-  const acceptToIssue = (sub: EditorialSubmission, i: IssueRecord) => {
+  const assignSubmission = async (sub: EditorialSubmission, target: string, note: string) => {
+    const assignedIssueId = target === "UNASSIGNED" ? null : target;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sub.id)) {
+      const response = await fetch(`/api/admin/submissions/${sub.id}/assignment`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ issueId: assignedIssueId }) }).catch(() => null);
+      const body = await response?.json().catch(() => null);
+      if (!response?.ok) { setCoverMsg(body?.error || "The issue assignment could not be saved."); return false; }
+    }
+    onUpdate({ ...sub, targetIssueId: assignedIssueId || "UNASSIGNED", assignedIssueId: assignedIssueId || undefined, issueHistory: [...(sub.issueHistory || []), `${note} ${jwStamp()}`] });
+    return true;
+  };
+  const moveSubmission = (sub: EditorialSubmission, target: string, note: string) => { void assignSubmission(sub, target, note); };
+  const acceptToIssue = async (sub: EditorialSubmission, i: IssueRecord) => {
+    if (!await assignSubmission(sub, issueKey(i), `Accepted into Vol ${i.volume} Issue ${i.issue}`)) return;
     const journalTitle = journalById(i.journalId)?.title || sub.journal;
     if (!publicationRecords.some((r) => r.submissionId === sub.id)) {
       onPublicationRecordsChange([...publicationRecords, { id: `PUB-${sub.id}`, submissionId: sub.id, journal: journalTitle, volume: String(i.volume), issue: String(i.issue), doi: "", pageStart: "", pageEnd: "", status: "Ready to publish" }]);
     }
-    onUpdate({ ...sub, targetIssueId: i.id, issueHistory: [...(sub.issueHistory || []), `Accepted into Vol ${i.volume} Issue ${i.issue} ${jwStamp()}`] });
     patchIssue(i.id, (x) => (x.articleOrder.includes(sub.id) ? x : { ...x, articleOrder: [...x.articleOrder, sub.id], changelog: [...x.changelog, `Article assigned: ${sub.title} ${jwStamp()}`] }));
   };
   const reorder = (i: IssueRecord, from: number, dir: -1 | 1) => {
@@ -966,12 +977,12 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   const assignedFor = (i: IssueRecord) => {
     const title = journalById(i.journalId)?.title;
     const recs = publicationRecords
-      .filter((r) => r.status === "Published" && r.journal === title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue))
+      .filter((r) => r.status === "Published" && ((r.issueId && r.issueId === issueKey(i)) || (!r.issueId && r.journal === title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue))))
       .sort((a, b) => (Number(a.pageStart) || Number.MAX_SAFE_INTEGER) - (Number(b.pageStart) || Number.MAX_SAFE_INTEGER));
     return recs.map((rec) => { const sub = subById(rec.submissionId); return sub ? { sub, rec } : null; }).filter((x): x is { sub: EditorialSubmission; rec: PublicationRecord } => x !== null);
   };
   const targetedFor = (i: IssueRecord) => submissions.filter((s) => {
-    if (effectiveTarget(s) !== i.id) return false;
+    if (effectiveTarget(s) !== issueKey(i)) return false;
     const title = journalById(i.journalId)?.title;
     return !publicationRecords.some((r) => r.submissionId === s.id && r.journal === title && String(r.volume) === String(i.volume) && String(r.issue) === String(i.issue));
   });

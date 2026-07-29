@@ -109,6 +109,7 @@ export type IssueStatus = "Draft" | "Open" | "Editorial" | "Production" | "Sched
 
 export type IssueRecord = {
   id: string;
+  databaseId?: string;
   journalId: string;
   volume: number;
   issue: number;

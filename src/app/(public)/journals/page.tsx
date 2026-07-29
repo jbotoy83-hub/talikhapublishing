@@ -77,7 +77,7 @@ export default async function JournalsPage() {
         <span className="catalogue-hero-orbit" aria-hidden="true" />
         <div className="section-shell catalogue-hero-grid">
           <div>
-            <p className="page-eyebrow"><span><Icon name="book" className="h-4 w-4" /></span> Publication catalogue</p>
+            <div className="page-eyebrow"><span><Icon name="book" className="h-4 w-4" /></span> Publication catalogue</div>
             <h1>Find the <em>right home</em><br />for your work.</h1>
             <p>Research, literature, and public ideas each belong to a distinct publishing programme. Explore our journals to review their editorial scope, publication schedule, available volumes, and published issues.</p>
             <div className="catalogue-hero-actions">

@@ -163,6 +163,7 @@ async function loadFromDatabase(admin: NonNullable<ReturnType<typeof getSupabase
     return {
       ...metadata,
       id: editorId(metadata, fallbackIssueId(slug, volume, issue)),
+      databaseId: row.id,
       journalId: editorId(((journal?.editorial_metadata || {}) as JsonRecord), fallbackJournalId(slug)),
       volume: Number(volume) || 1,
       issue: Number(issue) || 1,

@@ -27,6 +27,7 @@ export type Publication = {
   abstract: string;
   keywords: string[];
   journal: Journal;
+  issueId?: string;
   authors: Author[];
   authorDisplay: string;
   publicationDate: string;

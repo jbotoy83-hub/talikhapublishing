@@ -10,6 +10,22 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { synchronizeJournalLifecycles } from "@/lib/journal-lifecycle";
 type StoreJournal = { id: string; slug: string; title: string; description?: string; scope?: string; issnOnline?: string; issn?: string; hero?: string; hero_image_url?: string; accent?: string; status?: string; deleted?: boolean; [k: string]: unknown };
 type StoreIssue = { id: string; journalId: string; volume: string; issue: string; title?: string; status?: string; isCurrent?: boolean; publicationDate?: string; cover?: string; deleted?: boolean; [k: string]: unknown };
+
+function normalizePublicImageUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const raw = value.trim();
+  if (!raw || raw.startsWith("data:") || raw.startsWith("blob:") || raw.includes(":\\")) return "";
+  if (raw.startsWith("/")) return raw;
+  if (raw.includes("://")) {
+    try {
+      const url = new URL(raw);
+      return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+    } catch {
+      return "";
+    }
+  }
+  return `/assets/${raw.replace(/^assets\//, "")}`;
+}
 export type JournalStore = { version?: number; journals: StoreJournal[]; issues: StoreIssue[] };
 export type JournalCurrentIssue = { id: string; volume: string; issue: string; title: string; status: string; publicationDate: string; cover: string };
 export type JournalIssueSummary = { id: string; volume: string; issue: string; title: string; status: string; isCurrent: boolean; publicationDate: string; cover: string };
@@ -81,7 +97,7 @@ function storeIssuesFor(journalId: string, slug?: string): StoreIssue[] {
 }
 
 function mapStoreIssueSummary(i: StoreIssue, isCurrent: boolean): JournalIssueSummary {
-  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent, publicationDate: i.publicationDate || "", cover: i.cover || "" };
+  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent, publicationDate: i.publicationDate || "", cover: normalizePublicImageUrl(i.cover) };
 }
 
 export const getCurrentIssueForJournal = cache(async (journalId: string, slug?: string): Promise<JournalCurrentIssue | null> => {
@@ -95,14 +111,14 @@ export const getCurrentIssueForJournal = cache(async (journalId: string, slug?: 
     if (!error && data) {
       const currentId = journalRow?.current_issue_id ?? null;
       const current = (currentId && data.find((i) => i.id === currentId)) || data.find((i) => (i.status || "") === "published");
-      if (current) return { id: current.id, volume: current.volume, issue: current.issue_number, title: current.title || "", status: (current.status || "").toLowerCase(), publicationDate: current.publication_date || "", cover: current.cover_image_url || "" };
+      if (current) return { id: current.id, volume: current.volume, issue: current.issue_number, title: current.title || "", status: (current.status || "").toLowerCase(), publicationDate: current.publication_date || "", cover: normalizePublicImageUrl(current.cover_image_url) };
       return null;
     }
   }
   const issues = storeIssuesFor(journalId, slug);
   const i = issues.find((x) => x.isCurrent) || issues.find((x) => (x.status || "") === "published");
   if (!i) return null;
-  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), publicationDate: i.publicationDate || "", cover: i.cover || "" };
+  return { id: i.id, volume: i.volume, issue: i.issue, title: i.title || "", status: (i.status || "").toLowerCase(), publicationDate: i.publicationDate || "", cover: normalizePublicImageUrl(i.cover) };
 });
 
 export const getJournalIssues = cache(async (journalId: string, slug?: string): Promise<JournalIssueSummary[]> => {
@@ -115,7 +131,7 @@ export const getJournalIssues = cache(async (journalId: string, slug?: string): 
     ]);
     if (!error && data) {
       const currentId = journalRow?.current_issue_id ?? null;
-      return data.map((i) => ({ id: i.id, volume: i.volume, issue: i.issue_number, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent: i.id === currentId, publicationDate: i.publication_date || "", cover: i.cover_image_url || "" }));
+      return data.map((i) => ({ id: i.id, volume: i.volume, issue: i.issue_number, title: i.title || "", status: (i.status || "").toLowerCase(), isCurrent: i.id === currentId, publicationDate: i.publication_date || "", cover: normalizePublicImageUrl(i.cover_image_url) }));
     }
   }
   return storeIssuesFor(journalId, slug).map((i) => mapStoreIssueSummary(i, Boolean(i.isCurrent)));
@@ -152,6 +168,7 @@ type PublicationRow = {
   keywords: string[] | null;
   publication_date: string | null;
   updated_at: string;
+  issue_id: string | null;
   volume: string | null;
   issue_number: string | null;
   pages: string | null;
@@ -218,6 +235,7 @@ function mapPublication(row: PublicationRow): Publication | null {
     abstract: row.abstract || "",
     keywords: row.keywords || [],
     journal: mapJournal(journalRecord),
+    issueId: row.issue_id || undefined,
     authors,
     authorDisplay: row.author_display || authors.map((author) => author.name).join("; "),
     publicationDate: normalizedYearOnlyDate ? publicationDate.slice(0, 4) : publicationDate,
@@ -240,7 +258,7 @@ function mapPublication(row: PublicationRow): Publication | null {
 }
 
 const publicationSelect = `
-  id, slug, title, abstract, keywords, publication_date, updated_at,
+  id, slug, title, abstract, keywords, publication_date, updated_at, issue_id,
   volume, issue_number, pages, doi, pdf_url, recommended_citation,
   license_name, license_url, copyright_holder, featured, content_type, author_display, views, downloads,
   journal:journals(id, slug, title, description, scope, issn, hero_image_url, accent),
