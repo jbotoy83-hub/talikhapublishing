@@ -11,11 +11,12 @@ import { DemoPublicationPdfReader } from "@/components/demo-publication-pdf-read
 import { OpenAccessBadge } from "@/components/license-badge";
 import { CitationPanel } from "@/components/citation-panel";
 import { ShareButtons } from "@/components/share-buttons";
+import { PublicationActivityPanel } from "@/components/publication-activity-panel";
 import { getPublication, getPublications } from "@/lib/content";
 import { absoluteUrl, SITE_LANGUAGE, SITE_NAME } from "@/lib/site";
 import { isOpenAccess } from "@/lib/citation-format";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export async function generateStaticParams() {
   const publications = await getPublications();
@@ -145,7 +146,7 @@ export default async function PublicationPage({ params }: { params: Promise<{ sl
             {embeddablePdf ? <PublicationPdfReader src={readerSrc} title={publication.title} /> : demoReader ? <DemoPublicationPdfReader title={publication.title} /> : null}
           </div>
           <aside className="publication-detail-sidebar">
-            <section className="publication-access-panel publication-activity-panel"><div className="publication-activity-heading"><span className="publication-activity-icon"><Icon name="eye" className="h-4 w-4" /></span><span className="publication-activity-label">Publication reach</span></div><div className="publication-activity-metrics" aria-label="Publication analytics"><div><span>Views</span><strong>{publication.views.toLocaleString("en-PH")}</strong><small>all time</small></div><div><span>Downloads</span><strong>{publication.downloads.toLocaleString("en-PH")}</strong><small>all time</small></div></div><div className="publication-activity-action">{publication.pdfUrl ? <a href={publication.pdfUrl} target="_blank" rel="noopener noreferrer"><Icon name="file" className="h-4 w-4" /> Download publication</a> : <p>The full-text PDF for this record is not available yet.</p>}</div></section>
+            <PublicationActivityPanel slug={publication.slug} views={publication.views} downloads={publication.downloads} pdfUrl={publication.pdfUrl} />
             <section className="article-rights-panel"><div className="publication-panel-heading">Rights and reuse</div><div className="rights-row"><span>License</span>{publication.licenseUrl ? <a href={publication.licenseUrl} target="_blank" rel="noopener noreferrer"><strong>{publication.licenseName}</strong></a> : <strong>{publication.licenseName}</strong>}{openAccess && <div className="pub-badges-row" style={{marginTop:"6px"}}><OpenAccessBadge licenseName={publication.licenseName} /></div>}</div><div className="rights-row"><span>Publisher</span><strong>{SITE_NAME}</strong></div></section>
           </aside>
         </div>

@@ -255,7 +255,7 @@ export function PreflightWorkspace({ submissionId, reference, title, onClose, on
         </nav>
         <div className="pf-toolbar">
           <div><button type="button" title="Search document"><Search /></button><button type="button" onClick={() => setZoom((value) => Math.max(.6, value - .1))}><ZoomOut /></button><span>{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoom((value) => Math.min(1.8, value + .1))}><ZoomIn /></button><button type="button" onClick={() => setRotation((value) => (value + 90) % 360)}><RotateCw /></button></div>
-          <div><button type="button" className={compare ? "active" : ""} disabled={!originalArtifact || !finalArtifact} onClick={() => setCompare((value) => !value)}><Columns2 /> Compare</button>{activeArtifact && <a href={`/api/admin/files/${activeArtifact.id}`} download={activeArtifact.name}><Download /> Download</a>}</div>
+          <div><button type="button" className={compare ? "active" : ""} disabled={!originalArtifact || !finalArtifact} onClick={() => setCompare((value) => !value)}><Columns2 /> Compare</button>{activeArtifact && <a href={`/api/admin/files/${activeArtifact.id}?stream=1&download=1`} download={activeArtifact.name}><Download /> Download</a>}</div>
         </div>
         <div className={`pf-stage${compare ? " comparing" : ""}`}>
           {compare ? <>

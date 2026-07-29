@@ -75,6 +75,7 @@ function automatic(key: string, group: string, title: string, passed: boolean, m
     group,
     title,
     mode: "automatic",
+    blocking: false,
     status: passed ? "pass" : "fail",
     evidence,
     blocker: passed ? undefined : blocker({ code: key, group, message, fixAction }),
@@ -132,6 +133,54 @@ async function validateStoredFile(db: ReturnType<typeof getSupabaseAdmin>, file:
   file.validation_status = valid ? "valid" : "invalid";
   file.validation_metadata = metadata;
   return { valid, message, metadata };
+}
+
+async function extractStoredText(db: ReturnType<typeof getSupabaseAdmin>, file: JsonRecord) {
+  if (!db) return "";
+  const bucket = String(file.storage_bucket || "submission-files");
+  const path = String(file.storage_path || "");
+  const { data, error } = await db.storage.from(bucket).download(path);
+  if (error || !data) return "";
+  const bytes = Buffer.from(await data.arrayBuffer());
+  const mimeType = String(file.mime_type || "").toLocaleLowerCase();
+  try {
+    if (mimeType.includes("wordprocessingml") || mimeType === "application/msword" || String(file.original_name || "").toLocaleLowerCase().endsWith(".docx")) {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer: bytes });
+      return result.value || "";
+    }
+    if (mimeType === "application/pdf" || String(file.original_name || "").toLocaleLowerCase().endsWith(".pdf")) {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs") as unknown as { getDocument: (options: { data: Uint8Array; disableWorker: boolean }) => { promise: Promise<{ numPages: number; getPage: (page: number) => Promise<{ getTextContent: () => Promise<{ items: Array<{ str?: string }> }> }> }> } };
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true }).promise;
+      const pages: string[] = [];
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const text = await page.getTextContent();
+        pages.push(text.items.map((item) => item.str || "").join(" "));
+      }
+      return pages.join("\n");
+    }
+    if (mimeType.startsWith("text/")) return bytes.toString("utf8");
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function normalizedText(value: string) {
+  return value.normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function textOverlap(source: string, finalText: string) {
+  const sourceTokens = [...new Set(normalizedText(source).split(/\s+/).filter((token) => token.length >= 4))];
+  const finalTokens = new Set(normalizedText(finalText).split(/\s+/));
+  if (!sourceTokens.length || !finalTokens.size) return 0;
+  return sourceTokens.filter((token) => finalTokens.has(token)).length / sourceTokens.length;
+}
+
+function textContains(finalText: string, value: string) {
+  const expected = normalizedText(value);
+  return Boolean(expected && normalizedText(finalText).includes(expected));
 }
 
 async function loadContext(submissionId: string) {
@@ -254,6 +303,47 @@ async function evaluate(context: Awaited<ReturnType<typeof loadContext>>, existi
     const health = await validateStoredFile(context.admin, social, "social_media_artwork");
     checks.push(automatic("health.social", "File health", "Social artwork is a valid JPG or PNG", health.valid, health.message || "The social artwork is invalid.", "regenerate_certificate", { fileId: social.id, ...health.metadata }));
   } else checks.push(automatic("health.social", "File health", "Social artwork is a valid JPG or PNG", false, "Store page 6 as social-media artwork.", "regenerate_certificate"));
+
+  const [originalText, finalText] = original && finalPdf
+    ? await Promise.all([extractStoredText(context.admin, original), extractStoredText(context.admin, finalPdf)])
+    : ["", ""];
+  const submittedTitle = String(submission.title || "");
+  const finalTitle = String(publication?.title || "");
+  const titleMatches = Boolean(submittedTitle && finalText && (textContains(finalText, submittedTitle) || normalizedText(submittedTitle) === normalizedText(finalTitle)));
+  checks.push(automatic(
+    "comparison.title",
+    "Automatic comparison",
+    "Final manuscript contains the author-submitted title",
+    titleMatches,
+    "The author-submitted title was not found in the current final manuscript. Review the title manually.",
+    "open_artifact",
+    { sourceTitle: submittedTitle, finalTitle, sourceFileId: original?.id || null, finalFileId: finalPdf?.id || null },
+  ));
+  const overlap = originalText && finalText ? textOverlap(originalText, finalText) : 0;
+  checks.push(automatic(
+    "comparison.content",
+    "Automatic comparison",
+    "Final manuscript content substantially matches the author manuscript",
+    overlap >= 0.45,
+    "The automatic text comparison found limited overlap. Review the original and final files side by side.",
+    "open_artifact",
+    { sourceFileId: original?.id || null, finalFileId: finalPdf?.id || null, sourceCharacters: originalText.length, finalCharacters: finalText.length, tokenOverlap: Number(overlap.toFixed(3)) },
+  ));
+  const sourceAuthorFields = context.submissionAuthors.flatMap((author) => [
+    [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" "),
+    author.institution,
+    author.affiliation,
+  ]).filter((value): value is string => Boolean(value && String(value).trim()));
+  const authorFieldsMatch = sourceAuthorFields.length === 0 || Boolean(finalText && sourceAuthorFields.every((value) => textContains(finalText, String(value))));
+  checks.push(automatic(
+    "comparison.author_information",
+    "Automatic comparison",
+    "Author-submitted names and affiliations appear in the final manuscript",
+    authorFieldsMatch,
+    "One or more author-supplied names or affiliations were not found in the current final manuscript. Review the author information manually.",
+    "open_artifact",
+    { expectedFields: sourceAuthorFields, finalFileId: finalPdf?.id || null },
+  ));
 
   checks.push(automatic("metadata.core", "Metadata", "Public title and abstract are complete", Boolean(publication?.title && publication?.abstract), "Public title and abstract are required.", "edit_metadata"));
   checks.push(automatic("metadata.keywords", "Metadata", "Keywords are present", Array.isArray(publication?.keywords) && publication.keywords.length > 0, "Add at least one public keyword.", "edit_metadata"));

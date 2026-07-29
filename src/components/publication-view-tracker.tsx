@@ -13,7 +13,9 @@ export function PublicationViewTracker({ slug }: { slug: string }) {
     } catch {
       return;
     }
-    void fetch(`/api/publications/${encodeURIComponent(slug)}/view`, { method: "POST", keepalive: true });
+    void fetch(`/api/publications/${encodeURIComponent(slug)}/view`, { method: "POST", keepalive: true }).then(() => {
+      window.dispatchEvent(new CustomEvent("talikha:publication-viewed", { detail: { slug } }));
+    }).catch(() => undefined);
   }, [slug]);
 
   return null;

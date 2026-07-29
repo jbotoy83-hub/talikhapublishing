@@ -1927,11 +1927,11 @@ function statusActions(status: SubmissionStatus) {
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     "In progress": [
-      { label: "Accept & start production", status: "Accepted" },
+      { label: "Start review", status: "In progress" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Review: [
-      { label: "Accept & start production", status: "Accepted" },
+      { label: "Start review", status: "In progress" },
       { label: "Reject", status: "Rejected", tone: "danger" },
     ],
     Revise: [
@@ -2212,8 +2212,8 @@ function LegacySubmissionReview({
     let ok = false;
     let newStage = stage;
     try {
-      if (status === "In progress" && stage === "review_new") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 1, silent: true }) });
+      if (status === "In progress" && (stage === "review_new" || stage === "review_in_progress" || stage === "review_final")) {
+        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2 }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
       } else if (status === "In progress" && stage === "production_ready_to_publish") {
@@ -2221,10 +2221,6 @@ function LegacySubmissionReview({
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
         await fetch(`/api/admin/submissions/${submission.id}/priority`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: "high" }) });
         newStage = "production_records"; ok = true;
-      } else if (status === "Accepted" && (stage === "review_in_progress" || stage === "review_final")) {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2, silent: true }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
       } else if (status === "For approval" && (stage === "review_accepted" || stage?.startsWith("production_"))) {
         const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3, silent: true }) });
         if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
@@ -2250,6 +2246,13 @@ function LegacySubmissionReview({
       return;
     }
     if (!ok && status !== "Rejected") return;
+    if (status === "In progress" && newStage?.startsWith("production_")) {
+      try {
+        window.sessionStorage.setItem("talikha-admin-workflow-notice", JSON.stringify({ message: `${submission.title} is now in production.` }));
+      } catch { /* The redirect still completes if session storage is unavailable. */ }
+      window.location.assign("/admin?view=submissions");
+      return;
+    }
     onUpdate({
       ...submission,
       status: (newStage && stageToSubmissionStatus[newStage]) || status,
@@ -2932,6 +2935,18 @@ function PublicationRecordEditor({
   const selectedFirstName = selectedAuthor?.firstName?.trim() || selectedNameParts[0] || "";
   const selectedSurname = selectedAuthor?.surname?.trim() || (selectedNameParts.length > 1 ? selectedNameParts[selectedNameParts.length - 1] : "");
   const selectedMiddleInitial = selectedAuthor?.middleInitial?.trim() || selectedNameParts.slice(1, -1).map((part) => `${part.replace(/[^a-z]/gi, "").charAt(0).toUpperCase()}.`).filter((part) => part !== ".").join(" ");
+  const authorManuscripts = (submission.files || []).filter((file) => file.file_kind === "manuscript");
+  const finalManuscript = (submission.files || []).filter((file) => file.file_kind === "final_pdf").at(-1);
+  const peerReviewFile = (submission.files || []).filter((file) => file.file_kind === "peer_review").at(-1);
+  const certificateFile = (submission.files || []).filter((file) => file.file_kind === "publication_certificate").at(-1);
+  const recordStatusCopy: Record<PublicationRecord["status"], string> = {
+    Draft: "Build the publication record, check the files, then submit it for administrator approval.",
+    "For approval": "The editor has submitted the record. An administrator must review and approve the publication action.",
+    "Ready to publish": "The record is approved and ready for its publication schedule.",
+    Scheduled: "The record is scheduled. The administrator can publish it when the date is reached.",
+    Published: "This record is live. Engagement counters update from the public publication page.",
+  };
+  const scrollToRecordSection = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const sameIssue = publicationRecords.filter(
     (item) => item.journal === record.journal && item.volume === record.volume && item.issue === record.issue && item.id !== record.id,
   );
@@ -3020,16 +3035,40 @@ function PublicationRecordEditor({
   }
   return (
     <div className="publication-record">
+      <section className="publication-command-center" aria-labelledby="publication-record-heading">
+        <div className="publication-command-copy">
+          <div className="publication-command-kicker"><span>Central publication record</span><span className="publication-command-ref">{submissionReference(submission)}</span></div>
+          <h1 id="publication-record-heading">{record.publicTitle || manuscriptTitle}</h1>
+          <p>{recordStatusCopy[record.status]}</p>
+          <div className="publication-command-actions">
+            {record.status === "Draft" && <button type="button" className="publication-command-primary" onClick={onOpenQualityCheck}><ClipboardCheck size={16} /> Open manual quality check</button>}
+            {record.status === "For approval" && canManagePublication && <button type="button" className="publication-command-primary" onClick={onOpenPublish}><CheckCircle2 size={16} /> Review approval and schedule</button>}
+            {record.publicArticleUrl && <a className="publication-command-link" href={record.publicArticleUrl} target="_blank" rel="noreferrer"><Globe size={15} /> View public page</a>}
+          </div>
+        </div>
+        <div className="publication-command-status"><span className="publication-command-label">Current state</span><strong>{record.status}</strong><small>{record.doiRegistrationStatus === "registered" ? "DOI registered" : "DOI not yet registered"}</small></div>
+      </section>
+      <section className="publication-engagement-strip" aria-label="Publication engagement">
+        <div className="publication-engagement-card"><span className="publication-engagement-icon"><Eye size={17} /></span><div><small>Website reads</small><strong>{(record.readCount ?? 0).toLocaleString("en-PH")}</strong><span>Updates when the public record is viewed</span></div></div>
+        <div className="publication-engagement-card"><span className="publication-engagement-icon"><Download size={17} /></span><div><small>PDF downloads</small><strong>{(record.downloadCount ?? 0).toLocaleString("en-PH")}</strong><span>Updates when the publication PDF is downloaded</span></div></div>
+        <div className="publication-engagement-card publication-engagement-card--next"><span className="publication-engagement-icon"><ClipboardList size={17} /></span><div><small>Next action</small><strong>{record.status === "Draft" ? "Manual quality check" : record.status === "For approval" ? "Admin approval" : record.status === "Scheduled" ? "Publish on schedule" : "Monitor engagement"}</strong><span>One clear action keeps the record moving</span></div></div>
+      </section>
+      <nav className="publication-record-nav" aria-label="Publication record sections">
+        <button type="button" onClick={() => scrollToRecordSection("publication-source-section")}>Source and authors</button>
+        <button type="button" onClick={() => scrollToRecordSection("publication-metadata-section")}>Publishing metadata</button>
+        <button type="button" onClick={() => scrollToRecordSection("publication-materials-section")}>Files and evidence</button>
+        <button type="button" onClick={() => scrollToRecordSection("publication-citation-section")}>Citation</button>
+      </nav>
       <section className="publication-card publication-summary">
         <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>This record was opened from the author’s selected journal and is linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
         <div className="publication-copy-grid">
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
-          <div><span>Manuscript files</span><strong>{submission.fileName}</strong></div>
+          <div><span>Author manuscript</span>{authorManuscripts.length ? <div className="publication-manuscript-links">{authorManuscripts.map((file) => <a key={file.id} className="manuscript-dl-btn" href={`/api/admin/files/${file.id}?stream=1&download=1`} title={`Download ${file.original_name || "author manuscript"}`}><Download size={14} strokeWidth={1.9} /><strong>{file.original_name || submission.fileName}</strong></a>)}</div> : <strong>{submission.fileName}</strong>}</div>
           <div><span>Title</span><strong>{manuscriptTitle}</strong></div>
           <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
         </div>
       </section>
-      <section className="publication-card publication-author-card">
+      <section id="publication-source-section" className="publication-card publication-author-card">
         <header>
           <div>
             <span>Author information</span>
@@ -3061,7 +3100,7 @@ function PublicationRecordEditor({
           <label>Gmail account<input value={selectedAuthor.email || ""} readOnly /></label>
         </div>}
       </section>
-      <section className="publication-card">
+      <section id="publication-metadata-section" className="publication-card">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>
         <div className="publication-fields">
           <label>Journal<select value={record.journal} disabled={!editingRecord} onChange={(event) => { const defaults = journalIssueDefaults[event.target.value] ?? { volume: "1", issue: "1" }; onChange({ ...record, journal: event.target.value, volume: defaults.volume, issue: defaults.issue, pageStart: "", pageEnd: "" }); }}>{Object.keys(journalIssueDefaults).map((journal) => <option key={journal}>{journal}</option>)}</select></label>
@@ -3090,8 +3129,11 @@ function PublicationRecordEditor({
           <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" value={String(record.readCount ?? 0)} onChange={undefined} /><ReviewField label="Number of downloads" value={String(record.downloadCount ?? 0)} onChange={undefined} /></div>
         </div>
       </section>
-      <section className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA 7 citation preview</h2></div></header><ApaCitationPreview submission={submission} authors={authors} record={record} /></section>
-      <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
+      <section id="publication-citation-section" className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA 7 citation preview</h2></div></header><ApaCitationPreview submission={submission} authors={authors} record={record} /></section>
+      <section id="publication-materials-section" className="publication-materials-management">
+        <div className="publication-materials-heading"><div><span>Files and evidence</span><h2>Production materials</h2><p>Keep the source manuscript, final edition, peer review, and certificate together so every release decision has supporting evidence.</p></div><div className="publication-materials-progress"><span>{[authorManuscripts.length > 0, Boolean(finalManuscript), Boolean(peerReviewFile), Boolean(certificateFile)].filter(Boolean).length}/4 attached</span><small>Core production files</small></div></div>
+        <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
+      </section>
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
@@ -3190,7 +3232,7 @@ function ManuscriptFileList({ files, fallbackName, className, onPreview }: { fil
               <span><strong>{f.original_name || "Submitted document"}</strong><small>{describeMime(f.mime_type)} · preview from storage</small></span>
               <Eye />
             </button>
-            <a className="manuscript-dl-btn" href={`/api/admin/files/${f.id}`} download={f.original_name || "manuscript"} title="Download file"><Download size={14} strokeWidth={1.9} /></a>
+            <a className="manuscript-dl-btn" href={`/api/admin/files/${f.id}?stream=1&download=1`} download={f.original_name || "manuscript"} title="Download file"><Download size={14} strokeWidth={1.9} /></a>
           </div>
         )) : (
           <button type="button" disabled>
@@ -6559,6 +6601,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
   // Keep the server and first client render deterministic; restore the URL view after hydration.
   const [active, setActiveState] = useState(0),
     [notice, setNotice] = useState(false),
+    [workflowNotice, setWorkflowNotice] = useState<string | null>(null),
     [searchOpen, setSearchOpen] = useState(false),
     [profileOpen, setProfileOpen] = useState(false),
     [sidebarCollapsed, setSidebarCollapsed] = useState(true),
@@ -6711,6 +6754,14 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
       setSelectedSubmissionId(params.get("submission"));
     };
     restoreLocation();
+    try {
+      const storedNotice = window.sessionStorage.getItem("talikha-admin-workflow-notice");
+      if (storedNotice) {
+        const parsed = JSON.parse(storedNotice) as { message?: unknown };
+        if (typeof parsed.message === "string" && parsed.message.trim()) setWorkflowNotice(parsed.message);
+        window.sessionStorage.removeItem("talikha-admin-workflow-notice");
+      }
+    } catch { /* The workflow transition remains complete if storage is unavailable. */ }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- merges localStorage samples on mount; reads window.localStorage
     setEditorialSubmissions((records) => mergeLocalSamples(records));
     const syncLocalSamples = (event: StorageEvent) => {
@@ -6988,6 +7039,13 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             )}
           </div>
         </header>
+        {workflowNotice && (
+          <div className="tp-workflow-notice" role="status">
+            <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
+            <span>{workflowNotice}</span>
+            <button type="button" onClick={() => setWorkflowNotice(null)} aria-label="Dismiss notification"><X size={14} strokeWidth={2} /></button>
+          </div>
+        )}
         {searchOpen && (
           <SearchPalette
             close={() => setSearchOpen(false)}
