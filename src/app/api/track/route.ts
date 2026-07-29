@@ -77,6 +77,11 @@ export async function POST(request: NextRequest) {
     return ia - ib;
   });
 
+  const isPeerReviewEvent = (event: (typeof dedupedEvents)[number]) =>
+    event.event_type === "editorial_update" && /peer|reviewer|review comments|review decision/i.test(event.public_title || "");
+  const reviewEvents = dedupedEvents.filter(isPeerReviewEvent);
+  const activityEvents = dedupedEvents.filter((event) => !isPeerReviewEvent(event));
+
   const signedFiles: Array<{ id: string; file_kind: string; original_name: string; mime_type: string; size_bytes: number; url: string }> = [];
   if (files?.length) {
     await Promise.all(files.map(async (f) => {
@@ -105,8 +110,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const reviewEvents = dedupedEvents.filter((e) => /review|revision|accept|declin|peer/i.test(e.public_title || ""));
-
   return NextResponse.json({
     trackingNumber: submission.tracking_number,
     reference: submission.reference,
@@ -114,7 +117,7 @@ export async function POST(request: NextRequest) {
     currentStage: submission.current_stage,
     currentStageLabel: deriveAuthorStatus(submission.current_stage, hasOpenRevision),
     progress: getAuthorProgress(submission.current_stage),
-    events: dedupedEvents,
+    events: activityEvents,
     requests: requests || [],
     files: signedFiles,
     certificates,

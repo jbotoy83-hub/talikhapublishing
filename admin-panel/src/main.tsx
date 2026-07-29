@@ -2146,7 +2146,7 @@ function LegacySubmissionReview({
     [preflightOpen, setPreflightOpen] = useState(false);
   useEffect(() => { let cancelled = false; void fetch(`/api/admin/submissions/${submission.id}/review-settings`, { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (cancelled || !body?.settings) return; const saved = body.settings; if (saved.receipt) setReceipt({ ...defaultReceiptSettings, ...saved.receipt }); if (saved.instructions) setInstructions((current) => ({ ...current, ...saved.instructions })); }).catch(() => {}); return () => { cancelled = true; }; }, [submission.id]);
   const paymentConfirmed = submission.paymentConfirmed === true;
-  const reviewUnlocked = submission.workflowStage ? submission.workflowStage !== "review_new" : submission.status !== "New";
+  const reviewUnlocked = true;
   const reviewActions = submission.workflowStage?.startsWith("production_") ? [] : statusActions(submission.status);
   const author = authors[activeAuthor] ?? authors[0];
   const nameParts = author.name.trim().split(/\s+/).filter(Boolean);
@@ -2458,7 +2458,6 @@ function LegacySubmissionReview({
           canManagePublication={isAdmin}
         />
       ) : <>
-        {!reviewUnlocked && <div className="review-lock-banner" role="status"><LockKeyhole /><div><strong>Review is locked</strong><span>Confirm the payment, then click Start review to unlock the manuscript, files, and receipt.</span></div></div>}
         <div className={`review-layout${reviewUnlocked ? "" : " review-layout--locked"}`}>
         <div className="review-form review-content-lock" aria-disabled={!reviewUnlocked}>
           <section>

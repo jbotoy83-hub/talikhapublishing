@@ -78,8 +78,6 @@ function AlertMark() {
 type Props = {
   phase: ProcessingPhase;
   step: ProcessingStep;
-  attempt: number;
-  totalAttempts: number;
   reference: string;
   serverSubmitted: boolean;
   errorMessage?: string;
@@ -87,9 +85,8 @@ type Props = {
   onBack?: () => void;
 };
 
-export function SubmissionProcessing({ phase, step, attempt, totalAttempts, reference, errorMessage, onRetry, onBack }: Props) {
+export function SubmissionProcessing({ phase, step, reference, errorMessage, onRetry, onBack }: Props) {
   const active = phase === "working";
-  const retrying = active && attempt > 1;
   const activeStepIndex = PROCESSING_STEPS.findIndex((item) => item.id === step);
   const activeStep = PROCESSING_STEPS[activeStepIndex] || PROCESSING_STEPS[0];
 
@@ -171,14 +168,6 @@ export function SubmissionProcessing({ phase, step, attempt, totalAttempts, refe
             </ol>
           </div>
         )}
-
-        <AnimatePresence>
-          {retrying && (
-            <motion.p key="retry-note" className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-zinc-500" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-              Reconnecting &mdash; attempt {attempt} of {totalAttempts}
-            </motion.p>
-          )}
-        </AnimatePresence>
 
         <AnimatePresence>
           {phase === "failed" && (

@@ -289,7 +289,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const [serverSubmitted, setServerSubmitted] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>("idle");
   const [processingStep, setProcessingStep] = useState<ProcessingStep>("preparing");
-  const [attempt, setAttempt] = useState(1);
 
   useEffect(() => {
     if (!abstractOpen) return;
@@ -605,7 +604,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     setSubmitError("");
     setProcessingPhase("working");
     setProcessingStep("preparing");
-    setAttempt(1);
 
     const sj = (serverJournals ?? []).find((j) => j.slug === form.journal);
     const supabase = getSupabaseBrowser();
@@ -618,7 +616,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
     let lastError = "";
     for (let current = 1; current <= MAX_SUBMIT_ATTEMPTS; current++) {
-      setAttempt(current);
       try {
         const startedAt = Date.now();
         const ref = isServer
@@ -638,7 +635,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         lastError = err instanceof Error ? err.message : "Something went wrong submitting your work. Please try again.";
         const canRetry = isRetryable(err) && current < MAX_SUBMIT_ATTEMPTS;
         if (!canRetry) break;
-        setAttempt(current + 1);
         await wait(1200);
       }
     }
@@ -1489,7 +1485,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       </div>
     )}
     <AnimatePresence>
-      {submitting && <SubmissionProcessing key="lsf-processing" phase={processingPhase} step={processingStep} attempt={attempt} totalAttempts={MAX_SUBMIT_ATTEMPTS} reference={reference} serverSubmitted={serverSubmitted} errorMessage={submitError} onRetry={retrySubmit} onBack={cancelProcessing} />}
+      {submitting && <SubmissionProcessing key="lsf-processing" phase={processingPhase} step={processingStep} reference={reference} serverSubmitted={serverSubmitted} errorMessage={submitError} onRetry={retrySubmit} onBack={cancelProcessing} />}
     </AnimatePresence>
   </>;
 }
