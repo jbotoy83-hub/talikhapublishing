@@ -66,6 +66,8 @@ const publicationRecordInput = z.object({
   licenseUrl: optionalText(500),
   copyrightHolder: optionalText(200),
   publicationDate: optionalDate,
+  views: z.coerce.number().int().min(0).max(2147483647).optional(),
+  downloads: z.coerce.number().int().min(0).max(2147483647).optional(),
   authors: z.array(publicationAuthorInput).max(12).optional(),
   citationData: z.record(z.string(), z.unknown()).default({}),
   metadata: z.record(z.string(), z.unknown()).default({})
@@ -492,7 +494,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     .eq("id", parsed.submissionId)
     .maybeSingle();
   if (submissionError || !submission) throw new Error("The submission record could not be found.");
-  if (!(String(submission.current_stage) as WorkflowStage).startsWith("production_")) {
+  if (!(String(submission.current_stage) as WorkflowStage).startsWith("production_") && submission.current_stage !== "published") {
     throw new Error("Publication records can only be prepared after acceptance.");
   }
 
@@ -510,7 +512,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
   let publicArticleUrl: string | null = null;
   let citationData: Record<string, unknown> = parsed.citationData;
   if (resolvedJournalId) {
-    const { data: existingPublications } = await admin.from("publications").select("id, slug").eq("source_submission_id", parsed.submissionId).limit(1);
+    const { data: existingPublications } = await admin.from("publications").select("id, slug, views, downloads").eq("source_submission_id", parsed.submissionId).limit(1);
     const existingPublication = existingPublications?.[0];
     const finalAuthors = parsed.authors?.length ? parsed.authors : (await resolveAuthorsFromSubmission(admin, parsed.submissionId, submission.author_name)).map((author, index) => ({
       position: index + 1,
@@ -558,7 +560,9 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
       license_name: parsed.licenseName || "All rights reserved",
       license_url: parsed.licenseUrl || null,
       copyright_holder: parsed.copyrightHolder || "The authors",
-      publication_date: parsed.publicationDate || null
+      publication_date: parsed.publicationDate || null,
+      views: parsed.views ?? existingPublication?.views ?? 0,
+      downloads: parsed.downloads ?? existingPublication?.downloads ?? 0
     };
 
     if (existingPublication) {
@@ -620,7 +624,7 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     visibility: "internal",
     actor_type: user.role,
     actor_id: user.id,
-    metadata: { doi: parsed.doi || null, issue_id: resolvedIssueId || null }
+    metadata: { doi: parsed.doi || null, issue_id: resolvedIssueId || null, views: parsed.views ?? null, downloads: parsed.downloads ?? null }
   });
 
   if (submission.current_stage === "published") {

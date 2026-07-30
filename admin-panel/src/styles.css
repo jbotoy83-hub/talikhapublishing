@@ -4197,6 +4197,10 @@ dd,
 .publication-command-link:hover { border-color: #8fb49b; background: #fff; transform: translateY(-1px); }
 .publication-editor-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
 .publication-editor-panels > .publication-card { min-width: 0; margin: 0; }
+.publication-editor-panels > .publication-right-card { display: grid; align-content: start; gap: 14px; padding: 14px; }
+.publication-record-materials { min-width: 0; }
+.publication-record-materials .publication-materials { margin: 0; }
+.publication-publishing-subsection { margin-top: 0; }
 .publication-command-status { display: flex; min-height: 150px; flex-direction: column; justify-content: center; border-left: 1px solid #dce7df; padding-left: 26px; }
 .publication-command-label, .publication-materials-heading > div > span { color: #668071; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .publication-command-status strong { margin-top: 7px; color: #183329; font-family: Newsreader, Georgia, serif; font-size: 26px; font-weight: 650; }
@@ -4293,7 +4297,8 @@ dd,
 .publication-editor-panels .publication-subsection { border: 1px solid #aeb9b1; border-radius: 10px; background: #fcfefd; padding: 14px; }
 .publication-editor-panels .publication-fields input, .publication-editor-panels .publication-fields textarea, .publication-editor-panels .publication-fields select { border: 1px solid #6c776f; background: #fff; }
 .publication-editor-panels .publication-fields input:focus, .publication-editor-panels .publication-fields textarea:focus, .publication-editor-panels .publication-fields select:focus { border-color: #17251d; box-shadow: 0 0 0 2px rgba(23, 37, 29, .1); }
-.publication-metrics { grid-template-columns: repeat(2, minmax(0, 220px)); }
+.publication-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.publication-metrics .publication-control { font-variant-numeric: tabular-nums; }
 .publication-fields > label, .publication-fields > label input, .doi-row label { min-width: 0; }
 .publication-fields select { width: 100%; height: 42px; border: 1px solid #d7ddd9; border-radius: 8px; background: #fff; padding: 0 11px; color: #28382f; font-size: 13px; }
 .publication-subsection { margin-top: 20px; border-top: 1px solid #e2e5e3; padding-top: 18px; }

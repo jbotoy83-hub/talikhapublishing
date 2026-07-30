@@ -3119,10 +3119,11 @@ function PublicationRecordEditor({
   const updatePhotoSetting = (key: "photoZoom" | "photoPositionX" | "photoPositionY", value: number) => {
     onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, [key]: value } : author));
   };
+  const updatePublicationCounter = (key: "readCount" | "downloadCount", value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    onChange({ ...record, [key]: value === "" ? 0 : Number(value) });
+  };
   const authorManuscripts = (submission.files || []).filter((file) => file.file_kind === "manuscript");
-  const finalManuscript = (submission.files || []).filter((file) => file.file_kind === "final_pdf").at(-1);
-  const peerReviewFile = (submission.files || []).filter((file) => file.file_kind === "peer_review").at(-1);
-  const certificateFile = (submission.files || []).filter((file) => file.file_kind === "publication_certificate").at(-1);
   const recordStatusCopy: Record<PublicationRecord["status"], string> = {
     Draft: "Build the publication record, check the files, then submit it for administrator approval.",
     "For approval": "The editor has submitted the record. An administrator must review and approve the publication action.",
@@ -3181,6 +3182,8 @@ function PublicationRecordEditor({
         certificateFileId: record.certificateFileId || certificate?.id,
         socialMediaFileId: record.socialMediaFileId || social?.id,
         doiRegistrationStatus: record.doiRegistrationStatus || "assigned",
+        views: Math.max(0, Math.trunc(record.readCount ?? 0)),
+        downloads: Math.max(0, Math.trunc(record.downloadCount ?? 0)),
         citationData: record.citationData || {},
         authors: authors.map((author, index) => ({
           id: author.id,
@@ -3308,8 +3311,23 @@ function PublicationRecordEditor({
           <label>Gmail account<Input className="publication-control" value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
           <label>ORCID<Input className="publication-control" value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
         </div>}
+        <div className="publication-subsection publication-website-subsection">
+          <header><div><span>Final public edition</span><h3>Website metadata</h3><p>This is separate from the author’s immutable submission and is what readers will see.</p></div></header>
+          <div className="publication-fields">
+            <ReviewField label="Public title" value={record.publicTitle || manuscriptTitle} onChange={editingRecord ? (publicTitle) => onChange({ ...record, publicTitle }) : undefined} />
+            <label className="publication-wide-field">Public abstract<Textarea className="publication-control" value={record.publicAbstract || submission.abstract} readOnly={!editingRecord} onChange={(event) => onChange({ ...record, publicAbstract: event.target.value })} /></label>
+            <ReviewField label="Keywords (comma separated)" value={(record.keywords || []).join(", ")} onChange={editingRecord ? (value) => onChange({ ...record, keywords: value.split(",").map((item) => item.trim()).filter(Boolean) }) : undefined} />
+            <ReviewField label="License" value={record.licenseName || "All rights reserved"} onChange={editingRecord ? (licenseName) => onChange({ ...record, licenseName }) : undefined} />
+            <ReviewField label="Copyright holder" value={record.copyrightHolder || "The authors"} onChange={editingRecord ? (copyrightHolder) => onChange({ ...record, copyrightHolder }) : undefined} />
+            <label>DOI registration<select value={record.doiRegistrationStatus || "assigned"} disabled={!editingRecord} onChange={(event) => onChange({ ...record, doiRegistrationStatus: event.target.value as PublicationRecord["doiRegistrationStatus"] })}><option value="assigned">Assigned</option><option value="reserved">Reserved</option><option value="registered">Registered</option></select></label>
+          </div>
+        </div>
       </section>
-      <section id="publication-metadata-section" className="publication-card">
+      <section className="publication-card publication-right-card">
+        <div id="publication-materials-section" className="publication-record-materials">
+          <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
+        </div>
+        <div id="publication-metadata-section" className="publication-subsection publication-publishing-subsection">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>
         <div className="publication-fields">
           <label>Journal<select value={record.journal} disabled={!editingRecord} onChange={(event) => { const defaults = journalIssueDefaults[event.target.value] ?? { volume: "1", issue: "1" }; onChange({ ...record, journal: event.target.value, volume: defaults.volume, issue: defaults.issue, pageStart: "", pageEnd: "" }); }}>{Object.keys(journalIssueDefaults).map((journal) => <option key={journal}>{journal}</option>)}</select></label>
@@ -3321,29 +3339,16 @@ function PublicationRecordEditor({
           {pageProblem && <p className="publication-warning">This page range overlaps another record or ends before it starts.</p>}
         </div>
         <div className="doi-row tp-pub-doi"><ReviewField label="DOI" value={record.doi} onChange={editingRecord ? (doi) => onChange({ ...record, doi }) : undefined} /></div>
-        <div className="publication-subsection">
-          <header><div><span>Final public edition</span><h3>Website metadata</h3><p>This is separate from the author’s immutable submission and is what readers will see.</p></div></header>
-          <div className="publication-fields">
-            <ReviewField label="Public title" value={record.publicTitle || manuscriptTitle} onChange={editingRecord ? (publicTitle) => onChange({ ...record, publicTitle }) : undefined} />
-            <label className="publication-wide-field">Public abstract<Textarea className="publication-control" value={record.publicAbstract || submission.abstract} readOnly={!editingRecord} onChange={(event) => onChange({ ...record, publicAbstract: event.target.value })} /></label>
-            <ReviewField label="Keywords (comma separated)" value={(record.keywords || []).join(", ")} onChange={editingRecord ? (value) => onChange({ ...record, keywords: value.split(",").map((item) => item.trim()).filter(Boolean) }) : undefined} />
-            <ReviewField label="License" value={record.licenseName || "All rights reserved"} onChange={editingRecord ? (licenseName) => onChange({ ...record, licenseName }) : undefined} />
-            <ReviewField label="Copyright holder" value={record.copyrightHolder || "The authors"} onChange={editingRecord ? (copyrightHolder) => onChange({ ...record, copyrightHolder }) : undefined} />
-            <label>DOI registration<select value={record.doiRegistrationStatus || "assigned"} disabled={!editingRecord} onChange={(event) => onChange({ ...record, doiRegistrationStatus: event.target.value as PublicationRecord["doiRegistrationStatus"] })}><option value="assigned">Assigned</option><option value="reserved">Reserved</option><option value="registered">Registered</option></select></label>
-          </div>
-        </div>
         {doiExists ? <p className="publication-warning">This DOI is already used by another local publication record.</p> : record.doi && <p className="publication-note">Unique in this local website record. It becomes an official DOI only after registration with your DOI provider.</p>}
         <div className="publication-subsection">
           <header><div><span>Publication engagement</span><h3>Reads and downloads</h3><p>Tracked automatically from reader activity on the public site.</p></div></header>
-          <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" value={String(record.readCount ?? 0)} onChange={undefined} /><ReviewField label="Number of downloads" value={String(record.downloadCount ?? 0)} onChange={undefined} /></div>
+          <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" type="number" value={String(record.readCount ?? 0)} onChange={editingRecord ? (value) => updatePublicationCounter("readCount", value) : undefined} /><ReviewField label="Number of downloads" type="number" value={String(record.downloadCount ?? 0)} onChange={editingRecord ? (value) => updatePublicationCounter("downloadCount", value) : undefined} /></div>
+          {editingRecord && <p className="publication-note">These are the current public totals. Saving updates the starting point, then new views and downloads continue counting automatically.</p>}
+        </div>
         </div>
       </section>
       </div>
       <section id="publication-citation-section" className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA, MLA, and Chicago</h2><p>Switch styles, copy the formatted citation, or use the export formats on the public article.</p></div></header><PublicationCitationPreview submission={submission} authors={authors} record={record} /></section>
-      <section id="publication-materials-section" className="publication-materials-management">
-        <div className="publication-materials-heading"><div><span>Files and evidence</span><h2>Production materials</h2><p>Keep the source manuscript, final edition, peer review, and certificate together so every release decision has supporting evidence.</p></div><div className="publication-materials-progress"><span>{[authorManuscripts.length > 0, Boolean(finalManuscript), Boolean(peerReviewFile), Boolean(certificateFile)].filter(Boolean).length}/4 attached</span><small>Core production files</small></div></div>
-        <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
-      </section>
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
@@ -3406,16 +3411,21 @@ function ReviewField({
   label,
   value,
   onChange,
+  type = "text",
 }: {
   label: string;
   value: string;
   onChange?: (value: string) => void;
+  type?: "text" | "number";
 }) {
   return (
     <label>
       {label}
       <Input
         className="publication-control"
+        type={type}
+        min={type === "number" ? 0 : undefined}
+        step={type === "number" ? 1 : undefined}
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         readOnly={!onChange}
