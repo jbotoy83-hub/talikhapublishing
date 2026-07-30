@@ -12,6 +12,7 @@ export default defineConfig(({ command }) => ({
     alias: {
       react: fileURLToPath(new URL("../node_modules/react", import.meta.url)),
       "react-dom": fileURLToPath(new URL("../node_modules/react-dom", import.meta.url)),
+      jszip: fileURLToPath(new URL("./node_modules/jszip", import.meta.url)),
       "@/components/icons": fileURLToPath(new URL("../src/components/icons", import.meta.url)),
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
