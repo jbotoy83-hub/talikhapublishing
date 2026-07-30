@@ -523,6 +523,9 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
       affiliation: author.affiliation || "",
       email: "editorial@example.invalid",
       orcid: author.orcid || "",
+      photoZoom: 1,
+      photoPositionX: 50,
+      photoPositionY: 50,
       corresponding: Boolean(author.corresponding),
     }));
     const authorDisplay = finalAuthors.map((author) => author.name || [author.firstName, author.middleInitial, author.surname].filter(Boolean).join(" ")).filter(Boolean).join("; ") || submission.author_name;
