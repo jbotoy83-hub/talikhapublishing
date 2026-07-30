@@ -3545,6 +3545,8 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFi
   const [uploadJobs, setUploadJobs] = useState<Array<{ id: string; kind: PublicationMaterialKind; name: string; progress: number; status: "uploading" | "complete" | "error"; error?: string }>>([]);
   const [message, setMessage] = useState("");
   const files = submission.files || [];
+  const filesRef = useRef(files);
+  useEffect(() => { filesRef.current = submission.files || []; }, [submission.files]);
   const uploadMaterial = async (kind: PublicationMaterialKind, selectedFiles: File[]) => {
     if (!selectedFiles.length) return;
     setUploading((current) => ({ ...current, [kind]: selectedFiles.length })); setMessage("");
@@ -3581,7 +3583,11 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFi
     const results = await Promise.allSettled(selectedFiles.map(uploadOne));
     const savedFiles = results.filter((result): result is PromiseFulfilledResult<NonNullable<EditorialSubmission["files"]>[number]> => result.status === "fulfilled").map((result) => result.value);
     const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason instanceof Error ? result.reason.message : "An attachment could not be saved.");
-    if (savedFiles.length) onSubmissionUpdate({ ...submission, files: [...files, ...savedFiles] });
+    if (savedFiles.length) {
+      const mergedFiles = Array.from(new Map([...filesRef.current, ...savedFiles].map((file) => [file.id, file])).values());
+      filesRef.current = mergedFiles;
+      onSubmissionUpdate({ ...submission, files: mergedFiles });
+    }
     setUploading((current) => { const next = { ...current }; delete next[kind]; return next; });
     setMessage(errors.length ? `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved. ${errors.join(" ")}` : `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved to this publication record.`);
   };
@@ -3593,7 +3599,7 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFi
         const attached = files.filter((file) => file.file_kind === option.kind);
         return <article key={option.kind} className={attached.length ? "publication-material attached" : "publication-material"}>
           <div className="publication-material-head"><div><h3>{option.title}</h3><p>{option.description}</p></div><span>{attached.length ? "Attached" : option.required ? "Required" : "Optional"}</span></div>
-          {attached.length ? <div className="publication-material-files">{attached.map((file) => <div key={file.id} className="publication-material-file"><button type="button" onClick={() => onPreviewFile({ id: file.id, mime_type: file.mime_type, original_name: file.original_name })}><FileText /><span>{file.original_name}</span><Eye /></button><a href={`/api/admin/files/${file.id}?stream=1&download=1`} download={file.original_name} aria-label={`Download ${file.original_name}`}><Download size={14} strokeWidth={1.9} /></a></div>)}</div> : <p className="publication-material-empty">No file attached yet.</p>}
+          {attached.length ? <div className="publication-material-files">{attached.map((file) => <div key={file.id} className="publication-material-file"><button type="button" className="publication-material-file-preview" onClick={() => onPreviewFile({ id: file.id, mime_type: file.mime_type, original_name: file.original_name })}><FileText /><span>{file.original_name}</span><Eye /></button><a href={`/api/admin/files/${file.id}?stream=1&download=1`} download={file.original_name} aria-label={`Download ${file.original_name}`}><Download size={14} strokeWidth={1.9} /></a><button type="button" className="publication-material-remove" aria-label={`Remove ${file.original_name}`} title="Remove attachment" onClick={() => { void (async () => { if (!window.confirm(`Remove ${file.original_name} from this record?`)) return; const response = await fetch(`/api/admin/workflow-files?fileId=${encodeURIComponent(file.id)}`, { method: "DELETE", credentials: "same-origin", headers: { Accept: "application/json" } }).catch(() => null); const body = await response?.json().catch(() => null); if (!response?.ok) { setMessage(body?.error || "The attachment could not be removed."); return; } const nextFiles = filesRef.current.filter((item) => item.id !== file.id); filesRef.current = nextFiles; onSubmissionUpdate({ ...submission, files: nextFiles }); setMessage("Attachment removed from this publication record."); })(); }}><X size={14} strokeWidth={1.9} /></button></div>)}</div> : <p className="publication-material-empty">No file attached yet.</p>}
           <label className="publication-material-upload"><Upload />{uploading[option.kind] ? `Attaching ${uploading[option.kind]} file${uploading[option.kind] === 1 ? "" : "s"}…` : attached.length ? "Attach more files" : `Attach ${option.title.toLowerCase()}`}<input type="file" multiple accept={option.accept} disabled={Boolean(uploading[option.kind])} onChange={(event) => { void uploadMaterial(option.kind, Array.from(event.target.files || [])); event.currentTarget.value = ""; }} /></label>
         </article>;
       })}

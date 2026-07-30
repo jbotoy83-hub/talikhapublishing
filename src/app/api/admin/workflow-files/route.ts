@@ -14,6 +14,7 @@ const fileKinds = new Set([
   "social_media_artwork",
   "authorPhoto"
 ]);
+const removableMaterialKinds = new Set(["final_pdf", "peer_review", "publication_certificate"]);
 
 const allowedDocumentTypes = new Set([
   "application/pdf",
@@ -146,4 +147,54 @@ export async function POST(request: Request) {
     return NextResponse.json({ file, message: "Production file attached." }, { status: 201 });
   }
   return respondToRecord(request, submissionId, "workflowSuccess", "Production file attached.", 201);
+}
+
+export async function DELETE(request: Request) {
+  const user = await requireEditorApi();
+  if (isApiError(user)) return user;
+  const admin = getSupabaseAdmin();
+  if (!admin) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
+  const url = new URL(request.url);
+  const fileId = url.searchParams.get("fileId")?.trim() || "";
+  if (!/^[0-9a-f-]{36}$/i.test(fileId)) return NextResponse.json({ error: "Choose a valid attachment." }, { status: 400 });
+
+  const { data: file, error: fileError } = await admin.from("submission_files").select("id,submission_id,file_kind,storage_bucket,storage_path,supersedes_file_id").eq("id", fileId).maybeSingle();
+  if (fileError || !file) return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
+  if (!removableMaterialKinds.has(file.file_kind)) return NextResponse.json({ error: "This attachment cannot be removed from this screen." }, { status: 400 });
+
+  const { data: publicationRecord } = await admin.from("publication_records").select("id,final_pdf_file_id,certificate_file_id,metadata,submitted_preflight_run_id").eq("submission_id", file.submission_id).maybeSingle();
+  const { data: remaining } = await admin.from("submission_files").select("id,file_kind").eq("submission_id", file.submission_id).neq("id", file.id).order("created_at", { ascending: false });
+  const replacement = remaining?.find((item) => item.file_kind === file.file_kind)?.id || null;
+  if (publicationRecord) {
+    const pointer: Record<string, unknown> = {};
+    if (file.file_kind === "final_pdf" && publicationRecord.final_pdf_file_id === file.id) pointer.final_pdf_file_id = replacement;
+    if (file.file_kind === "publication_certificate" && publicationRecord.certificate_file_id === file.id) pointer.certificate_file_id = replacement;
+    if (file.file_kind === "peer_review") {
+      // Peer-review files are validated from submission_files; no publication pointer is needed.
+    }
+    if (Object.keys(pointer).length) await admin.from("publication_records").update(pointer).eq("id", publicationRecord.id);
+  }
+  const { error: storageError } = await admin.storage.from(file.storage_bucket).remove([file.storage_path]);
+  if (storageError) return NextResponse.json({ error: "The attachment could not be removed from secure storage." }, { status: 500 });
+  await admin.from("submission_files").update({ supersedes_file_id: file.supersedes_file_id || null }).eq("supersedes_file_id", file.id);
+  const { error: deleteError } = await admin.from("submission_files").delete().eq("id", file.id);
+  if (deleteError) return NextResponse.json({ error: "The attachment could not be removed from the record." }, { status: 500 });
+  if (publicationRecord?.submitted_preflight_run_id) {
+    const now = new Date().toISOString();
+    // A material change invalidates the prior preflight decision.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (admin as any).from("publication_preflight_runs").update({ status: "stale", invalidated_at: now, updated_at: now }).eq("id", publicationRecord.submitted_preflight_run_id);
+    await admin.from("workflow_checklist_items").update({ completed_at: null, completed_by: null }).eq("submission_id", file.submission_id).in("stage", ["production_records", "production_ready_to_publish"]);
+  }
+  await admin.from("workflow_events").insert({
+    submission_id: file.submission_id,
+    event_type: "file_removed",
+    internal_title: "Production file removed",
+    internal_description: `The ${file.file_kind.replaceAll("_", " ")} attachment was removed from the publication record.`,
+    visibility: "internal",
+    actor_type: user.role,
+    actor_id: user.id,
+    metadata: { file_id: file.id, file_kind: file.file_kind }
+  });
+  return NextResponse.json({ fileId: file.id, message: "Attachment removed." });
 }
