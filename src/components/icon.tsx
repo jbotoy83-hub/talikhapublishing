@@ -11,10 +11,10 @@ import { CreditCardIcon } from "@/components/icons/credit-card";
 import { EyeIcon } from "@/components/icons/eye";
 import { FacebookIcon } from "@/components/icons/facebook";
 import { GlobeIcon } from "@/components/icons/globe";
-import { KeyIcon } from "@/components/icons/key";
 import { LayersIcon } from "@/components/icons/layers";
 import { LayoutListIcon } from "@/components/icons/layout-list";
 import { LockIcon } from "@/components/icons/lock";
+import { LockOpenIcon } from "@/components/icons/lock-open";
 import { MailIcon } from "@/components/icons/mail";
 import { MapPinIcon } from "@/components/icons/map-pin";
 import { MenuIcon } from "@/components/icons/menu";
@@ -67,7 +67,7 @@ const icons: Record<IconName, ComponentType<HTMLAttributes<HTMLDivElement>>> = {
   globe: wrap(GlobeIcon),
   layers: wrap(LayersIcon),
   lock: wrap(LockIcon),
-  unlock: wrap(KeyIcon),
+  unlock: wrap(LockOpenIcon),
   eye: wrap(EyeIcon),
   person: wrap(UserIcon),
   building: wrap(ContactRoundIcon),
