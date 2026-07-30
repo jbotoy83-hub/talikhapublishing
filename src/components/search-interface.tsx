@@ -176,9 +176,12 @@ export function SearchInterface() {
                     <Link href={`/journals/${r.publication.journal.slug}`} className="search-result-journal">{r.publication.journal.title}</Link>
                     <span className="search-result-type">{r.publication.contentType}</span>
                   </div>
-                  <div className={`search-result-access${isOpenAccess(r.publication.licenseName) ? " search-result-access--open" : ""}`}>
-                    <Icon name={isOpenAccess(r.publication.licenseName) ? "unlock" : "lock"} className="h-3.5 w-3.5" />
-                    <span>{isOpenAccess(r.publication.licenseName) ? "Open access" : r.publication.licenseName}</span>
+                  <div className="search-result-status">
+                    <div className={`search-result-access${isOpenAccess(r.publication.licenseName) ? " search-result-access--open" : ""}`}>
+                      <Icon name={isOpenAccess(r.publication.licenseName) ? "unlock" : "lock"} className="h-3.5 w-3.5" />
+                      <span>{isOpenAccess(r.publication.licenseName) ? "Open access" : r.publication.licenseName}</span>
+                    </div>
+                    <span className="search-result-views"><Icon name="eye" className="h-3.5 w-3.5" />{r.publication.views.toLocaleString("en-US")} views</span>
                   </div>
                 </div>
                 <h3><Link href={`/publications/${r.publication.slug}`} dangerouslySetInnerHTML={{ __html: r.highlightTitle }} /></h3>
@@ -191,10 +194,6 @@ export function SearchInterface() {
                   {r.publication.doi && <div className="search-result-details-doi"><dt>DOI</dt><dd><a href={`https://doi.org/${r.publication.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")}`} target="_blank" rel="noopener noreferrer">{r.publication.doi}</a></dd></div>}
                 </dl>
                 {r.publication.keywords.length > 0 && <div className="search-result-keywords"><span>Topics</span><div>{r.publication.keywords.slice(0, 4).map((keyword) => <Link key={keyword} href={`/search?keyword=${encodeURIComponent(keyword)}`}>{keyword}</Link>)}</div></div>}
-                <div className="search-result-footer">
-                  <Link href={`/publications/${r.publication.slug}`} className="search-result-read">Read publication <Icon name="arrow" className="h-3.5 w-3.5" /></Link>
-                  <span className="search-result-views"><Icon name="eye" className="h-3.5 w-3.5" />{r.publication.views.toLocaleString("en-US")} views</span>
-                </div>
               </div>
             </article>
           ))}
