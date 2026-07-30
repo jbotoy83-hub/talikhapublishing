@@ -4030,6 +4030,28 @@ dd,
   opacity: 1;
   transition-delay: .06s;
 }
+.production-tab-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  border: 1px solid #dfe6e1;
+  border-radius: 999px;
+  background: #f1f4f2;
+  padding: 0 5px;
+  color: #66736b;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.production-view-tabs button.active .production-tab-count {
+  border-color: rgb(255 255 255 / 0.22);
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+}
 .production-list-enter {
   animation: production-list-enter .34s cubic-bezier(.22, 1, .36, 1) both;
 }
@@ -11194,4 +11216,75 @@ button.hm-stat:focus-visible { outline: 3px solid rgba(8, 122, 69, 0.18); outlin
   place-items: center;
   color: var(--tp-muted, #66726b);
   font-size: 0.9rem;
+}
+
+.production-journal {
+  border: 1px solid #cfe3d5;
+  background: #edf5f0;
+  color: #236846;
+}
+.production-journal.inquira {
+  border-color: #cfe3d5;
+  background: #eaf3ed;
+  color: #236846;
+}
+.production-journal.lumera {
+  border-color: #d8d8f1;
+  background: #eff0ff;
+  color: #4f559b;
+}
+.production-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-weight: 700;
+}
+.production-status::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+.production-status.new,
+.production-status.review {
+  border-color: #cddafb;
+  background: #eef3ff;
+  color: #36589c;
+}
+.production-status.in-progress {
+  border-color: #f0d59a;
+  background: #fff4dc;
+  color: #8b6418;
+}
+.production-status.accepted,
+.production-status.published {
+  border-color: #c3dfcc;
+  background: #e5f3e9;
+  color: #2d704a;
+}
+.production-status.for-approval {
+  border-color: #d9cff8;
+  background: #f2edff;
+  color: #6549a3;
+}
+.production-status.scheduled-for-publishing {
+  border-color: #c5e4e2;
+  background: #e6f5f4;
+  color: #22726e;
+}
+.production-status.scheduled-for-publishing {
+  max-width: 148px;
+  text-align: center;
+  white-space: normal;
+}
+.production-status.revise,
+.production-status.rejected {
+  border-color: #f0c7bf;
+  background: #fff0ed;
+  color: #a84632;
 }
