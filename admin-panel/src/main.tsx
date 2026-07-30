@@ -1675,7 +1675,71 @@ function ProductionWorkspaceV2({
     onSelect(id);
   };
   if (selected) return <LegacySubmissionReview submission={selected} onBack={() => onSelect(null)} onUpdate={onUpdate} onDelete={onDelete} publicationRecords={publicationRecords} onPublicationRecordsChange={onPublicationRecordsChange} publicationOnly initialTab="publication" accessRole={accessRole} />;
-  return <section className="studies-page"><div className="studies-hero"><div><span>Editorial workspace</span><h1>Publication production</h1><p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p></div><div className="hero-shapes"><i /><i /><i /></div></div><ProductionViewTabs view={view} /><div key={view} className="production-list-enter production-record-list mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">{sortedVisible.map((submission) => <div key={submission.id} className="production-record-row"><div className="production-record-copy"><strong>{submission.title}{(submission.priority === "high" || submission.priority === "urgent") && <span className="priority-badge" data-priority={submission.priority}>{submission.priority === "urgent" ? "URGENT" : "HIGH PRIORITY"}</span>}</strong><small>{submission.author} · {submission.id}</small></div><div className="production-record-meta"><span className={`production-journal ${submission.journal.toLowerCase().replaceAll(" ", "-")}`}><BookOpen size={14} aria-hidden="true" />{submission.journal}</span><span className="production-accepted-date"><CalendarDays size={14} aria-hidden="true" />{acceptedDateLabel(submission)}</span></div><span className={`production-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}>{submission.status}</span><button type="button" className="production-record-open" onClick={() => openRecord(submission.id)}><FileText size={16} aria-hidden="true" /><span>Open publication record</span></button></div>)}{!sortedVisible.length && <p className="p-10 text-center text-sm text-slate-500">No shared production records are available.</p>}</div></section>;
+  return (
+    <section className="studies-page">
+      <div className="studies-hero">
+        <div>
+          <span>Editorial workspace</span>
+          <h1>Publication production</h1>
+          <p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p>
+        </div>
+        <div className="hero-shapes"><i /><i /><i /></div>
+      </div>
+      <ProductionViewTabs view={view} />
+      <div className="production-list-toolbar" aria-label="Production queue summary">
+        <div>
+          <span>Production queue</span>
+          <strong>{sortedVisible.length} {sortedVisible.length === 1 ? "record" : "records"}</strong>
+        </div>
+        <small>Open a record to manage its publication details.</small>
+      </div>
+      <div
+        key={view}
+        className="production-list-enter production-record-list mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white"
+        role="table"
+        aria-label={`${view} publication production records`}
+      >
+        <div className="production-table-head" role="row">
+          <span role="columnheader">Study</span>
+          <span role="columnheader">Journal</span>
+          <span role="columnheader">Date accepted</span>
+          <span role="columnheader">Status</span>
+          <span role="columnheader">Action</span>
+        </div>
+        {sortedVisible.map((submission) => (
+          <div key={submission.id} className="production-record-row" role="row">
+            <div className="production-record-cell production-record-copy" data-label="Study" role="cell">
+              <strong>
+                {submission.title}
+                {(submission.priority === "high" || submission.priority === "urgent") && <span className="priority-badge" data-priority={submission.priority}>{submission.priority === "urgent" ? "URGENT" : "HIGH PRIORITY"}</span>}
+              </strong>
+              <small>{submission.author} · {submission.id}</small>
+            </div>
+            <div className="production-record-cell production-record-journal-cell" data-label="Journal" role="cell">
+              <span className={`production-journal ${submission.journal.toLowerCase().replaceAll(" ", "-")}`}>
+                <BookOpen size={14} aria-hidden="true" />
+                <span>{submission.journal}</span>
+              </span>
+            </div>
+            <div className="production-record-cell production-record-accepted-cell" data-label="Date accepted" role="cell">
+              <CalendarDays size={15} aria-hidden="true" />
+              <span>{acceptedDateLabel(submission)}</span>
+            </div>
+            <div className="production-record-cell production-record-status-cell" data-label="Status" role="cell">
+              <span className={`production-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}>{submission.status}</span>
+            </div>
+            <div className="production-record-cell production-record-action-cell" data-label="Action" role="cell">
+              <button type="button" className="production-record-open" onClick={() => openRecord(submission.id)}>
+                <FileText size={16} aria-hidden="true" />
+                <span>Open publication record</span>
+              </button>
+            </div>
+          </div>
+        ))}
+        {!sortedVisible.length && <p className="production-list-empty">No shared production records are available.</p>}
+      </div>
+    </section>
+  );
 }
 
 function MediaWorkspace({ assets }: { assets: Record<string, unknown>[] }) {

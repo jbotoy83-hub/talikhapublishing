@@ -8558,6 +8558,182 @@ textarea:focus-visible {
   }
 }
 
+.production-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 0 2px;
+}
+.production-list-toolbar > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.production-list-toolbar span {
+  color: #a65335;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.production-list-toolbar strong {
+  color: #1c2821;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.production-list-toolbar small {
+  color: #6b756d;
+  font-size: 12px;
+}
+.production-record-list {
+  border-color: #d8ddd4;
+  box-shadow: 0 14px 32px rgb(24 61 44 / 0.06);
+}
+.production-table-head,
+.production-record-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.55fr) minmax(130px, .68fr) minmax(150px, .82fr) minmax(130px, .7fr) minmax(190px, auto);
+  align-items: center;
+  column-gap: 20px;
+}
+.production-table-head {
+  min-height: 42px;
+  border-bottom: 1px solid #dfe6e1;
+  background: #f7faf7;
+  padding: 0 22px;
+}
+.production-table-head span {
+  color: #7b8580;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+.production-table-head span:last-child {
+  text-align: right;
+}
+.production-record-row {
+  min-height: 82px;
+  gap: 20px;
+  border-bottom-color: #edf1ed;
+  padding: 16px 22px;
+}
+.production-record-row:hover {
+  background: #f7fbf8;
+}
+.production-record-cell {
+  min-width: 0;
+}
+.production-record-journal-cell,
+.production-record-accepted-cell,
+.production-record-status-cell,
+.production-record-action-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.production-record-journal-cell {
+  justify-content: flex-start;
+}
+.production-record-accepted-cell {
+  gap: 8px;
+  color: #526159;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+.production-record-accepted-cell svg {
+  flex: 0 0 auto;
+  color: #a65335;
+}
+.production-record-status-cell {
+  justify-content: flex-start;
+}
+.production-record-action-cell {
+  justify-content: flex-end;
+}
+.production-record-action-cell .production-record-open {
+  width: 100%;
+  justify-content: center;
+}
+.production-status.accepted {
+  background: #e4f2e9;
+  color: #276b47;
+}
+.production-status.for-approval,
+.production-status.scheduled-for-publishing {
+  background: #fff4dc;
+  color: #86621d;
+}
+.production-list-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 48px 22px;
+  color: #6b756d;
+  font-size: 13px;
+  text-align: center;
+}
+@media (max-width: 1120px) {
+  .production-table-head,
+  .production-record-row {
+    grid-template-columns: minmax(220px, 1.35fr) minmax(110px, .65fr) minmax(130px, .8fr) minmax(112px, .65fr) minmax(166px, auto);
+    column-gap: 14px;
+  }
+  .production-table-head,
+  .production-record-row {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+@media (max-width: 760px) {
+  .production-list-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 18px;
+  }
+  .production-table-head {
+    display: none;
+  }
+  .production-record-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 17px 16px;
+  }
+  .production-record-cell::before {
+    display: block;
+    margin-bottom: 5px;
+    color: #7b8580;
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .production-record-copy {
+    grid-column: 1;
+  }
+  .production-record-journal-cell {
+    grid-column: 1;
+  }
+  .production-record-accepted-cell {
+    grid-column: 1;
+    justify-self: start;
+  }
+  .production-record-status-cell {
+    grid-column: 1;
+  }
+  .production-record-action-cell {
+    grid-column: 1 / -1;
+  }
+  .production-record-action-cell .production-record-open {
+    width: 100%;
+  }
+}
+
 /* ==========================================================================
    Skeleton loading states — shown while workspace data loads and for a brief
    beat on view switches. Palette is tinted to the warm-green admin surface
