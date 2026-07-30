@@ -7,6 +7,7 @@ import { Icon } from "@/components/icon";
 import type { SearchResponse, SearchFilters, FacetItem } from "@/lib/search";
 import { formatPublicationDate } from "@/lib/journal-presentation";
 import { isOpenAccess } from "@/lib/citation-format";
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 function useUrlState() {
   const router = useRouter();
@@ -24,8 +25,8 @@ function useUrlState() {
   return { params, update };
 }
 
-function FacetGroup({ title, items, active, param, onUpdate }: { title: string; items: FacetItem[]; active: string | undefined; param: string; onUpdate: (v: Record<string, string | undefined>) => void }) {
-  const [open, setOpen] = useState(true);
+function FacetGroup({ title, items, active, param, onUpdate, defaultOpen = true }: { title: string; items: FacetItem[]; active: string | undefined; param: string; onUpdate: (v: Record<string, string | undefined>) => void; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   if (!items.length) return null;
   return (
     <div className="search-facet-group">
@@ -47,6 +48,18 @@ function FacetGroup({ title, items, active, param, onUpdate }: { title: string; 
       </div>
     </div>
   );
+}
+
+function paginationItems(currentPage: number, totalPages: number): Array<number | "ellipsis"> {
+  if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+  const ordered = [...pages].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+  const result: Array<number | "ellipsis"> = [];
+  ordered.forEach((page, index) => {
+    if (index > 0 && page - ordered[index - 1] > 1) result.push("ellipsis");
+    result.push(page);
+  });
+  return result;
 }
 
 export function SearchInterface() {
@@ -161,7 +174,7 @@ export function SearchInterface() {
             <FacetGroup title="Journal" items={data.facets.journals} active={filters.journal} param="journal" onUpdate={update} />
             <FacetGroup title="Year" items={data.facets.years} active={filters.year} param="year" onUpdate={update} />
             <FacetGroup title="Type" items={data.facets.types} active={filters.type} param="type" onUpdate={update} />
-            <FacetGroup title="Keyword" items={data.facets.keywords} active={filters.keyword} param="keyword" onUpdate={update} />
+            <FacetGroup title="Keyword" items={data.facets.keywords} active={filters.keyword} param="keyword" onUpdate={update} defaultOpen={false} />
           </aside>
         )}
 
@@ -206,9 +219,11 @@ export function SearchInterface() {
           )}
           {totalPages > 1 && (
             <nav className="search-pagination" aria-label="Search results pages">
-              {(filters.page || 1) > 1 && <button type="button" onClick={() => update({ page: String((filters.page || 1) - 1) })}>← Previous</button>}
-              <span>Page {filters.page || 1} of {totalPages}</span>
-              {(filters.page || 1) < totalPages && <button type="button" onClick={() => update({ page: String((filters.page || 1) + 1) })}>Next →</button>}
+              <PaginationContent>
+                <PaginationItem><PaginationPrevious href="#" onClick={(event) => { event.preventDefault(); if ((filters.page || 1) > 1) update({ page: String((filters.page || 1) - 1) }); }} /></PaginationItem>
+                {paginationItems(filters.page || 1, totalPages).map((page, index) => page === "ellipsis" ? <PaginationItem key={`ellipsis-${index}`}><PaginationEllipsis /></PaginationItem> : <PaginationItem key={page}><PaginationLink href="#" isActive={page === (filters.page || 1)} onClick={(event) => { event.preventDefault(); if (page !== (filters.page || 1)) update({ page: page > 1 ? String(page) : undefined }); }}>{page}</PaginationLink></PaginationItem>)}
+                <PaginationItem><PaginationNext href="#" onClick={(event) => { event.preventDefault(); if ((filters.page || 1) < totalPages) update({ page: String((filters.page || 1) + 1) }); }} /></PaginationItem>
+              </PaginationContent>
             </nav>
           )}
         </div>

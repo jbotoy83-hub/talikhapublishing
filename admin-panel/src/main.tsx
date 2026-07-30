@@ -3442,25 +3442,16 @@ function PublicationRecordEditor({
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
-            <Button type="button" variant={primaryAction.variant} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
+            <Button type="button" variant={primaryAction.variant} className={primaryAction.key === "mark" ? "tp-pub-quality-check" : undefined} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
               {(primaryAction.key === "mark" || primaryAction.key === "approve") && <CheckCircle2 />}
               {primaryAction.label}
             </Button>
           )}
-          {overflowActions.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="icon" aria-label="More publication actions"><MoreHorizontal /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {overflowActions.map((a) => (
-                  <DropdownMenuItem key={a.key} disabled={a.disabled} className={a.tone === "danger" ? "text-destructive focus:text-destructive" : ""} onSelect={() => { if (!a.disabled) a.onClick(); }}>
-                    {a.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {overflowActions.map((action) => (
+            <Button key={action.key} type="button" variant={action.variant} disabled={action.disabled} className={action.tone === "danger" ? "text-destructive" : undefined} onClick={action.onClick}>
+              {action.label}
+            </Button>
+          ))}
         </div>
     </div>
   );
@@ -3565,18 +3556,41 @@ const publicationMaterialOptions: Array<{ kind: PublicationMaterialKind; title: 
 
 function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFile, onOpenCertificateCreator }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onPreviewFile: (file: { id: string; mime_type: string; original_name: string }) => void; onOpenCertificateCreator: () => void }) {
   const [uploading, setUploading] = useState<Partial<Record<PublicationMaterialKind, number>>>({});
+  const [uploadJobs, setUploadJobs] = useState<Array<{ id: string; kind: PublicationMaterialKind; name: string; progress: number; status: "uploading" | "complete" | "error"; error?: string }>>([]);
   const [message, setMessage] = useState("");
   const files = submission.files || [];
   const uploadMaterial = async (kind: PublicationMaterialKind, selectedFiles: File[]) => {
     if (!selectedFiles.length) return;
     setUploading((current) => ({ ...current, [kind]: selectedFiles.length })); setMessage("");
     const uploadOne = async (file: File) => {
+      const jobId = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setUploadJobs((current) => [...current, { id: jobId, kind, name: file.name, progress: 0, status: "uploading" }]);
       const form = new FormData();
       form.set("submissionId", submission.id); form.set("fileKind", kind); form.set("file", file);
-      const response = await fetch("/api/admin/workflow-files", { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }, body: form }).catch(() => null);
-      const body = await response?.json().catch(() => null);
-      if (!response?.ok || !body?.file) throw new Error(body?.error || `${file.name} could not be attached.`);
-      return body.file as NonNullable<EditorialSubmission["files"]>[number];
+      try {
+        const response = await new Promise<Response | null>((resolve) => {
+          const request = new XMLHttpRequest();
+          request.open("POST", "/api/admin/workflow-files");
+          request.withCredentials = true;
+          request.setRequestHeader("Accept", "application/json");
+          request.upload.onprogress = (event) => {
+            if (event.lengthComputable) setUploadJobs((current) => current.map((job) => job.id === jobId ? { ...job, progress: Math.round((event.loaded / event.total) * 100) } : job));
+          };
+          request.onload = () => resolve(new Response(request.responseText, { status: request.status, headers: { "Content-Type": request.getResponseHeader("Content-Type") || "application/json" } }));
+          request.onerror = () => resolve(null);
+          request.send(form);
+        });
+        const body = await response?.json().catch(() => null);
+        if (!response?.ok || !body?.file) throw new Error(body?.error || `${file.name} could not be attached.`);
+        setUploadJobs((current) => current.map((job) => job.id === jobId ? { ...job, progress: 100, status: "complete" } : job));
+        window.setTimeout(() => setUploadJobs((current) => current.filter((job) => job.id !== jobId)), 1800);
+        return body.file as NonNullable<EditorialSubmission["files"]>[number];
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : `${file.name} could not be attached.`;
+        setUploadJobs((current) => current.map((job) => job.id === jobId ? { ...job, status: "error", error: errorMessage } : job));
+        window.setTimeout(() => setUploadJobs((current) => current.filter((job) => job.id !== jobId)), 5000);
+        throw new Error(errorMessage);
+      }
     };
     const results = await Promise.allSettled(selectedFiles.map(uploadOne));
     const savedFiles = results.filter((result): result is PromiseFulfilledResult<NonNullable<EditorialSubmission["files"]>[number]> => result.status === "fulfilled").map((result) => result.value);
@@ -3598,8 +3612,9 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFi
         </article>;
       })}
     </div>
-    {message && <p className="publication-material-message" role="status">{message}</p>}
-  </section>;
+     {message && <p className="publication-material-message" role="status">{message}</p>}
+     {uploadJobs.length > 0 && <aside className="publication-upload-toast" aria-live="polite" aria-label="File uploads"><div className="publication-upload-toast-head"><strong>Record materials</strong><span>{uploadJobs.filter((job) => job.status === "uploading").length ? "Uploading" : "Complete"}</span></div>{uploadJobs.map((job) => <div key={job.id} className={`publication-upload-job publication-upload-job--${job.status}`}><div className="publication-upload-job-line"><span>{job.name}</span><strong>{job.status === "error" ? "Failed" : `${job.progress}%`}</strong></div><div className="publication-upload-progress"><span style={{ width: `${job.progress}%` }} /></div>{job.error && <small>{job.error}</small>}</div>)}</aside>}
+   </section>;
 }
 type MammothApi = { convertToHtml: (input: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string; messages: unknown[] }> };
 function RealFilePreview({ fileId, mime, name }: { fileId: string; mime: string; name: string }) {
