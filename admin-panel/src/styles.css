@@ -4220,6 +4220,10 @@ dd,
 .publication-record .publication-fields { gap: 20px 18px; }
 .publication-record .publication-fields label, .publication-record .publication-author-fields label { display: grid; gap: 7px; color: #435048; font-size: 12px; font-weight: 650; }
 .publication-record .publication-fields input, .publication-record .publication-fields select, .publication-record .publication-fields textarea, .publication-record .publication-author-fields input { margin-top: 6px; border-color: #d6dfd8; border-radius: 8px; background: #fbfdfb; color: #20332a; font-size: 13px; }
+.publication-record .publication-control { height: 40px; min-height: 40px; border: 1px solid #aeb9b1; border-radius: 8px; background: #fff; padding-inline: 11px; color: #20332a; font-size: 13px; box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
+.publication-record textarea.publication-control { height: auto; min-height: 108px; padding-block: 10px; resize: vertical; line-height: 1.5; }
+.publication-record .publication-control[readonly] { border-color: #d6dfd8; background: #f7faf8; color: #526258; cursor: default; }
+.publication-record .publication-control:focus-visible { border-color: #214d35; box-shadow: 0 0 0 3px rgba(33, 77, 53, .14); }
 .publication-record .publication-fields input, .publication-record .publication-fields select { width: 100%; min-width: 0; box-sizing: border-box; }
 .publication-record .publication-fields textarea { min-height: 108px; width: 100%; box-sizing: border-box; line-height: 1.5; }
 .publication-record .publication-warning, .publication-record .publication-note { white-space: normal; }

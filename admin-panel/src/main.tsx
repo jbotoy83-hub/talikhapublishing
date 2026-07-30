@@ -3299,14 +3299,14 @@ function PublicationRecordEditor({
           <span className="publication-author-count">{authors.length} {authors.length === 1 ? "author" : "authors"}</span>
         </div>
         {selectedAuthor && <div className="publication-author-fields">
-          <label>First name<input value={selectedAuthor.firstName || selectedFirstName} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("firstName", event.target.value)} /></label>
-          <label>Middle initial<input value={selectedAuthor.middleInitial || selectedMiddleInitial} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("middleInitial", event.target.value)} /></label>
-          <label>Surname<input value={selectedAuthor.surname || selectedSurname} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("surname", event.target.value)} /></label>
-          <label>Academic title<input value={selectedAuthor.academicTitle || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("academicTitle", event.target.value)} /></label>
-          <label>Position or role<input value={selectedAuthor.occupation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("occupation", event.target.value)} /></label>
-          <label>Affiliation<input value={selectedAuthor.affiliation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("affiliation", event.target.value)} /></label>
-          <label>Gmail account<input value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
-          <label>ORCID<input value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
+          <label>First name<Input className="publication-control" value={selectedAuthor.firstName || selectedFirstName} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("firstName", event.target.value)} /></label>
+          <label>Middle initial<Input className="publication-control" value={selectedAuthor.middleInitial || selectedMiddleInitial} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("middleInitial", event.target.value)} /></label>
+          <label>Surname<Input className="publication-control" value={selectedAuthor.surname || selectedSurname} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("surname", event.target.value)} /></label>
+          <label>Academic title<Input className="publication-control" value={selectedAuthor.academicTitle || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("academicTitle", event.target.value)} /></label>
+          <label>Position or role<Input className="publication-control" value={selectedAuthor.occupation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("occupation", event.target.value)} /></label>
+          <label>Affiliation<Input className="publication-control" value={selectedAuthor.affiliation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("affiliation", event.target.value)} /></label>
+          <label>Gmail account<Input className="publication-control" value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
+          <label>ORCID<Input className="publication-control" value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
         </div>}
       </section>
       <section id="publication-metadata-section" className="publication-card">
@@ -3325,7 +3325,7 @@ function PublicationRecordEditor({
           <header><div><span>Final public edition</span><h3>Website metadata</h3><p>This is separate from the author’s immutable submission and is what readers will see.</p></div></header>
           <div className="publication-fields">
             <ReviewField label="Public title" value={record.publicTitle || manuscriptTitle} onChange={editingRecord ? (publicTitle) => onChange({ ...record, publicTitle }) : undefined} />
-            <label className="publication-wide-field">Public abstract<textarea value={record.publicAbstract || submission.abstract} readOnly={!editingRecord} onChange={(event) => onChange({ ...record, publicAbstract: event.target.value })} /></label>
+            <label className="publication-wide-field">Public abstract<Textarea className="publication-control" value={record.publicAbstract || submission.abstract} readOnly={!editingRecord} onChange={(event) => onChange({ ...record, publicAbstract: event.target.value })} /></label>
             <ReviewField label="Keywords (comma separated)" value={(record.keywords || []).join(", ")} onChange={editingRecord ? (value) => onChange({ ...record, keywords: value.split(",").map((item) => item.trim()).filter(Boolean) }) : undefined} />
             <ReviewField label="License" value={record.licenseName || "All rights reserved"} onChange={editingRecord ? (licenseName) => onChange({ ...record, licenseName }) : undefined} />
             <ReviewField label="Copyright holder" value={record.copyrightHolder || "The authors"} onChange={editingRecord ? (copyrightHolder) => onChange({ ...record, copyrightHolder }) : undefined} />
@@ -3414,7 +3414,8 @@ function ReviewField({
   return (
     <label>
       {label}
-      <input
+      <Input
+        className="publication-control"
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
         readOnly={!onChange}
