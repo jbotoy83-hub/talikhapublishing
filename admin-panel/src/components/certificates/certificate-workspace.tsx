@@ -877,8 +877,26 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     await new Promise((resolve) => setTimeout(resolve, 130));
     const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
     if (!pageEl) return null;
+    const images = Array.from(pageEl.querySelectorAll("img"));
+    await Promise.all(images.map((image) => image.complete
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      })));
     const html2canvas = (await import("html2canvas")).default;
-    return html2canvas(pageEl, { scale, useCORS: true, backgroundColor: "#ffffff" });
+    return html2canvas(pageEl, {
+      scale,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      onclone: (clonedDocument) => {
+        const clonedPage = clonedDocument.querySelector(".cert-canvas-page") as HTMLElement | null;
+        if (clonedPage) {
+          clonedPage.style.transform = "none";
+          clonedPage.style.transformOrigin = "top left";
+        }
+      },
+    });
   }, []);
 
   const pageImage = useCallback((canvas: HTMLCanvasElement, index: number) => {
