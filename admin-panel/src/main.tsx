@@ -806,12 +806,6 @@ function jwLoadCatalog(): JournalCatalog {
 }
 let JOURNAL_CATALOG: JournalCatalog = jwLoadCatalog();
 function getJournalCatalog(): JournalCatalog { return JOURNAL_CATALOG; }
-function journalDoiPrefix(title: string) {
-  const configured = getJournalCatalog().journals.find((journal) => journal.title.trim().toLowerCase() === title.trim().toLowerCase())?.doiPrefix.trim().replace(/\/+$/, "");
-  if (configured) return configured;
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "journal";
-  return `10.0000/talikha.${slug}`;
-}
 function saveJournalCatalog(next: JournalCatalog): void {
   JOURNAL_CATALOG = next;
   if (typeof window !== "undefined") {
@@ -3234,14 +3228,6 @@ function PublicationRecordEditor({
   const pageEnd = Number(record.pageEnd);
   const pageProblem = Boolean(record.pageStart && record.pageEnd && (pageEnd < pageStart || sameIssue.some((item) => pageStart <= Number(item.pageEnd) && pageEnd >= Number(item.pageStart))));
   const doiExists = Boolean(record.doi && publicationRecords.some((item) => item.id !== record.id && item.doi === record.doi));
-  const generateDoi = () => {
-    const titlePart = manuscriptTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 30) || "article";
-    const base = `${journalDoiPrefix(record.journal)}.v${record.volume}i${record.issue}.${titlePart}`;
-    let candidate = base;
-    let suffix = 2;
-    while (publicationRecords.some((item) => item.id !== record.id && item.doi === candidate)) candidate = `${base}-${suffix++}`;
-    onChange({ ...record, doi: candidate });
-  };
   const openCertificateCreator = () => {
     window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
   };
@@ -3313,23 +3299,21 @@ function PublicationRecordEditor({
   const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord, onClick: onOpenQualityCheck };
   const approveAction: PubAction = { key: "approve", label: "Approve and schedule", variant: "default", disabled: false, onClick: onOpenPublish };
   const reviseAction: PubAction = { key: "revise", label: "Revise", variant: "destructive", tone: "danger", disabled: false, onClick: () => onRevise?.() };
-  const doiAction: PubAction = { key: "doi", label: "Generate unique DOI", variant: "outline", disabled: false, onClick: generateDoi };
   let primaryAction: PubAction | null = null;
   const overflowActions: PubAction[] = [];
   if (record.status === "For approval" && canManagePublication) {
     primaryAction = approveAction;
     overflowActions.push(reviseAction);
-    if (editingRecord) overflowActions.push(saveAction, doiAction);
+     if (editingRecord) overflowActions.push(saveAction);
     else overflowActions.push(editAction);
   } else if (record.status === "Draft") {
     primaryAction = markAction;
     if (!editingRecord && canManagePublication) overflowActions.push(editAction);
-    if (editingRecord) overflowActions.push(saveAction, doiAction);
+     if (editingRecord) overflowActions.push(saveAction);
   } else if (!editingRecord && canManagePublication) {
     primaryAction = editAction;
-  } else if (editingRecord) {
-    primaryAction = saveAction;
-    overflowActions.push(doiAction);
+   } else if (editingRecord) {
+     primaryAction = saveAction;
   }
   return (
     <div className="publication-record">
@@ -3442,13 +3426,15 @@ function PublicationRecordEditor({
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
-            <Button type="button" variant={primaryAction.variant} className={primaryAction.key === "mark" ? "tp-pub-quality-check" : undefined} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
+            <Button type="button" variant={primaryAction.variant} className={`tp-pub-action tp-pub-action--${primaryAction.key}`} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
               {(primaryAction.key === "mark" || primaryAction.key === "approve") && <CheckCircle2 />}
+              {primaryAction.key === "save" && <Save />}
               {primaryAction.label}
             </Button>
           )}
           {overflowActions.map((action) => (
-            <Button key={action.key} type="button" variant={action.variant} disabled={action.disabled} className={action.tone === "danger" ? "text-destructive" : undefined} onClick={action.onClick}>
+            <Button key={action.key} type="button" variant={action.variant} disabled={action.disabled} className={`tp-pub-action tp-pub-action--${action.key}${action.tone === "danger" ? " text-destructive" : ""}`} onClick={action.onClick}>
+              {action.key === "save" && <Save />}
               {action.label}
             </Button>
           ))}
