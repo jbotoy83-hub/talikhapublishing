@@ -3123,7 +3123,6 @@ function PublicationRecordEditor({
     if (!/^\d*$/.test(value)) return;
     onChange({ ...record, [key]: value === "" ? 0 : Number(value) });
   };
-  const authorManuscripts = (submission.files || []).filter((file) => file.file_kind === "manuscript");
   const recordStatusCopy: Record<PublicationRecord["status"], string> = {
     Draft: "Build the publication record, check the files, then submit it for administrator approval.",
     "For approval": "The editor has submitted the record. An administrator must review and approve the publication action.",
@@ -3270,7 +3269,6 @@ function PublicationRecordEditor({
         <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>Opened from the selected journal · linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
         <div className="publication-copy-grid">
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
-          <div><span>Author manuscript</span>{authorManuscripts.length ? <div className="publication-manuscript-links">{authorManuscripts.map((file) => <a key={file.id} className="manuscript-dl-btn" href={`/api/admin/files/${file.id}?stream=1&download=1`} title={`Download ${file.original_name || "author manuscript"}`}><Download size={14} strokeWidth={1.9} /><strong>{file.original_name || submission.fileName}</strong></a>)}</div> : <strong>{submission.fileName}</strong>}</div>
           <div><span>Title</span><strong>{manuscriptTitle}</strong></div>
           <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
         </div>
@@ -3322,6 +3320,7 @@ function PublicationRecordEditor({
             <label>DOI registration<select value={record.doiRegistrationStatus || "assigned"} disabled={!editingRecord} onChange={(event) => onChange({ ...record, doiRegistrationStatus: event.target.value as PublicationRecord["doiRegistrationStatus"] })}><option value="assigned">Assigned</option><option value="reserved">Reserved</option><option value="registered">Registered</option></select></label>
           </div>
         </div>
+        <section id="publication-citation-section" className="publication-card citation-card publication-inline-citation"><header><div><span>Recommended citation</span><h2>APA, MLA, and Chicago</h2><p>Switch styles, copy the formatted citation, or use the export formats on the public article.</p></div></header><PublicationCitationPreview submission={submission} authors={authors} record={record} /></section>
       </section>
       <section className="publication-card publication-right-card">
         <div id="publication-materials-section" className="publication-record-materials">
@@ -3348,7 +3347,6 @@ function PublicationRecordEditor({
         </div>
       </section>
       </div>
-      <section id="publication-citation-section" className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA, MLA, and Chicago</h2><p>Switch styles, copy the formatted citation, or use the export formats on the public article.</p></div></header><PublicationCitationPreview submission={submission} authors={authors} record={record} /></section>
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
