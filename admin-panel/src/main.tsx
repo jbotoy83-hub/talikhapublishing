@@ -3,6 +3,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
+import { formatApa, formatMla, formatChicago, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
+import type { Publication } from "../../src/lib/types";
 import { FloatingDock } from "./components/floating-dock";
 import { TeamAccounts } from "./components/team-accounts";
 import { CertificateWorkspace } from "./components/certificates/certificate-workspace";
@@ -2991,6 +2993,59 @@ function ApaCitationPreview({ submission, authors, record }: { submission: Edito
   return <p><span>{citation.author_text} ({citation.year}). {submission.title}. </span>{citation.journal_title && <em>{citation.journal_title}</em>}{citation.volume && <>, <em>{citation.volume}</em></>}{citation.issue && `(${citation.issue})`}{citation.pages && `, ${citation.pages}`}.{citation.doi_url && <> <a href={citation.doi_url} target="_blank" rel="noreferrer">{citation.doi_url}</a></>}</p>;
 }
 
+type AdminCitationStyle = "APA 7" | "MLA 9" | "Chicago";
+
+function publicationForCitation(submission: EditorialSubmission, authors: ReviewAuthor[], record: PublicationRecord): Publication {
+  const names = authors.map((author) => author.name).filter(Boolean);
+  return {
+    id: record.publicationId || record.id,
+    slug: record.publicationId || record.id,
+    title: record.publicTitle || submission.title,
+    abstract: record.publicAbstract || submission.abstract || "",
+    keywords: record.keywords || [],
+    journal: { id: record.journalId || record.journal, slug: record.journal.toLowerCase().replace(/[^a-z0-9]+/g, "-"), title: record.journal, description: "", scope: "", issn: "", heroImage: "", accent: "#214d35" },
+    authors: authors.map((author, index) => ({ id: author.id || String(index + 1), slug: String(author.name || `author-${index + 1}`).toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: author.name, bio: "", affiliation: author.affiliation, credentials: author.academicTitle, orcid: author.orcid })),
+    authorDisplay: names.join("; ") || submission.author,
+    publicationDate: submission.submittedAt || new Date().toISOString(),
+    publicationDatePrecision: "year",
+    modifiedDate: new Date().toISOString(),
+    volume: record.volume,
+    issue: record.issue,
+    pages: record.pageStart && record.pageEnd ? `${record.pageStart}-${record.pageEnd}` : undefined,
+    doi: record.doi || undefined,
+    recommendedCitation: "",
+    licenseName: record.licenseName || "All rights reserved",
+    licenseUrl: "",
+    copyrightHolder: record.copyrightHolder || "The authors",
+    featured: false,
+    contentType: "research",
+    views: record.readCount || 0,
+    downloads: record.downloadCount || 0,
+  };
+}
+
+function renderCitationSegments(segments: CitationSeg[]) {
+  return segments.map((segment, index) => segment.em ? <em key={index}>{segment.t}</em> : <span key={index}>{segment.t}</span>);
+}
+
+function PublicationCitationPreview({ submission, authors, record }: { submission: EditorialSubmission; authors: ReviewAuthor[]; record: PublicationRecord }) {
+  const [style, setStyle] = useState<AdminCitationStyle>("APA 7");
+  const [copied, setCopied] = useState(false);
+  const publication = publicationForCitation(submission, authors, record);
+  const segments = style === "APA 7" ? formatApa(publication) : style === "MLA 9" ? formatMla(publication) : formatChicago(publication);
+  const plain = segsToPlain(segments);
+  const copyCitation = async () => {
+    try { await navigator.clipboard.writeText(plain); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* Clipboard permissions are optional. */ }
+  };
+  return <div className="publication-citation-preview">
+    <div className="publication-citation-tabs" role="tablist" aria-label="Citation style">
+      {(["APA 7", "MLA 9", "Chicago"] as AdminCitationStyle[]).map((item) => <button type="button" key={item} role="tab" aria-selected={style === item} className={style === item ? "active" : ""} onClick={() => setStyle(item)}>{item}</button>)}
+    </div>
+    <blockquote>{renderCitationSegments(segments)}</blockquote>
+    <div className="publication-citation-actions"><button type="button" onClick={() => void copyCitation()}>{copied ? "Copied" : "Copy citation"}</button><span>Additional exports are available on the public article: BibTeX, RIS, Crossref JSON, and DataCite JSON.</span></div>
+  </div>;
+}
+
 function PublicationRecordEditor({
   submission,
   authors,
@@ -3185,11 +3240,6 @@ function PublicationRecordEditor({
         </div>
         <div className="publication-command-status"><span className="publication-command-label">Current state</span><strong>{record.status}</strong><small>{record.doiRegistrationStatus === "registered" ? "DOI registered" : "DOI not yet registered"}</small></div>
       </section>
-      <section className="publication-engagement-strip" aria-label="Publication engagement">
-        <div className="publication-engagement-card"><span className="publication-engagement-icon"><Eye size={17} /></span><div><small>Website reads</small><strong>{(record.readCount ?? 0).toLocaleString("en-PH")}</strong><span>Updates when the public record is viewed</span></div></div>
-        <div className="publication-engagement-card"><span className="publication-engagement-icon"><Download size={17} /></span><div><small>PDF downloads</small><strong>{(record.downloadCount ?? 0).toLocaleString("en-PH")}</strong><span>Updates when the publication PDF is downloaded</span></div></div>
-        <div className="publication-engagement-card publication-engagement-card--next"><span className="publication-engagement-icon"><ClipboardList size={17} /></span><div><small>Next action</small><strong>{record.status === "Draft" ? "Manual quality check" : record.status === "For approval" ? "Admin approval" : record.status === "Scheduled" ? "Publish on schedule" : "Monitor engagement"}</strong><span>One clear action keeps the record moving</span></div></div>
-      </section>
       <nav className="publication-record-nav" aria-label="Publication record sections">
         <button type="button" onClick={() => scrollToRecordSection("publication-source-section")}>Source and authors</button>
         <button type="button" onClick={() => scrollToRecordSection("publication-metadata-section")}>Publishing metadata</button>
@@ -3205,11 +3255,12 @@ function PublicationRecordEditor({
           <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
         </div>
       </section>
+      <div className="publication-editor-panels">
       <section id="publication-source-section" className="publication-card publication-author-card">
         <header>
           <div>
-            <span>Publication author snapshot</span>
-            <h2>Publication author snapshot</h2>
+            <span>Author information</span>
+            <h2>Author information</h2>
             <p>This is the final identity record carried into the article, citation, and DOI metadata.</p>
             {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
@@ -3274,7 +3325,8 @@ function PublicationRecordEditor({
           <div className="publication-fields publication-metrics"><ReviewField label="Number of reads" value={String(record.readCount ?? 0)} onChange={undefined} /><ReviewField label="Number of downloads" value={String(record.downloadCount ?? 0)} onChange={undefined} /></div>
         </div>
       </section>
-      <section id="publication-citation-section" className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA 7 citation preview</h2></div></header><ApaCitationPreview submission={submission} authors={authors} record={record} /></section>
+      </div>
+      <section id="publication-citation-section" className="publication-card citation-card"><header><div><span>Recommended citation</span><h2>APA, MLA, and Chicago</h2><p>Switch styles, copy the formatted citation, or use the export formats on the public article.</p></div></header><PublicationCitationPreview submission={submission} authors={authors} record={record} /></section>
       <section id="publication-materials-section" className="publication-materials-management">
         <div className="publication-materials-heading"><div><span>Files and evidence</span><h2>Production materials</h2><p>Keep the source manuscript, final edition, peer review, and certificate together so every release decision has supporting evidence.</p></div><div className="publication-materials-progress"><span>{[authorManuscripts.length > 0, Boolean(finalManuscript), Boolean(peerReviewFile), Boolean(certificateFile)].filter(Boolean).length}/4 attached</span><small>Core production files</small></div></div>
         <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
