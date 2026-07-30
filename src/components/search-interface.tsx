@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Icon } from "@/components/icon";
 import type { SearchResponse, SearchFilters, FacetItem } from "@/lib/search";
+import { formatPublicationDate } from "@/lib/journal-presentation";
+import { isOpenAccess } from "@/lib/citation-format";
 
 function useUrlState() {
   const [params, setParams] = useState<URLSearchParams>(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""));
@@ -105,25 +108,36 @@ export function SearchInterface() {
   if (filters.keyword) activePills.push({ param: "keyword", label: filters.keyword });
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
+  const activeFilterCount = activePills.length;
 
   return (
     <div className="search-interface">
+      <div className="search-interface-heading">
+        <div>
+          <p className="search-overline">Search the catalogue</p>
+          <h2>Publication records</h2>
+        </div>
+        <p>Browse the archive one record at a time.</p>
+      </div>
       <div className="search-bar-wrap">
         <div className="search-bar">
-          <svg className="search-bar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <Icon name="search" className="search-bar-icon h-5 w-5" />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search publications, authors, keywords…" className="search-bar-input" aria-label="Search" />
           {query && <button type="button" className="search-bar-clear" onClick={() => { setQuery(""); update({ q: undefined, page: undefined }); }} aria-label="Clear search">×</button>}
         </div>
-        <select value={filters.sort || "relevance"} onChange={(e) => update({ sort: e.target.value === "relevance" ? undefined : e.target.value, page: undefined })} className="search-sort" aria-label="Sort results">
-          <option value="relevance">Relevance</option>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="title">Title A–Z</option>
-        </select>
+        <label className="search-sort-control">
+          <span>Sort by</span>
+          <select value={filters.sort || "relevance"} onChange={(e) => update({ sort: e.target.value === "relevance" ? undefined : e.target.value, page: undefined })} className="search-sort" aria-label="Sort results">
+            <option value="relevance">Relevance</option>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="title">Title A–Z</option>
+          </select>
+        </label>
       </div>
 
       {activePills.length > 0 && (
-        <div className="search-pills">
+        <div className="search-pills" aria-label="Active filters">
           {activePills.map((pill) => (
             <button key={pill.param} type="button" className="search-pill" onClick={() => update({ [pill.param]: undefined, page: undefined })}>
               {pill.label} <span aria-hidden="true">×</span>
@@ -133,11 +147,12 @@ export function SearchInterface() {
         </div>
       )}
 
-      {data && <p className="search-count">{data.total} result{data.total !== 1 ? "s" : ""}{filters.q ? ` for "${filters.q}"` : ""}</p>}
+      {data && <div className="search-result-summary"><p className="search-count"><strong>{data.total}</strong> result{data.total !== 1 ? "s" : ""}{filters.q ? ` for "${filters.q}"` : ""}</p><span>{activeFilterCount ? `${activeFilterCount} filter${activeFilterCount !== 1 ? "s" : ""} active` : "All published records"}</span></div>}
 
       <div className="search-layout">
         {data && (data.facets.journals.length > 0 || data.facets.years.length > 0 || data.facets.types.length > 0 || data.facets.keywords.length > 0) && (
           <aside className="search-sidebar" aria-label="Filters">
+            <div className="search-sidebar-heading"><span>Refine results</span><small>{activeFilterCount ? `${activeFilterCount} active` : "Optional"}</small></div>
             <FacetGroup title="Journal" items={data.facets.journals} active={filters.journal} param="journal" onUpdate={update} />
             <FacetGroup title="Year" items={data.facets.years} active={filters.year} param="year" onUpdate={update} />
             <FacetGroup title="Type" items={data.facets.types} active={filters.type} param="type" onUpdate={update} />
@@ -151,17 +166,29 @@ export function SearchInterface() {
             <article key={r.publication.id} className="search-result-card">
               <div className="search-result-accent" style={{ background: `var(--journal-accent-${r.publication.journal.accent || "emerald"}, #2f6e59)` }} />
               <div className="search-result-body">
-                <div className="search-result-meta">
-                  <Link href={`/journals/${r.publication.journal.slug}`} className="search-result-journal">{r.publication.journal.title}</Link>
-                  <span className="search-result-type">{r.publication.contentType}</span>
+                <div className="search-result-topline">
+                  <div className="search-result-meta">
+                    <Link href={`/journals/${r.publication.journal.slug}`} className="search-result-journal">{r.publication.journal.title}</Link>
+                    <span className="search-result-type">{r.publication.contentType}</span>
+                  </div>
+                  <div className={`search-result-access${isOpenAccess(r.publication.licenseName) ? " search-result-access--open" : ""}`}>
+                    <Icon name={isOpenAccess(r.publication.licenseName) ? "unlock" : "lock"} className="h-3.5 w-3.5" />
+                    <span>{isOpenAccess(r.publication.licenseName) ? "Open access" : r.publication.licenseName}</span>
+                  </div>
                 </div>
                 <h3><Link href={`/publications/${r.publication.slug}`} dangerouslySetInnerHTML={{ __html: r.highlightTitle }} /></h3>
                 <p className="search-result-authors">{r.publication.authorDisplay}</p>
-                <p className="search-result-abstract" dangerouslySetInnerHTML={{ __html: r.highlightAbstract }} />
+                {r.publication.abstract && <p className="search-result-abstract" dangerouslySetInnerHTML={{ __html: r.highlightAbstract }} />}
+                <dl className="search-result-details">
+                  <div><dt>Published</dt><dd><time dateTime={r.publication.publicationDate}>{formatPublicationDate(r.publication)}</time></dd></div>
+                  {(r.publication.volume || r.publication.issue) && <div><dt>Issue</dt><dd>{r.publication.volume ? `Vol. ${r.publication.volume}` : ""}{r.publication.issue ? `${r.publication.volume ? ", " : ""}No. ${r.publication.issue}` : ""}</dd></div>}
+                  {r.publication.pages && <div><dt>Pages</dt><dd>{r.publication.pages}</dd></div>}
+                  {r.publication.doi && <div className="search-result-details-doi"><dt>DOI</dt><dd><a href={`https://doi.org/${r.publication.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")}`} target="_blank" rel="noopener noreferrer">{r.publication.doi}</a></dd></div>}
+                </dl>
+                {r.publication.keywords.length > 0 && <div className="search-result-keywords"><span>Topics</span><div>{r.publication.keywords.slice(0, 4).map((keyword) => <Link key={keyword} href={`/search?keyword=${encodeURIComponent(keyword)}`}>{keyword}</Link>)}</div></div>}
                 <div className="search-result-footer">
-                  {r.publication.doi && <span className="search-result-doi">{r.publication.doi}</span>}
-                  {r.publication.volume && <span>Vol. {r.publication.volume}{r.publication.issue ? `, No. ${r.publication.issue}` : ""}</span>}
-                  <time>{r.publication.publicationDate}</time>
+                  <Link href={`/publications/${r.publication.slug}`} className="search-result-read">Read publication <Icon name="arrow" className="h-3.5 w-3.5" /></Link>
+                  <span className="search-result-views"><Icon name="eye" className="h-3.5 w-3.5" />{r.publication.views.toLocaleString("en-US")} views</span>
                 </div>
               </div>
             </article>
