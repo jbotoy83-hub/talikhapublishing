@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import Cropper from "react-easy-crop";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { SubmissionStatus, ReviewAuthor, ReceiptSettings, EditorialSubmission, PublicationRecord, JournalIssueDefault, IssueStatus, IssueRecord, JournalMeta, JournalCatalog, SiteJournal, SiteIssue, SiteStore } from "@/types";
@@ -212,6 +213,48 @@ function authorInitials(author: Pick<ReviewAuthor, "firstName" | "surname" | "na
   const first = (author.firstName || "").trim() || parts[0] || "";
   const surname = (author.surname || "").trim() || (parts.length > 1 ? parts.at(-1) || "" : "");
   return [first, surname].filter(Boolean).map((part) => part.charAt(0)).join("").toUpperCase().slice(0, 2) || "A";
+}
+type PublicationCropArea = { x: number; y: number; width: number; height: number };
+function loadPublicationCropImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image could not be loaded."));
+    image.src = src;
+  });
+}
+async function makePublicationCrop(src: string, area: PublicationCropArea, output = 1024): Promise<string> {
+  const image = await loadPublicationCropImage(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = output;
+  canvas.height = output;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("The crop could not be prepared.");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, output, output);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, output, output);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+function PublicationPhotoCropper({ src, onCancel, onConfirm }: { src: string; onCancel: () => void; onConfirm: (dataUrl: string) => Promise<void> }) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [area, setArea] = useState<PublicationCropArea | null>(null);
+  const [busy, setBusy] = useState(false);
+  const confirm = async () => {
+    if (!area || busy) return;
+    setBusy(true);
+    try { await onConfirm(await makePublicationCrop(src, area)); } catch { /* the parent reports upload errors */ } finally { setBusy(false); }
+  };
+  return <div className="publication-crop-overlay" role="dialog" aria-modal="true" aria-label="Crop publication profile photo">
+    <div className="publication-crop-dialog">
+      <header><div><span>Profile photo</span><h3>Adjust the final crop</h3><p>Drag the image inside the square, then zoom until the framing is right.</p></div><button type="button" onClick={onCancel} aria-label="Close crop editor"><X /></button></header>
+      <div className="publication-crop-stage"><Cropper image={src} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false} objectFit="contain" minZoom={1} maxZoom={4} restrictPosition onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_cropped, pixels) => setArea(pixels)} /></div>
+      <div className="publication-crop-controls"><button type="button" onClick={() => setZoom((value) => Math.max(1, value - .1))} aria-label="Zoom out">−</button><input type="range" min="1" max="4" step=".01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom" /><button type="button" onClick={() => setZoom((value) => Math.min(4, value + .1))} aria-label="Zoom in">+</button><span>{Math.round((zoom / 4) * 100)}%</span></div>
+      <footer><button type="button" className="publication-crop-cancel" onClick={onCancel}>Cancel</button><button type="button" className="publication-crop-confirm" disabled={!area || busy} onClick={() => { void confirm(); }}>{busy ? "Preparing crop…" : "Use this crop"}</button></footer>
+    </div>
+  </div>;
 }
 function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
   if (submission.authors?.length) return submission.authors;
@@ -3102,6 +3145,8 @@ function PublicationRecordEditor({
   const [savingRecord, setSavingRecord] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoCropSource, setPhotoCropSource] = useState<string | null>(null);
+  const [photoCropName, setPhotoCropName] = useState("author-photo.jpg");
   const [recordMessage, setRecordMessage] = useState("");
   const [editingRecord, setEditingRecord] = useState(() =>
     isEditableRecord(record),
@@ -3131,8 +3176,8 @@ function PublicationRecordEditor({
   const updatePhotoSetting = (key: "photoZoom" | "photoPositionX" | "photoPositionY", value: number) => {
     onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, [key]: value } : author));
   };
-  const uploadPublicationAuthorPhoto = async (file?: File) => {
-    if (!file || !selectedAuthor) return;
+  const uploadPublicationAuthorPhoto = async (file?: File): Promise<boolean> => {
+    if (!file || !selectedAuthor) return false;
     setUploadingPhoto(true);
     setRecordMessage("");
     const form = new FormData();
@@ -3145,13 +3190,27 @@ function PublicationRecordEditor({
     setUploadingPhoto(false);
     if (!response?.ok || !body?.file) {
       setRecordMessage(body?.error || "The profile photo could not be saved.");
-      return;
+      return false;
     }
     const savedFile = body.file as NonNullable<EditorialSubmission["files"]>[number];
     const photo = `/api/admin/files/${savedFile.id}`;
     onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, photo, photoFileId: savedFile.id, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 } : author));
     onSubmissionUpdate({ ...submission, files: [...(submission.files || []).filter((item) => item.id !== savedFile.id), savedFile] });
     setRecordMessage("Publication profile photo saved. The submitted original remains preserved.");
+    return true;
+  };
+  const beginPublicationPhotoCrop = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setRecordMessage("Choose a JPG, PNG, WebP, or GIF image."); return; }
+    if (file.size > 12 * 1024 * 1024) { setRecordMessage("That image is too large. Choose one under 12 MB."); return; }
+    setPhotoCropName(file.name || "author-photo.jpg");
+    setPhotoCropSource(URL.createObjectURL(file));
+  };
+  const confirmPublicationPhotoCrop = async (dataUrl: string) => {
+    const blob = await fetch(dataUrl).then((response) => response.blob());
+    const base = photoCropName.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-") || "author-photo";
+    const saved = await uploadPublicationAuthorPhoto(new File([blob], `${base}-cropped.jpg`, { type: "image/jpeg" }));
+    if (saved && photoCropSource) { URL.revokeObjectURL(photoCropSource); setPhotoCropSource(null); }
   };
   const updatePublicationCounter = (key: "readCount" | "downloadCount", value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -3164,7 +3223,6 @@ function PublicationRecordEditor({
     Scheduled: "The record is scheduled. The administrator can publish it when the date is reached.",
     Published: "This record is live. Engagement counters update from the public publication page.",
   };
-  const scrollToRecordSection = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const sameIssue = publicationRecords.filter(
     (item) => item.journal === record.journal && item.volume === record.volume && item.issue === record.issue && item.id !== record.id,
   );
@@ -3250,7 +3308,7 @@ function PublicationRecordEditor({
     setEditingRecord(false);
   };
   const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
-  const markAction: PubAction = { key: "mark", label: "Run quality check", variant: "default", disabled: savingRecord || doiExists || pageProblem || !record.doi || !record.pageStart || !record.pageEnd, onClick: onOpenQualityCheck };
+  const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord || doiExists || pageProblem || !record.doi || !record.pageStart || !record.pageEnd, onClick: onOpenQualityCheck };
   const approveAction: PubAction = { key: "approve", label: "Approve and schedule", variant: "default", disabled: false, onClick: onOpenPublish };
   const reviseAction: PubAction = { key: "revise", label: "Revise", variant: "destructive", tone: "danger", disabled: false, onClick: () => onRevise?.() };
   const doiAction: PubAction = { key: "doi", label: "Generate unique DOI", variant: "outline", disabled: false, onClick: generateDoi };
@@ -3287,25 +3345,19 @@ function PublicationRecordEditor({
           <p>{recordStatusCopy[record.status]}</p>
           <div className="publication-command-actions">
             {canManagePublication && !editingRecord && <button type="button" className="publication-command-primary" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
-            {record.status === "Draft" && <button type="button" className="publication-command-primary" onClick={onOpenQualityCheck}><ClipboardCheck size={16} /> Open manual quality check</button>}
             {record.status === "For approval" && canManagePublication && <button type="button" className="publication-command-primary" onClick={onOpenPublish}><CheckCircle2 size={16} /> Review approval and schedule</button>}
             {record.publicArticleUrl && <a className="publication-command-link" href={record.publicArticleUrl} target="_blank" rel="noreferrer"><Globe size={15} /> View public page</a>}
           </div>
         </div>
         <div className="publication-command-status"><span className="publication-command-label">Current state</span><strong>{record.status}</strong><small>{record.doiRegistrationStatus === "registered" ? "DOI registered" : "DOI not yet registered"}</small></div>
       </section>
-      <nav className="publication-record-nav" aria-label="Publication record sections">
-        <button type="button" onClick={() => scrollToRecordSection("publication-source-section")}>Source and authors</button>
-        <button type="button" onClick={() => scrollToRecordSection("publication-metadata-section")}>Publishing metadata</button>
-        <button type="button" onClick={() => scrollToRecordSection("publication-materials-section")}>Files and evidence</button>
-        <button type="button" onClick={() => scrollToRecordSection("publication-citation-section")}>Citation</button>
-      </nav>
       <section className="publication-card publication-summary">
         <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>Opened from the selected journal · linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
         <div className="publication-copy-grid">
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
           <div><span>Title</span><strong>{manuscriptTitle}</strong></div>
           <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
+          <div className="publication-summary-download"><span>Author manuscript</span>{submission.manuscriptFileId ? <a href={`/api/admin/files/${submission.manuscriptFileId}?stream=1&download=1`} download={submission.manuscriptFileName || "manuscript"}><Download size={14} strokeWidth={1.9} /> Download {submission.manuscriptFileName || "manuscript"}</a> : <strong>No manuscript attached</strong>}</div>
         </div>
       </section>
       <div className="publication-editor-panels">
@@ -3326,7 +3378,7 @@ function PublicationRecordEditor({
               ) : (
                 <small>Initials fallback</small>
               )}
-              {editingRecord && selectedAuthor && <label className="author-photo-upload"><Upload size={12} strokeWidth={1.9} /> {uploadingPhoto ? "Saving photo…" : selectedAuthor.photo ? "Replace photo" : "Add photo"}<input ref={photoInputRef} type="file" accept="image/jpeg,image/png" disabled={uploadingPhoto} onChange={(event) => { void uploadPublicationAuthorPhoto(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>}
+              {editingRecord && selectedAuthor && <label className="author-photo-upload"><Upload size={12} strokeWidth={1.9} /> {uploadingPhoto ? "Saving photo…" : selectedAuthor.photo ? "Replace photo" : "Add photo"}<input ref={photoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploadingPhoto} onChange={(event) => { beginPublicationPhotoCrop(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>}
             </span>
           </div>
           {editingRecord && selectedAuthor && <div className="publication-photo-controls"><label>Zoom<input type="range" min="1" max="3" step="0.05" value={selectedAuthor.photoZoom ?? 1} onChange={(event) => updatePhotoSetting("photoZoom", Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionX ?? 50} onChange={(event) => updatePhotoSetting("photoPositionX", Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionY ?? 50} onChange={(event) => updatePhotoSetting("photoPositionY", Number(event.target.value))} /></label></div>}
@@ -3383,6 +3435,7 @@ function PublicationRecordEditor({
         </div>
       </section>
       </div>
+      {photoCropSource && <PublicationPhotoCropper src={photoCropSource} onCancel={() => { URL.revokeObjectURL(photoCropSource); setPhotoCropSource(null); }} onConfirm={confirmPublicationPhotoCrop} />}
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
