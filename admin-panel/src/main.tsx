@@ -2550,7 +2550,7 @@ function LegacySubmissionReview({
             onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
             onOpenQualityCheck={() => setPreflightOpen(true)}
             onRevise={revisePublication}
-            canManagePublication={isAdmin}
+            canManagePublication={accessRole !== "viewer"}
           />
         </>
       ) : reviewTab === "publication" ? (
@@ -2566,7 +2566,7 @@ function LegacySubmissionReview({
           onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
           onOpenQualityCheck={() => setPreflightOpen(true)}
           onRevise={revisePublication}
-          canManagePublication={isAdmin}
+          canManagePublication={accessRole !== "viewer"}
         />
       ) : <>
         <div className={`review-layout${reviewUnlocked ? "" : " review-layout--locked"}`}>
