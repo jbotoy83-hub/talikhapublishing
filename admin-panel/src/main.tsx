@@ -2603,6 +2603,7 @@ function LegacySubmissionReview({
             onChange={updatePublicationRecord}
             onAuthorsChange={setAuthors}
             onSubmissionUpdate={onUpdate}
+            onPreviewFile={setPreviewFile}
             onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
             onOpenQualityCheck={() => setPreflightOpen(true)}
             onRevise={revisePublication}
@@ -2619,6 +2620,7 @@ function LegacySubmissionReview({
           onChange={updatePublicationRecord}
           onAuthorsChange={setAuthors}
           onSubmissionUpdate={onUpdate}
+          onPreviewFile={setPreviewFile}
           onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
           onOpenQualityCheck={() => setPreflightOpen(true)}
           onRevise={revisePublication}
@@ -2701,7 +2703,7 @@ function LegacySubmissionReview({
                 {author.photo ? (
                   <a
                     className="author-photo-dl"
-                    href={author.photo}
+                    href={`${author.photo}${author.photo.includes("?") ? "&" : "?"}stream=1&download=1`}
                     download={`${(author.name || "author").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author"}-photo.${(author.photo || "").indexOf("data:image/png") === 0 ? "png" : "jpg"}`}
                   >
                     <Download size={14} strokeWidth={1.9} /> Download photo
@@ -3119,6 +3121,7 @@ function PublicationRecordEditor({
   onChange,
   onAuthorsChange,
   onSubmissionUpdate,
+  onPreviewFile,
   onOpenPublish,
   onOpenQualityCheck,
   onRevise,
@@ -3132,6 +3135,7 @@ function PublicationRecordEditor({
   onChange: (record: PublicationRecord) => void;
   onAuthorsChange: (authors: ReviewAuthor[]) => void;
   onSubmissionUpdate: (submission: EditorialSubmission) => void;
+  onPreviewFile: (file: { id: string; mime_type: string; original_name: string }) => void;
   onOpenPublish: () => void;
   onOpenQualityCheck: () => void;
   onRevise?: () => void;
@@ -3157,6 +3161,7 @@ function PublicationRecordEditor({
     setEditingRecord(isEditableRecord(record));
   }
   if (!record) return null;
+  const manuscriptFile = submission.files?.find((file) => file.id === submission.manuscriptFileId) || submission.files?.find((file) => file.file_kind === "manuscript");
   const selectedAuthor = authors[Math.min(activePublicationAuthor, Math.max(0, authors.length - 1))] ?? authors[0];
   const selectedNameParts = (selectedAuthor?.name || "").trim().split(/\s+/).filter(Boolean);
   const selectedFirstName = selectedAuthor?.firstName?.trim() || selectedNameParts[0] || "";
@@ -3172,9 +3177,6 @@ function PublicationRecordEditor({
       }
       return next;
     }));
-  };
-  const updatePhotoSetting = (key: "photoZoom" | "photoPositionX" | "photoPositionY", value: number) => {
-    onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, [key]: value } : author));
   };
   const uploadPublicationAuthorPhoto = async (file?: File): Promise<boolean> => {
     if (!file || !selectedAuthor) return false;
@@ -3210,7 +3212,7 @@ function PublicationRecordEditor({
     const blob = await fetch(dataUrl).then((response) => response.blob());
     const base = photoCropName.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-") || "author-photo";
     const saved = await uploadPublicationAuthorPhoto(new File([blob], `${base}-cropped.jpg`, { type: "image/jpeg" }));
-    if (saved && photoCropSource) { URL.revokeObjectURL(photoCropSource); setPhotoCropSource(null); }
+    if (saved && photoCropSource) { if (photoCropSource.startsWith("blob:")) URL.revokeObjectURL(photoCropSource); setPhotoCropSource(null); }
   };
   const updatePublicationCounter = (key: "readCount" | "downloadCount", value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -3308,7 +3310,7 @@ function PublicationRecordEditor({
     setEditingRecord(false);
   };
   const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
-  const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord || doiExists || pageProblem || !record.doi || !record.pageStart || !record.pageEnd, onClick: onOpenQualityCheck };
+  const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord, onClick: onOpenQualityCheck };
   const approveAction: PubAction = { key: "approve", label: "Approve and schedule", variant: "default", disabled: false, onClick: onOpenPublish };
   const reviseAction: PubAction = { key: "revise", label: "Revise", variant: "destructive", tone: "danger", disabled: false, onClick: () => onRevise?.() };
   const doiAction: PubAction = { key: "doi", label: "Generate unique DOI", variant: "outline", disabled: false, onClick: generateDoi };
@@ -3319,11 +3321,12 @@ function PublicationRecordEditor({
     overflowActions.push(reviseAction);
     if (editingRecord) overflowActions.push(saveAction, doiAction);
     else overflowActions.push(editAction);
+  } else if (record.status === "Draft") {
+    primaryAction = markAction;
+    if (!editingRecord && canManagePublication) overflowActions.push(editAction);
+    if (editingRecord) overflowActions.push(saveAction, doiAction);
   } else if (!editingRecord && canManagePublication) {
     primaryAction = editAction;
-  } else if (editingRecord && record.status === "Draft") {
-    primaryAction = markAction;
-    overflowActions.push(saveAction, doiAction);
   } else if (editingRecord) {
     primaryAction = saveAction;
     overflowActions.push(doiAction);
@@ -3357,7 +3360,7 @@ function PublicationRecordEditor({
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
           <div><span>Title</span><strong>{manuscriptTitle}</strong></div>
           <div><span>Submission reference</span><strong>{submissionReference(submission)}</strong></div>
-          <div className="publication-summary-download"><span>Author manuscript</span>{submission.manuscriptFileId ? <a href={`/api/admin/files/${submission.manuscriptFileId}?stream=1&download=1`} download={submission.manuscriptFileName || "manuscript"}><Download size={14} strokeWidth={1.9} /> Download {submission.manuscriptFileName || "manuscript"}</a> : <strong>No manuscript attached</strong>}</div>
+          <div className="publication-summary-download"><span>Author manuscript</span>{manuscriptFile ? <button type="button" onClick={() => onPreviewFile({ id: manuscriptFile.id, mime_type: manuscriptFile.mime_type, original_name: manuscriptFile.original_name })}><Eye size={14} strokeWidth={1.9} /> Open {manuscriptFile.original_name || "manuscript"}</button> : <strong>No manuscript attached</strong>}</div>
         </div>
       </section>
       <div className="publication-editor-panels">
@@ -3370,18 +3373,19 @@ function PublicationRecordEditor({
             {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
           <div className="publication-author-photo">
-            <span className="publication-photo-viewport">{selectedAuthor?.photo ? <img src={selectedAuthor.photo} alt={`${selectedAuthor.name || "Author"} profile`} style={{ objectPosition: `${selectedAuthor.photoPositionX ?? 50}% ${selectedAuthor.photoPositionY ?? 50}%`, transform: `scale(${selectedAuthor.photoZoom ?? 1})` }} /> : <span className="publication-photo-empty">{selectedAuthor ? authorInitials(selectedAuthor) : "A"}</span>}</span>
+            <button type="button" className="publication-photo-viewport" disabled={!editingRecord} title={editingRecord ? selectedAuthor?.photo ? "Click to adjust this photo" : "Click to add a photo" : "Photo editing is disabled"} onClick={() => { if (!editingRecord) return; if (selectedAuthor?.photo) setPhotoCropSource(selectedAuthor.photo); else photoInputRef.current?.click(); }}>
+              {selectedAuthor?.photo ? <img src={selectedAuthor.photo} alt={`${selectedAuthor.name || "Author"} profile`} style={{ objectPosition: "center", transform: "none" }} /> : <span className="publication-photo-empty">{selectedAuthor ? authorInitials(selectedAuthor) : "A"}</span>}
+            </button>
             <span>
               <strong>2×2 profile picture</strong>
               {selectedAuthor?.photo ? (
-                <a className="author-photo-dl" href={selectedAuthor.photo} download={`${(selectedAuthor.name || "author").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author"}-photo.jpg`}><Download size={12} strokeWidth={1.9} /> Download</a>
+                <a className="author-photo-dl" href={`${selectedAuthor.photo}${selectedAuthor.photo.includes("?") ? "&" : "?"}stream=1&download=1`} download={`${(selectedAuthor.name || "author").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author"}-photo.jpg`}><Download size={12} strokeWidth={1.9} /> Download</a>
               ) : (
                 <small>Initials fallback</small>
               )}
               {editingRecord && selectedAuthor && <label className="author-photo-upload"><Upload size={12} strokeWidth={1.9} /> {uploadingPhoto ? "Saving photo…" : selectedAuthor.photo ? "Replace photo" : "Add photo"}<input ref={photoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploadingPhoto} onChange={(event) => { beginPublicationPhotoCrop(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>}
             </span>
           </div>
-          {editingRecord && selectedAuthor && <div className="publication-photo-controls"><label>Zoom<input type="range" min="1" max="3" step="0.05" value={selectedAuthor.photoZoom ?? 1} onChange={(event) => updatePhotoSetting("photoZoom", Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionX ?? 50} onChange={(event) => updatePhotoSetting("photoPositionX", Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionY ?? 50} onChange={(event) => updatePhotoSetting("photoPositionY", Number(event.target.value))} /></label></div>}
         </header>
         <div className="publication-author-switcher" role="tablist" aria-label="Publication authors">
           {authors.map((item, index) => <button type="button" key={item.id} className={index === activePublicationAuthor ? "active" : ""} onClick={() => setActivePublicationAuthor(index)} role="tab" aria-selected={index === activePublicationAuthor}>{index + 1}. {item.name || "New author"}</button>)}
@@ -3412,7 +3416,7 @@ function PublicationRecordEditor({
       </section>
       <section className="publication-card publication-right-card">
         <div id="publication-materials-section" className="publication-record-materials">
-          <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onOpenCertificateCreator={openCertificateCreator} />
+          <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onPreviewFile={onPreviewFile} onOpenCertificateCreator={openCertificateCreator} />
         </div>
         <div id="publication-metadata-section" className="publication-subsection publication-publishing-subsection">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>
@@ -3421,8 +3425,7 @@ function PublicationRecordEditor({
           <ReviewField label="Volume" value={record.volume} onChange={editingRecord ? (volume) => onChange({ ...record, volume }) : undefined} />
           <ReviewField label="Issue" value={record.issue} onChange={editingRecord ? (issue) => onChange({ ...record, issue }) : undefined} />
           <div className="page-guidance"><span>Last page in this issue</span><strong>{previousEnd || "None yet"}</strong><small>Suggested next start: {suggestedStart}</small></div>
-          <ReviewField label="Start page" value={record.pageStart} onChange={editingRecord ? (pageStart) => onChange({ ...record, pageStart }) : undefined} />
-          <ReviewField label="End page" value={record.pageEnd} onChange={editingRecord ? (pageEnd) => onChange({ ...record, pageEnd }) : undefined} />
+          <div className="publication-page-fields"><ReviewField label="Start page" value={record.pageStart} onChange={editingRecord ? (pageStart) => onChange({ ...record, pageStart }) : undefined} /><ReviewField label="End page" value={record.pageEnd} onChange={editingRecord ? (pageEnd) => onChange({ ...record, pageEnd }) : undefined} /></div>
           {pageProblem && <p className="publication-warning">This page range overlaps another record or ends before it starts.</p>}
         </div>
         <div className="doi-row tp-pub-doi"><ReviewField label="DOI" value={record.doi} onChange={editingRecord ? (doi) => onChange({ ...record, doi }) : undefined} /></div>
@@ -3560,22 +3563,27 @@ const publicationMaterialOptions: Array<{ kind: PublicationMaterialKind; title: 
   { kind: "publication_certificate", title: "Issued certificate", description: "Attached automatically after issue, or add an approved PDF.", accept: "application/pdf,.pdf", required: true },
 ];
 
-function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onOpenCertificateCreator }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onOpenCertificateCreator: () => void }) {
-  const [uploading, setUploading] = useState<PublicationMaterialKind | null>(null);
+function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFile, onOpenCertificateCreator }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onPreviewFile: (file: { id: string; mime_type: string; original_name: string }) => void; onOpenCertificateCreator: () => void }) {
+  const [uploading, setUploading] = useState<Partial<Record<PublicationMaterialKind, number>>>({});
   const [message, setMessage] = useState("");
   const files = submission.files || [];
-  const uploadMaterial = async (kind: PublicationMaterialKind, file?: File) => {
-    if (!file) return;
-    setUploading(kind); setMessage("");
-    const form = new FormData();
-    form.set("submissionId", submission.id); form.set("fileKind", kind); form.set("file", file);
-    const response = await fetch("/api/admin/workflow-files", { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }, body: form }).catch(() => null);
-    const body = await response?.json().catch(() => null);
-    setUploading(null);
-    if (!response?.ok || !body?.file) { setMessage(body?.error || "The attachment could not be saved. Please try again."); return; }
-    const savedFile = body.file as { id: string; file_kind: string; storage_path: string; original_name: string; mime_type: string; size_bytes: number };
-    onSubmissionUpdate({ ...submission, files: [...files.filter((item) => item.id !== savedFile.id), savedFile] });
-    setMessage(`${savedFile.original_name} is attached to this publication record.`);
+  const uploadMaterial = async (kind: PublicationMaterialKind, selectedFiles: File[]) => {
+    if (!selectedFiles.length) return;
+    setUploading((current) => ({ ...current, [kind]: selectedFiles.length })); setMessage("");
+    const uploadOne = async (file: File) => {
+      const form = new FormData();
+      form.set("submissionId", submission.id); form.set("fileKind", kind); form.set("file", file);
+      const response = await fetch("/api/admin/workflow-files", { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }, body: form }).catch(() => null);
+      const body = await response?.json().catch(() => null);
+      if (!response?.ok || !body?.file) throw new Error(body?.error || `${file.name} could not be attached.`);
+      return body.file as NonNullable<EditorialSubmission["files"]>[number];
+    };
+    const results = await Promise.allSettled(selectedFiles.map(uploadOne));
+    const savedFiles = results.filter((result): result is PromiseFulfilledResult<NonNullable<EditorialSubmission["files"]>[number]> => result.status === "fulfilled").map((result) => result.value);
+    const errors = results.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason instanceof Error ? result.reason.message : "An attachment could not be saved.");
+    if (savedFiles.length) onSubmissionUpdate({ ...submission, files: [...files, ...savedFiles] });
+    setUploading((current) => { const next = { ...current }; delete next[kind]; return next; });
+    setMessage(errors.length ? `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved. ${errors.join(" ")}` : `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved to this publication record.`);
   };
   return <section className="publication-card publication-materials">
     <header><div><span>Record materials</span><h2>Files required for publication</h2><p>Keep the certificate, final manuscript, and editorial evidence together with this record.</p></div><button type="button" className="publication-certificate-launch" onClick={onOpenCertificateCreator}><Award /> + Certificate</button></header>
@@ -3585,8 +3593,8 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onOpenCerti
         const attached = files.filter((file) => file.file_kind === option.kind);
         return <article key={option.kind} className={attached.length ? "publication-material attached" : "publication-material"}>
           <div className="publication-material-head"><div><h3>{option.title}</h3><p>{option.description}</p></div><span>{attached.length ? "Attached" : option.required ? "Required" : "Optional"}</span></div>
-          {attached.length ? <div className="publication-material-files">{attached.map((file) => <a key={file.id} href={`/api/admin/files/${file.id}`} target="_blank" rel="noreferrer"><FileText /><span>{file.original_name}</span><Eye /></a>)}</div> : <p className="publication-material-empty">No file attached yet.</p>}
-          <label className="publication-material-upload"><Upload />{uploading === option.kind ? "Attaching…" : attached.length ? "Replace or add file" : `Attach ${option.title.toLowerCase()}`}<input type="file" accept={option.accept} disabled={uploading !== null} onChange={(event) => { void uploadMaterial(option.kind, event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
+          {attached.length ? <div className="publication-material-files">{attached.map((file) => <div key={file.id} className="publication-material-file"><button type="button" onClick={() => onPreviewFile({ id: file.id, mime_type: file.mime_type, original_name: file.original_name })}><FileText /><span>{file.original_name}</span><Eye /></button><a href={`/api/admin/files/${file.id}?stream=1&download=1`} download={file.original_name} aria-label={`Download ${file.original_name}`}><Download size={14} strokeWidth={1.9} /></a></div>)}</div> : <p className="publication-material-empty">No file attached yet.</p>}
+          <label className="publication-material-upload"><Upload />{uploading[option.kind] ? `Attaching ${uploading[option.kind]} file${uploading[option.kind] === 1 ? "" : "s"}…` : attached.length ? "Attach more files" : `Attach ${option.title.toLowerCase()}`}<input type="file" multiple accept={option.accept} disabled={Boolean(uploading[option.kind])} onChange={(event) => { void uploadMaterial(option.kind, Array.from(event.target.files || [])); event.currentTarget.value = ""; }} /></label>
         </article>;
       })}
     </div>
@@ -3656,6 +3664,7 @@ function ManuscriptViewer({
           {file ? <RealFilePreview fileId={file.id} mime={file.mime_type} name={file.original_name} /> : null}
         </div>
         <DialogFooter>
+          {file && <Button asChild variant="outline" size="sm"><a href={`/api/admin/files/${file.id}?stream=1&download=1`} download={file.original_name}><Download size={14} strokeWidth={1.9} /> Download</a></Button>}
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Close preview</Button>
         </DialogFooter>
       </DialogContent>
