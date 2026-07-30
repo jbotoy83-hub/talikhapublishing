@@ -4237,6 +4237,8 @@ dd,
 .publication-author-photo { display: flex; align-items: center; gap: 10px; flex: 0 0 210px; border: 1px solid #dedfe3; border-radius: 10px; padding: 9px 11px; }
 .publication-author-photo .avatar { flex: 0 0 auto; }
 .publication-author-photo span { display: grid; gap: 3px; min-width: 0; }
+.publication-inline-edit { display: inline-flex; align-items: center; min-height: 36px; margin-top: 14px; border: 1px solid #214d35; border-radius: 9px; background: #214d35; padding: 0 13px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.publication-inline-edit:hover { background: #183b29; }
 .publication-author-photo strong { color: #1f3027; font-size: 13px; }
 .publication-author-photo small { color: #858991; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .publication-author-switcher { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 18px; }

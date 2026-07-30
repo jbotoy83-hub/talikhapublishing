@@ -3203,6 +3203,7 @@ function PublicationRecordEditor({
             <span>Author information</span>
             <h2>Author information</h2>
             <p>Review one author at a time without expanding the record.</p>
+            {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
           <div className="publication-author-photo">
             <Avatar src={selectedAuthor?.photo || submission.image} size="lg" />
@@ -6998,9 +6999,23 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
       } catch { /* The in-memory admin list remains authoritative for this session. */ }
     }
   };
-  const deleteSubmission = (submissionId: string) => {
-    setEditorialSubmissions((records) => records.filter((record) => record.id !== submissionId));
-    setPublicationRecords((records) => records.filter((record) => record.submissionId !== submissionId));
+  const deleteSubmission = async (submissionId: string) => {
+    try {
+      const response = await fetch(`/api/admin/submissions/${submissionId}`, { method: "DELETE", credentials: "same-origin" });
+      const body = await response.json().catch(() => ({})) as { error?: string; storageCleanupErrors?: string[] };
+      if (!response.ok) throw new Error(body.error || "The submission could not be deleted.");
+
+      if (body.storageCleanupErrors?.length) {
+        setWorkflowNotice(`The submission was deleted, but some private files could not be removed: ${body.storageCleanupErrors.join("; ")}`);
+      } else {
+        setWorkflowNotice("The submission and its related editorial records were deleted.");
+      }
+      setEditorialSubmissions((records) => records.filter((record) => record.id !== submissionId));
+      setPublicationRecords((records) => records.filter((record) => record.submissionId !== submissionId));
+    } catch (error) {
+      setWorkflowNotice(error instanceof Error ? error.message : "The submission could not be deleted.");
+      return;
+    }
     if (process.env.NODE_ENV !== "production") {
       try {
         const key = "talikha-editorial-submissions-v1";
