@@ -3163,6 +3163,14 @@ function PublicationRecordEditor({
   }
   return (
     <div className="publication-record">
+      <section className="publication-editor-banner" aria-labelledby="publication-editor-banner-heading">
+        <div className="publication-editor-banner-copy">
+          <span>Admin · Publication editor</span>
+          <h2 id="publication-editor-banner-heading">Final author metadata</h2>
+          <p>Editors can correct identity details before publication; every save is recorded in workflow history.</p>
+        </div>
+        <div className="publication-editor-banner-state">{editingRecord ? "Editing enabled" : "Read-only snapshot"}</div>
+      </section>
       <section className="publication-command-center" aria-labelledby="publication-record-heading">
         <div className="publication-command-copy">
           <div className="publication-command-kicker"><span>Central publication record</span><span className="publication-command-ref">{submissionReference(submission)}</span></div>
@@ -3200,9 +3208,9 @@ function PublicationRecordEditor({
       <section id="publication-source-section" className="publication-card publication-author-card">
         <header>
           <div>
-            <span>Author information</span>
-            <h2>Author information</h2>
-            <p>Review one author at a time without expanding the record.</p>
+            <span>Publication author snapshot</span>
+            <h2>Publication author snapshot</h2>
+            <p>This is the final identity record carried into the article, citation, and DOI metadata.</p>
             {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
           <div className="publication-author-photo">
@@ -3231,6 +3239,11 @@ function PublicationRecordEditor({
           <label>Gmail account<input value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
           <label>ORCID<input value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
         </div>}
+        <div className="publication-metadata-ready">
+          <span>Metadata-ready DOI</span>
+          <strong>{record.doi || "Generate a DOI after the author snapshot is complete"}</strong>
+        </div>
+        <p className="publication-preflight-note">✓ Preflight reads the final snapshot for name, affiliation, author order, corresponding author, and ORCID validation.</p>
       </section>
       <section id="publication-metadata-section" className="publication-card">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>

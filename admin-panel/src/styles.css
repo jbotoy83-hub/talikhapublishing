@@ -4172,6 +4172,11 @@ dd,
 .publication-manuscript-links { display: grid; gap: 6px; min-width: 0; }
 .publication-manuscript-links .manuscript-dl-btn { display: flex; align-items: center; justify-content: flex-start; gap: 7px; width: 100%; height: auto; min-width: 0; padding: 6px 8px; text-align: left; }
 .publication-manuscript-links .manuscript-dl-btn strong { min-width: 0; color: inherit; font-size: 11px; font-weight: 650; line-height: 1.35; }
+.publication-editor-banner { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 0 14px; padding: 26px 30px 28px; border-radius: 18px 18px 0 0; background: #123d2d; color: #fff; box-shadow: 0 12px 30px rgba(18, 61, 45, .14); }
+.publication-editor-banner-copy > span { display: block; color: #d5e6da; font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.publication-editor-banner-copy h2 { margin: 8px 0 5px; color: #fff; font-family: Newsreader, Georgia, serif; font-size: clamp(28px, 4vw, 42px); font-weight: 650; letter-spacing: -.03em; line-height: 1; }
+.publication-editor-banner-copy p { max-width: 660px; margin: 0; color: #d7e7dc; font-size: 13px; line-height: 1.5; }
+.publication-editor-banner-state { flex: 0 0 auto; border: 1px solid rgba(255,255,255,.38); border-radius: 999px; padding: 8px 11px; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .publication-command-center { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 28px; align-items: stretch; margin-bottom: 14px; padding: 28px 30px 30px; border: 1px solid #dce7df; border-radius: 18px; background: linear-gradient(135deg, #f4faf5 0%, #ffffff 68%); box-shadow: 0 12px 32px rgba(31, 69, 48, .07); }
 .publication-command-copy { min-width: 0; }
 .publication-command-kicker { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: #47715a; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
@@ -4220,11 +4225,13 @@ dd,
 .publication-materials-progress small { color: #78867d; font-size: 10px; }
 .publication-materials-management .publication-materials { border-color: #d9e3db; background: #fff; }
 @media (max-width: 900px) {
+  .publication-editor-banner { align-items: flex-start; flex-direction: column; }
   .publication-command-center { grid-template-columns: 1fr; }
   .publication-command-status { min-height: 0; border-top: 1px solid #dce7df; border-left: 0; padding: 17px 0 0; }
   .publication-engagement-strip { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  .publication-editor-banner { padding: 22px 18px 24px; }
   .publication-command-center { padding: 22px 18px; }
   .publication-command-copy h1 { font-size: 34px; }
   .publication-record-nav { overflow-x: auto; flex-wrap: nowrap; }
@@ -4251,6 +4258,10 @@ dd,
 .publication-author-fields label:nth-child(5) { grid-column: span 2; }
 .publication-author-fields label:nth-child(6) { grid-column: span 2; }
 .publication-author-fields input { width: 100%; min-width: 0; box-sizing: border-box; height: 40px; border: 1px solid #d9dde0; border-radius: 8px; background: #fbfbfc; padding: 0 11px; color: #292929; font: inherit; font-weight: 400; }
+.publication-metadata-ready { display: grid; gap: 6px; margin-top: 18px; border-radius: 12px; background: #f5eee4; padding: 15px 16px; }
+.publication-metadata-ready span { color: #8a563c; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.publication-metadata-ready strong { color: #70452e; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
+.publication-preflight-note { margin: 16px 0 0; border-radius: 11px; background: #eaf3ec; padding: 12px 14px; color: #47715a; font-size: 12px; line-height: 1.45; }
 .publication-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 .publication-metrics { grid-template-columns: repeat(2, minmax(0, 220px)); }
 .publication-fields > label, .publication-fields > label input, .doi-row label { min-width: 0; }
