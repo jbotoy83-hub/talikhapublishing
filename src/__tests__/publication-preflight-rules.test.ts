@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isValidDoi,
   isValidOrcid,
+  normalizeOrcid,
   normalizeDoi,
   pageRangeIssue,
   rangesOverlap,
@@ -17,6 +18,7 @@ describe("publication preflight rules", () => {
   });
 
   it("validates ORCID checksums", () => {
+    expect(normalizeOrcid("https://orcid.org/0000 0002 1825 0097")).toBe("0000-0002-1825-0097");
     expect(isValidOrcid("0000-0002-1825-0097")).toBe(true);
     expect(isValidOrcid("0000-0002-1825-0098")).toBe(false);
   });

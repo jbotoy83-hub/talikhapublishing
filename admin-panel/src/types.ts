@@ -19,7 +19,21 @@ export type ReviewAuthor = {
   affiliation: string;
   academicTitle?: string;
   occupation: string;
+  orcid?: string;
   photo?: string | null;
+};
+
+export type PublicationAuthorMetadata = {
+  id?: string;
+  position: number;
+  firstName: string;
+  middleInitial: string;
+  surname: string;
+  academicTitle: string;
+  occupation: string;
+  affiliation: string;
+  orcid: string;
+  corresponding: boolean;
 };
 
 export type ReceiptSettings = {
@@ -93,6 +107,7 @@ export type PublicationRecord = {
   licenseName?: string;
   copyrightHolder?: string;
   citationData?: Record<string, unknown>;
+  authorMetadata?: PublicationAuthorMetadata[];
   finalPdfFileId?: string;
   certificateFileId?: string;
   socialMediaFileId?: string;

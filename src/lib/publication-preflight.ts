@@ -208,7 +208,7 @@ async function loadContext(submissionId: string) {
     ? await admin.from("issues").select("id,journal_id,volume,issue_number,title").eq("id", String(record.issue_id)).maybeSingle()
     : { data: null, error: null };
   const linksResult = record.publication_id
-    ? await admin.from("publication_authors").select("position,corresponding,authors(id,name,affiliation,orcid,status,image_url)").eq("publication_id", String(record.publication_id)).order("position")
+    ? await admin.from("publication_authors").select("position,corresponding,given_name,middle_name,family_name,academic_title,position_title,affiliation,orcid,authors(id,name,affiliation,credentials,orcid,status,image_url)").eq("publication_id", String(record.publication_id)).order("position")
     : { data: [], error: null };
   const allRecords = record.issue_id
     ? await admin.from("publication_records").select("id,submission_id,metadata").eq("issue_id", String(record.issue_id)).neq("id", String(record.id))
@@ -236,6 +236,19 @@ function fileArtifact(file: JsonRecord, selected: boolean): Artifact {
     versionNumber: Number(file.version_number || 1),
     sha256: typeof file.sha256 === "string" ? file.sha256 : null,
     selected,
+  };
+}
+
+function resolvedPublicationAuthor(link: JsonRecord): JsonRecord {
+  const profile = (link.authors || {}) as JsonRecord;
+  const snapshotName = [link.given_name, link.middle_name, link.family_name].filter(Boolean).join(" ").trim();
+  return {
+    ...profile,
+    id: profile.id,
+    name: snapshotName || profile.name || "",
+    affiliation: link.affiliation || profile.affiliation || "",
+    credentials: link.academic_title || profile.credentials || "",
+    orcid: link.orcid || profile.orcid || "",
   };
 }
 
@@ -347,7 +360,7 @@ async function evaluate(context: Awaited<ReturnType<typeof loadContext>>, existi
 
   checks.push(automatic("metadata.core", "Metadata", "Public title and abstract are complete", Boolean(publication?.title && publication?.abstract), "Public title and abstract are required.", "edit_metadata"));
   checks.push(automatic("metadata.keywords", "Metadata", "Keywords are present", Array.isArray(publication?.keywords) && publication.keywords.length > 0, "Add at least one public keyword.", "edit_metadata"));
-  const linkedAuthors = publicationAuthors.map((link) => link.authors as JsonRecord).filter(Boolean);
+  const linkedAuthors = publicationAuthors.map(resolvedPublicationAuthor).filter((author) => Boolean(author.id || author.name));
   checks.push(automatic("metadata.authors", "Metadata", "Every author has a display name and affiliation", linkedAuthors.length > 0 && linkedAuthors.every((author) => author.name && author.affiliation), "Every linked author needs a name and affiliation.", "edit_author"));
   checks.push(automatic("metadata.orcid", "Metadata", "Supplied ORCID values have valid checksums", linkedAuthors.every((author) => !author.orcid || isValidOrcid(String(author.orcid))), "One or more supplied ORCID values have an invalid checksum.", "edit_author"));
   checks.push(automatic("metadata.author_order", "Metadata", "Author order and corresponding author are defined", publicationAuthors.length > 0 && publicationAuthors.filter((link) => link.corresponding).length === 1, "Define author order and exactly one corresponding author.", "edit_author"));

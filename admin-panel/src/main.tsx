@@ -221,6 +221,7 @@ function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
         affiliation: d.institution || d.affiliation || submission.affiliation,
         academicTitle: d.academicTitle || "",
         occupation: d.position || (index === 0 ? "Submitting author" : "Co-author"),
+        orcid: d.orcid || "",
         photo: authorPhotoUrlForIndex(submission, index),
       };
     });
@@ -233,6 +234,7 @@ function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
       affiliation: submission.affiliation,
       academicTitle: "",
       occupation: "Submitting author",
+      orcid: "",
       photo: authorPhotoUrlForIndex(submission, 0),
     },
   ];
@@ -751,6 +753,12 @@ function jwLoadCatalog(): JournalCatalog {
 }
 let JOURNAL_CATALOG: JournalCatalog = jwLoadCatalog();
 function getJournalCatalog(): JournalCatalog { return JOURNAL_CATALOG; }
+function journalDoiPrefix(title: string) {
+  const configured = getJournalCatalog().journals.find((journal) => journal.title.trim().toLowerCase() === title.trim().toLowerCase())?.doiPrefix.trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "journal";
+  return `10.0000/talikha.${slug}`;
+}
 function saveJournalCatalog(next: JournalCatalog): void {
   JOURNAL_CATALOG = next;
   if (typeof window !== "undefined") {
@@ -2358,6 +2366,21 @@ function LegacySubmissionReview({
   const publicationRecord = publicationRecords.find(
     (record) => record.submissionId === submission.id,
   );
+  useEffect(() => {
+    if (!publicationRecord?.authorMetadata?.length) return;
+    setAuthors(publicationRecord.authorMetadata.map((metadata, index) => ({
+      ...(authors[index] || { id: `${submission.id}-author-${index + 1}`, name: "", email: "", affiliation: "", occupation: "" }),
+      id: metadata.id || authors[index]?.id || `${submission.id}-author-${index + 1}`,
+      name: [metadata.firstName, metadata.middleInitial, metadata.surname].filter(Boolean).join(" ") || authors[index]?.name || "",
+      firstName: metadata.firstName,
+      middleInitial: metadata.middleInitial,
+      surname: metadata.surname,
+      academicTitle: metadata.academicTitle,
+      occupation: metadata.occupation,
+      affiliation: metadata.affiliation,
+      orcid: metadata.orcid,
+    })));
+  }, [publicationRecord?.id]);
   const openPublicationRecord = () => {
     if (!submission.workflowStage?.startsWith("production_") && submission.status !== "Accepted") {
       window.alert("The production record becomes available only after the submission is accepted.");
@@ -2522,6 +2545,7 @@ function LegacySubmissionReview({
             record={publicationRecord}
             publicationRecords={publicationRecords}
             onChange={updatePublicationRecord}
+            onAuthorsChange={setAuthors}
             onSubmissionUpdate={onUpdate}
             onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
             onOpenQualityCheck={() => setPreflightOpen(true)}
@@ -2537,6 +2561,7 @@ function LegacySubmissionReview({
           record={publicationRecord ?? null}
           publicationRecords={publicationRecords}
           onChange={updatePublicationRecord}
+          onAuthorsChange={setAuthors}
           onSubmissionUpdate={onUpdate}
           onOpenPublish={() => { setScheduleUnlocked(true); setReviewTab("publication"); }}
           onOpenQualityCheck={() => setPreflightOpen(true)}
@@ -2583,6 +2608,7 @@ function LegacySubmissionReview({
                       affiliation: "",
                       academicTitle: "",
                       occupation: "Co-author",
+                      orcid: "",
                     },
                   ]);
                   setActiveAuthor(authors.length);
@@ -2680,6 +2706,11 @@ function LegacySubmissionReview({
                 label="Gmail account"
                 value={author.email}
                 onChange={(value) => updateAuthor("email", value)}
+              />
+              <ReviewField
+                label="ORCID"
+                value={author.orcid || ""}
+                onChange={(value) => updateAuthor("orcid", value)}
               />
             </div>
           </section>
@@ -2967,6 +2998,7 @@ function PublicationRecordEditor({
   record,
   publicationRecords,
   onChange,
+  onAuthorsChange,
   onSubmissionUpdate,
   onOpenPublish,
   onOpenQualityCheck,
@@ -2979,6 +3011,7 @@ function PublicationRecordEditor({
   record: PublicationRecord | null;
   publicationRecords: PublicationRecord[];
   onChange: (record: PublicationRecord) => void;
+  onAuthorsChange: (authors: ReviewAuthor[]) => void;
   onSubmissionUpdate: (submission: EditorialSubmission) => void;
   onOpenPublish: () => void;
   onOpenQualityCheck: () => void;
@@ -3006,6 +3039,17 @@ function PublicationRecordEditor({
   const selectedFirstName = selectedAuthor?.firstName?.trim() || selectedNameParts[0] || "";
   const selectedSurname = selectedAuthor?.surname?.trim() || (selectedNameParts.length > 1 ? selectedNameParts[selectedNameParts.length - 1] : "");
   const selectedMiddleInitial = selectedAuthor?.middleInitial?.trim() || selectedNameParts.slice(1, -1).map((part) => `${part.replace(/[^a-z]/gi, "").charAt(0).toUpperCase()}.`).filter((part) => part !== ".").join(" ");
+  const updatePublicationAuthor = (key: keyof ReviewAuthor, value: string) => {
+    if (!selectedAuthor) return;
+    onAuthorsChange(authors.map((author, index) => {
+      if (index !== activePublicationAuthor) return author;
+      const next = { ...author, [key]: value };
+      if (key === "firstName" || key === "middleInitial" || key === "surname") {
+        next.name = [next.firstName, next.middleInitial, next.surname].filter(Boolean).join(" ");
+      }
+      return next;
+    }));
+  };
   const authorManuscripts = (submission.files || []).filter((file) => file.file_kind === "manuscript");
   const finalManuscript = (submission.files || []).filter((file) => file.file_kind === "final_pdf").at(-1);
   const peerReviewFile = (submission.files || []).filter((file) => file.file_kind === "peer_review").at(-1);
@@ -3028,9 +3072,8 @@ function PublicationRecordEditor({
   const pageProblem = Boolean(record.pageStart && record.pageEnd && (pageEnd < pageStart || sameIssue.some((item) => pageStart <= Number(item.pageEnd) && pageEnd >= Number(item.pageStart))));
   const doiExists = Boolean(record.doi && publicationRecords.some((item) => item.id !== record.id && item.doi === record.doi));
   const generateDoi = () => {
-    const journalPart = record.journal.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     const titlePart = manuscriptTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 30) || "article";
-    const base = `10.0000/talikha.${journalPart}.v${record.volume}i${record.issue}.${titlePart}`;
+    const base = `${journalDoiPrefix(record.journal)}.v${record.volume}i${record.issue}.${titlePart}`;
     let candidate = base;
     let suffix = 2;
     while (publicationRecords.some((item) => item.id !== record.id && item.doi === candidate)) candidate = `${base}-${suffix++}`;
@@ -3070,6 +3113,20 @@ function PublicationRecordEditor({
         socialMediaFileId: record.socialMediaFileId || social?.id,
         doiRegistrationStatus: record.doiRegistrationStatus || "assigned",
         citationData: record.citationData || {},
+        authors: authors.map((author, index) => ({
+          id: author.id,
+          position: index + 1,
+          firstName: author.firstName || "",
+          middleInitial: author.middleInitial || "",
+          surname: author.surname || "",
+          name: author.name,
+          academicTitle: author.academicTitle || "",
+          occupation: author.occupation || "",
+          affiliation: author.affiliation || "",
+          email: author.email || "",
+          orcid: author.orcid || "",
+          corresponding: index === 0,
+        })),
         metadata: {},
       }),
     }).catch(() => null);
@@ -3079,7 +3136,7 @@ function PublicationRecordEditor({
       setRecordMessage(body?.error || "The publication record could not be saved.");
       return;
     }
-    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
+    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", corresponding: index === 0 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
     setRecordMessage("Production record saved to the publication database.");
     setEditingRecord(false);
   };
@@ -3163,12 +3220,14 @@ function PublicationRecordEditor({
           <span className="publication-author-count">{authors.length} {authors.length === 1 ? "author" : "authors"}</span>
         </div>
         {selectedAuthor && <div className="publication-author-fields">
-          <label>First name<input value={selectedFirstName} readOnly /></label>
-          <label>Middle initial<input value={selectedMiddleInitial} readOnly /></label>
-          <label>Surname<input value={selectedSurname} readOnly /></label>
-          <label>Academic title<input value={selectedAuthor.academicTitle || ""} readOnly /></label>
-          <label>Affiliation<input value={selectedAuthor.affiliation || ""} readOnly /></label>
-          <label>Gmail account<input value={selectedAuthor.email || ""} readOnly /></label>
+          <label>First name<input value={selectedAuthor.firstName || selectedFirstName} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("firstName", event.target.value)} /></label>
+          <label>Middle initial<input value={selectedAuthor.middleInitial || selectedMiddleInitial} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("middleInitial", event.target.value)} /></label>
+          <label>Surname<input value={selectedAuthor.surname || selectedSurname} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("surname", event.target.value)} /></label>
+          <label>Academic title<input value={selectedAuthor.academicTitle || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("academicTitle", event.target.value)} /></label>
+          <label>Position or role<input value={selectedAuthor.occupation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("occupation", event.target.value)} /></label>
+          <label>Affiliation<input value={selectedAuthor.affiliation || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("affiliation", event.target.value)} /></label>
+          <label>Gmail account<input value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
+          <label>ORCID<input value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
         </div>}
       </section>
       <section id="publication-metadata-section" className="publication-card">
@@ -6788,6 +6847,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             affiliation: String(author.institution || "Local sample"),
             academicTitle: String(author.academicTitle || ""),
             occupation: "Submitting author",
+            orcid: String(author.orcid || ""),
           })) : [];
           return ({
           id: String(sample.id),
@@ -6865,7 +6925,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const metadata = (record.metadata as Record<string, unknown>) || {};
             const pages = String((publication as { pages?: string } | null)?.pages || metadata.pages || "");
             const [pageStart = "", pageEnd = ""] = pages.split(/[-–—]/).map((value) => value.trim());
-            return { id: String(record.id), submissionId: String(record.submission_id), publicationId: typeof record.publication_id === "string" ? record.publication_id : undefined, journalId: typeof record.journal_id === "string" ? record.journal_id : undefined, issueId: typeof record.issue_id === "string" ? record.issue_id : undefined, journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || metadata.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || metadata.issueNumber || "—"), doi: String(record.doi || ""), pageStart, pageEnd, publicTitle: String((publication as { title?: string } | null)?.title || ""), publicAbstract: String((publication as { abstract?: string } | null)?.abstract || ""), keywords: Array.isArray((publication as { keywords?: unknown } | null)?.keywords) ? (publication as { keywords: string[] }).keywords : [], licenseName: String((publication as { license_name?: string } | null)?.license_name || "All rights reserved"), copyrightHolder: String((publication as { copyright_holder?: string } | null)?.copyright_holder || "The authors"), citationData: (record.citation_data as Record<string, unknown>) || {}, finalPdfFileId: typeof record.final_pdf_file_id === "string" ? record.final_pdf_file_id : undefined, certificateFileId: typeof record.certificate_file_id === "string" ? record.certificate_file_id : undefined, socialMediaFileId: typeof record.social_media_file_id === "string" ? record.social_media_file_id : typeof metadata.socialMediaFileId === "string" ? metadata.socialMediaFileId : undefined, publicArticleUrl: typeof record.public_article_url === "string" ? record.public_article_url : undefined, doiRegistrationStatus: (["assigned", "reserved", "registered"].includes(String(record.doi_registration_status || metadata.doiRegistrationStatus || "")) ? String(record.doi_registration_status || metadata.doiRegistrationStatus) : "assigned") as PublicationRecord["doiRegistrationStatus"], latestPreflightRunId: typeof record.latest_preflight_run_id === "string" ? record.latest_preflight_run_id : undefined, submittedPreflightRunId: typeof record.submitted_preflight_run_id === "string" ? record.submitted_preflight_run_id : undefined, scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : record.submitted_preflight_run_id ? "For approval" : "Draft", readCount: Number((publication as { views?: number } | null)?.views ?? 0), downloadCount: Number((publication as { downloads?: number } | null)?.downloads ?? 0) } satisfies PublicationRecord;
+            return { id: String(record.id), submissionId: String(record.submission_id), publicationId: typeof record.publication_id === "string" ? record.publication_id : undefined, journalId: typeof record.journal_id === "string" ? record.journal_id : undefined, issueId: typeof record.issue_id === "string" ? record.issue_id : undefined, journal: String((journal as { title?: string } | null)?.title || "InQuira"), volume: String((issue as { volume?: string | number } | null)?.volume || metadata.volume || "—"), issue: String((issue as { issue_number?: string | number } | null)?.issue_number || metadata.issueNumber || "—"), doi: String(record.doi || ""), pageStart, pageEnd, publicTitle: String((publication as { title?: string } | null)?.title || ""), publicAbstract: String((publication as { abstract?: string } | null)?.abstract || ""), keywords: Array.isArray((publication as { keywords?: unknown } | null)?.keywords) ? (publication as { keywords: string[] }).keywords : [], licenseName: String((publication as { license_name?: string } | null)?.license_name || "All rights reserved"), copyrightHolder: String((publication as { copyright_holder?: string } | null)?.copyright_holder || "The authors"), citationData: (record.citation_data as Record<string, unknown>) || {}, authorMetadata: Array.isArray(metadata.authorMetadata) ? metadata.authorMetadata as PublicationRecord["authorMetadata"] : undefined, finalPdfFileId: typeof record.final_pdf_file_id === "string" ? record.final_pdf_file_id : undefined, certificateFileId: typeof record.certificate_file_id === "string" ? record.certificate_file_id : undefined, socialMediaFileId: typeof record.social_media_file_id === "string" ? record.social_media_file_id : typeof metadata.socialMediaFileId === "string" ? metadata.socialMediaFileId : undefined, publicArticleUrl: typeof record.public_article_url === "string" ? record.public_article_url : undefined, doiRegistrationStatus: (["assigned", "reserved", "registered"].includes(String(record.doi_registration_status || metadata.doiRegistrationStatus || "")) ? String(record.doi_registration_status || metadata.doiRegistrationStatus) : "assigned") as PublicationRecord["doiRegistrationStatus"], latestPreflightRunId: typeof record.latest_preflight_run_id === "string" ? record.latest_preflight_run_id : undefined, submittedPreflightRunId: typeof record.submitted_preflight_run_id === "string" ? record.submitted_preflight_run_id : undefined, scheduledFor: typeof record.scheduled_for === "string" ? record.scheduled_for : undefined, status: record.published_at ? "Published" : record.scheduled_for ? "Scheduled" : record.submitted_preflight_run_id ? "For approval" : "Draft", readCount: Number((publication as { views?: number } | null)?.views ?? 0), downloadCount: Number((publication as { downloads?: number } | null)?.downloads ?? 0) } satisfies PublicationRecord;
           });
           setEditorialSubmissions(mergeLocalSamples(serverSubmissions));
           setPublicationRecords(serverRecords);

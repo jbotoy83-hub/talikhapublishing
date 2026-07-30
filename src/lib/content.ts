@@ -185,7 +185,17 @@ type PublicationRow = {
   downloads: number;
   journal: JournalRow | JournalRow[] | null;
   publication_authors:
-    | Array<{ position: number; author: AuthorRow | AuthorRow[] | null }>
+    | Array<{
+        position: number;
+        given_name: string | null;
+        middle_name: string | null;
+        family_name: string | null;
+        academic_title: string | null;
+        position_title: string | null;
+        affiliation: string | null;
+        orcid: string | null;
+        author: AuthorRow | AuthorRow[] | null;
+      }>
     | null;
 };
 
@@ -222,7 +232,16 @@ function mapPublication(row: PublicationRow): Publication | null {
     .sort((a, b) => a.position - b.position)
     .flatMap((record) => {
       const author = Array.isArray(record.author) ? record.author[0] : record.author;
-      return author ? [mapAuthor(author)] : [];
+      if (!author) return [];
+      const mapped = mapAuthor(author);
+      const snapshotName = [record.given_name, record.middle_name, record.family_name].filter(Boolean).join(" ");
+      return [{
+        ...mapped,
+        name: snapshotName || mapped.name,
+        affiliation: record.affiliation || mapped.affiliation,
+        credentials: record.academic_title || mapped.credentials,
+        orcid: record.orcid || mapped.orcid,
+      }];
     });
   const citationYear = row.recommended_citation?.match(/\(((?:19|20)\d{2})\)/)?.[1];
   const publicationDate = row.publication_date || citationYear || row.updated_at.slice(0, 4);
@@ -262,7 +281,7 @@ const publicationSelect = `
   volume, issue_number, pages, doi, pdf_url, recommended_citation,
   license_name, license_url, copyright_holder, featured, content_type, author_display, views, downloads,
   journal:journals(id, slug, title, description, scope, issn, hero_image_url, accent),
-  publication_authors(position, author:authors(id, slug, name, bio, affiliation, credentials, orcid, image_url))
+  publication_authors(position, given_name, middle_name, family_name, academic_title, position_title, affiliation, orcid, author:authors(id, slug, name, bio, affiliation, credentials, orcid, image_url))
 `;
 
 export type JournalArchiveEntry = {

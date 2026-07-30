@@ -20,6 +20,7 @@ import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cr
 import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
 import { validateFile, saveBlob, saveMeta, deleteFile, getBlob, formatBytes, sanitizeFilename, PURPOSE_ACCEPT, PURPOSE_MAX_SIZE } from "@/lib/file-storage";
+import { isValidOrcid, normalizeOrcid } from "@/lib/publication-preflight-rules";
 
 const MAX_SUBMIT_ATTEMPTS = 3;
 const MIN_PROCESS_MS = 2800;
@@ -400,6 +401,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       if (!form.familyName.trim()) next.familyName = "Required";
       if (!form.email.trim()) next.email = "Required";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = "Invalid email";
+      if (form.orcid.trim() && !isValidOrcid(normalizeOrcid(form.orcid))) next.orcid = "Enter a valid ORCID";
       const seen = new Set(form.email.trim() ? [form.email.trim().toLowerCase()] : []);
       for (const a of form.coAuthors) {
         const filled = [a.firstName, a.middleName, a.familyName, a.email, a.affiliation, a.occupation, a.orcid].some((v) => v.trim());
@@ -408,6 +410,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         else if (!a.email.trim()) next[`co-${a.id}`] = "Add the co-author's email";
         else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim())) next[`co-${a.id}`] = "Invalid co-author email";
         else if (seen.has(a.email.trim().toLowerCase())) next[`co-${a.id}`] = "Duplicate email";
+        else if (a.orcid.trim() && !isValidOrcid(normalizeOrcid(a.orcid))) next[`co-${a.id}`] = "Enter a valid co-author ORCID";
         else seen.add(a.email.trim().toLowerCase());
       }
     }
@@ -469,8 +472,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const meaningful = (a: { firstName: string; middleName: string; familyName: string; email: string; affiliation: string; occupation: string; orcid: string }) =>
         [a.firstName, a.middleName, a.familyName, a.email, a.affiliation, a.occupation, a.orcid].some((v) => v.trim());
       const authorDetails = [
-        { firstName: form.firstName.trim(), surname: form.familyName.trim(), middleInitial: form.middleName.trim(), position: form.occupation.trim(), academicTitle: form.academicTitle.trim(), email: form.email.trim(), institution: form.affiliation.trim(), location: "", orcid: form.orcid.trim() },
-        ...form.coAuthors.filter(meaningful).map((a) => ({ firstName: a.firstName.trim(), surname: a.familyName.trim(), middleInitial: a.middleName.trim(), position: a.occupation.trim(), academicTitle: a.academicTitle.trim(), email: a.email.trim(), institution: a.affiliation.trim(), location: "", orcid: a.orcid.trim() }))
+        { firstName: form.firstName.trim(), surname: form.familyName.trim(), middleInitial: form.middleName.trim(), position: form.occupation.trim(), academicTitle: form.academicTitle.trim(), email: form.email.trim(), institution: form.affiliation.trim(), location: "", orcid: normalizeOrcid(form.orcid) },
+        ...form.coAuthors.filter(meaningful).map((a) => ({ firstName: a.firstName.trim(), surname: a.familyName.trim(), middleInitial: a.middleName.trim(), position: a.occupation.trim(), academicTitle: a.academicTitle.trim(), email: a.email.trim(), institution: a.affiliation.trim(), location: "", orcid: normalizeOrcid(a.orcid) }))
       ];
       const photoSources = [form.photo, ...form.coAuthors.filter(meaningful).map((a) => a.photo)];
       for (let pi = 0; pi < photoSources.length; pi++) {
@@ -886,9 +889,10 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                 <input id="email" type="email" value={form.email} onChange={(e) => update("email", e.target.value)} placeholder="name@example.com" required />
                 {errors.email && <small className="field-error">{errors.email}</small>}
               </div>
-              <div className="floating-field">
+              <div className={`floating-field ${errors.orcid ? "has-error" : ""}`}>
                 <label htmlFor="orcid">ORCID <span className="field-optional">(optional)</span></label>
                 <input id="orcid" type="text" value={form.orcid} onChange={(e) => update("orcid", e.target.value)} placeholder="0000-0000-0000-0000" />
+                {errors.orcid && <small className="field-error">{errors.orcid}</small>}
               </div>
               <div className="floating-field">
                 <label htmlFor="occupation">Occupation or role</label>
@@ -975,9 +979,10 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
                           <input type="email" value={author.email} onChange={(e) => updateCoAuthor(author.id, "email", e.target.value)} placeholder="name@example.com" />
                           {errors[`co-${author.id}`] && <small className="field-error">{errors[`co-${author.id}`]}</small>}
                         </div>
-                        <div className="floating-field">
+                        <div className={`floating-field ${errors[`co-${author.id}`]?.toLowerCase().includes("orcid") ? "has-error" : ""}`}>
                           <label>ORCID <span className="field-optional">(optional)</span></label>
                           <input type="text" value={author.orcid} onChange={(e) => updateCoAuthor(author.id, "orcid", e.target.value)} placeholder="0000-0000-0000-0000" />
+                          {errors[`co-${author.id}`]?.toLowerCase().includes("orcid") && <small className="field-error">{errors[`co-${author.id}`]}</small>}
                         </div>
                         <div className="floating-field full">
                           <label>Affiliation</label>

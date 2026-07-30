@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { Publication } from "@/lib/types";
-import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, segsToPlain, type CitationSeg } from "@/lib/citation-format";
+import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, formatCrossref, formatDataCite, segsToPlain, type CitationSeg } from "@/lib/citation-format";
 
 const TABS = ["APA", "MLA", "Chicago"] as const;
 type Tab = (typeof TABS)[number];
@@ -62,6 +62,8 @@ export function CitationPanel({ publication }: { publication: Publication }) {
           </button>
           <button type="button" className="cite-export" onClick={() => downloadFile(formatBibtex(publication), `${slug}.bib`, "application/x-bibtex")}>BibTeX</button>
           <button type="button" className="cite-export" onClick={() => downloadFile(formatRis(publication), `${slug}.ris`, "application/x-research-info-systems")}>RIS</button>
+          <button type="button" className="cite-export" onClick={() => downloadFile(formatCrossref(publication), `${slug}.crossref.json`, "application/json")}>Crossref JSON</button>
+          <button type="button" className="cite-export" onClick={() => downloadFile(formatDataCite(publication), `${slug}.datacite.json`, "application/json")}>DataCite JSON</button>
         </div>
       </div>
     </div>

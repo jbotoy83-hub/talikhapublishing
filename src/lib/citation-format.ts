@@ -32,7 +32,7 @@ function doiUrl(doi?: string) {
   return `https://doi.org/${doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")}`;
 }
 
-function authorsOrDisplay(p: Publication) {
+function authorsOrDisplay(p: Publication): Array<{ name: string; orcid?: string; affiliation?: string }> {
   return p.authors.length ? p.authors : p.authorDisplay.split(";").map((n) => ({ name: n.trim() })).filter((a) => a.name);
 }
 
@@ -144,6 +144,65 @@ export function formatRis(p: Publication) {
   if (p.doi) lines.push(`DO  - ${p.doi}`);
   lines.push("ER  -");
   return lines.join("\n");
+}
+
+function dateParts(date: string) {
+  const parts = date.split("-").map((part) => Number(part));
+  return parts.length && Number.isFinite(parts[0]) ? parts.filter((part) => Number.isFinite(part)) : [Number(year(date))];
+}
+
+function normalizedOrcid(orcid?: string) {
+  return orcid?.replace(/^https?:\/\/orcid\.org\//i, "").trim() || undefined;
+}
+
+function depositAuthors(p: Publication) {
+  return authorsOrDisplay(p).map((author) => ({
+    given: firstName(author.name) || undefined,
+    family: lastName(author.name),
+    ORCID: normalizedOrcid(author.orcid),
+    affiliation: author.affiliation ? [{ name: author.affiliation }] : undefined,
+  }));
+}
+
+export function formatCrossref(p: Publication) {
+  const deposit: Record<string, unknown> = {
+    type: "journal-article",
+    title: [p.title],
+    author: depositAuthors(p),
+    "container-title": [p.journal.title],
+    ISSN: p.journal.issn ? [p.journal.issn] : undefined,
+    volume: p.volume || undefined,
+    issue: p.issue || undefined,
+    page: p.pages || undefined,
+    published: { "date-parts": [dateParts(p.publicationDate)] },
+    DOI: p.doi || undefined,
+    URL: p.doi ? doiUrl(p.doi) : undefined,
+    abstract: p.abstract || undefined,
+    subject: p.keywords.length ? p.keywords : undefined,
+    license: p.licenseUrl ? [{ URL: p.licenseUrl, contentVersion: "vor" }] : undefined,
+  };
+  return JSON.stringify(deposit, (_key, value) => value === undefined ? undefined : value, 2);
+}
+
+export function formatDataCite(p: Publication) {
+  const resource: Record<string, unknown> = {
+    identifier: p.doi ? { identifier: p.doi, identifierType: "DOI" } : undefined,
+    creators: authorsOrDisplay(p).map((author) => ({
+      name: author.name,
+      nameType: "Personal",
+      nameIdentifiers: normalizedOrcid(author.orcid) ? [{ nameIdentifier: `https://orcid.org/${normalizedOrcid(author.orcid)}`, nameIdentifierScheme: "ORCID", schemeUri: "https://orcid.org" }] : undefined,
+      affiliation: author.affiliation ? [{ name: author.affiliation }] : undefined,
+    })),
+    titles: [{ title: p.title }],
+    publisher: "Talikha Publishing",
+    publicationYear: Number(year(p.publicationDate)),
+    types: { resourceTypeGeneral: "Text", resourceType: "Journal Article" },
+    container: { containerTitle: p.journal.title, firstPage: parsePages(p.pages).start || undefined, lastPage: parsePages(p.pages).end || undefined, volume: p.volume || undefined, issue: p.issue || undefined },
+    subjects: p.keywords.map((subject) => ({ subject })),
+    descriptions: p.abstract ? [{ description: p.abstract, descriptionType: "Abstract" }] : undefined,
+    rightsList: p.licenseUrl ? [{ rightsUri: p.licenseUrl, rights: p.licenseName }] : undefined,
+  };
+  return JSON.stringify(resource, (_key, value) => value === undefined ? undefined : value, 2);
 }
 
 export function isOpenAccess(licenseName: string) {

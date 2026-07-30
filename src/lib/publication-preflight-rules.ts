@@ -29,6 +29,11 @@ export function normalizeDoi(value: string) {
   return value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "").toLocaleLowerCase();
 }
 
+export function normalizeOrcid(value: string) {
+  const normalized = value.trim().replace(/^https?:\/\/orcid\.org\//i, "").replace(/\s+/g, "").replace(/-/g, "").toUpperCase();
+  return normalized.length === 16 ? normalized.replace(/(\d{4})(\d{4})(\d{4})([\dX]{4})/, "$1-$2-$3-$4") : value.trim();
+}
+
 export function isValidDoi(value: string) {
   return /^10\.\d{4,9}\/\S+$/i.test(normalizeDoi(value));
 }

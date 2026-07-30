@@ -8,11 +8,27 @@ import { workflowStages, type WorkflowStage, progressIndexOf, progressBoundary, 
 import { getSiteUrl } from "@/lib/site";
 import { renderOfficialReceiptPdf } from "@/lib/receipt-pdf";
 import { createApa7JournalCitation } from "@/lib/apa-citation";
+import { isValidOrcid, normalizeOrcid } from "@/lib/publication-preflight-rules";
 
 const uuid = z.string().uuid();
 const optionalText = (maximum: number) => z.string().trim().max(maximum).optional().transform((value) => value || undefined);
 const optionalDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date (YYYY-MM-DD)").optional().transform((value) => value || undefined);
 const doiField = z.string().trim().max(255).regex(/^10\.\d{4,9}\/\S+$/, "Enter a valid DOI, e.g. 10.1000/xyz123").optional().transform((value) => value || undefined);
+const orcidField = z.string().trim().max(120).default("").transform(normalizeOrcid).refine((value) => !value || isValidOrcid(value), "Enter a valid ORCID identifier.");
+const publicationAuthorInput = z.object({
+  id: uuid.optional(),
+  position: z.number().int().min(1).max(12),
+  name: z.string().trim().max(180).default(""),
+  firstName: z.string().trim().max(80).default(""),
+  middleInitial: z.string().trim().max(80).default(""),
+  surname: z.string().trim().max(80).default(""),
+  academicTitle: z.string().trim().max(80).default(""),
+  occupation: z.string().trim().max(160).default(""),
+  affiliation: z.string().trim().max(240).default(""),
+  email: z.string().trim().email().max(254).default("editorial@example.invalid"),
+  orcid: orcidField,
+  corresponding: z.boolean().default(false),
+});
 
 const transitionInput = z.object({
   submissionId: uuid,
@@ -47,6 +63,7 @@ const publicationRecordInput = z.object({
   licenseUrl: optionalText(500),
   copyrightHolder: optionalText(200),
   publicationDate: optionalDate,
+  authors: z.array(publicationAuthorInput).max(12).optional(),
   citationData: z.record(z.string(), z.unknown()).default({}),
   metadata: z.record(z.string(), z.unknown()).default({})
 });
@@ -229,6 +246,31 @@ async function syncPublicationAuthors(admin: AdminClient, publicationId: string,
     position += 1;
     const { error } = await admin.from("publication_authors").insert({ publication_id: publicationId, author_id: link.id, position, corresponding: link.corresponding });
     if (error) throw new Error("The author links could not be saved.");
+  }
+}
+
+async function syncPublicationAuthorMetadata(admin: AdminClient, publicationId: string, authors: Array<z.infer<typeof publicationAuthorInput>>) {
+  const { data: links, error: linkError } = await admin
+    .from("publication_authors")
+    .select("author_id, position")
+    .eq("publication_id", publicationId)
+    .order("position");
+  if (linkError) throw new Error("The publication author metadata could not be loaded.");
+  for (const link of links || []) {
+    const author = authors.find((item) => item.position === link.position);
+    if (!author) continue;
+    const { error } = await admin.from("publication_authors").update({
+      given_name: author.firstName || null,
+      middle_name: author.middleInitial || null,
+      family_name: author.surname || null,
+      academic_title: author.academicTitle || null,
+      position_title: author.occupation || null,
+      affiliation: author.affiliation || null,
+      orcid: author.orcid || null,
+      corresponding: author.corresponding,
+      metadata: { email: author.email || null },
+    }).eq("publication_id", publicationId).eq("author_id", link.author_id);
+    if (error) throw new Error("The publication author metadata could not be saved.");
   }
 }
 
@@ -467,15 +509,27 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
   if (resolvedJournalId) {
     const { data: existingPublications } = await admin.from("publications").select("id, slug").eq("source_submission_id", parsed.submissionId).limit(1);
     const existingPublication = existingPublications?.[0];
-    const { data: submittedAuthors } = await admin.from("submission_authors").select("position, first_name, middle_initial, surname").eq("submission_id", parsed.submissionId).order("position");
-    const authorDisplay = (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).join("; ") || submission.author_name;
+    const finalAuthors = parsed.authors?.length ? parsed.authors : (await resolveAuthorsFromSubmission(admin, parsed.submissionId, submission.author_name)).map((author, index) => ({
+      position: index + 1,
+      name: author.name,
+      firstName: "",
+      middleInitial: "",
+      surname: "",
+      academicTitle: author.credentials || "",
+      occupation: "",
+      affiliation: author.affiliation || "",
+      email: "editorial@example.invalid",
+      orcid: author.orcid || "",
+      corresponding: Boolean(author.corresponding),
+    }));
+    const authorDisplay = finalAuthors.map((author) => author.name || [author.firstName, author.middleInitial, author.surname].filter(Boolean).join(" ")).filter(Boolean).join("; ") || submission.author_name;
     const { data: journal } = await admin.from("journals").select("title").eq("id", resolvedJournalId).maybeSingle();
     const { data: citationIssue } = resolvedIssueId ? await admin.from("issues").select("volume, issue_number").eq("id", resolvedIssueId).maybeSingle() : { data: null };
     const resolvedVolume = citationIssue?.volume || parsed.volume || submission.volume_snapshot || null;
     const resolvedIssueNumber = citationIssue?.issue_number || parsed.issueNumber || submission.issue_snapshot || null;
     const resolvedPages = parsed.pages || (parsed.pageStart ? [parsed.pageStart, parsed.pageEnd].filter(Boolean).join("-") : null);
     const resolvedAbstract = parsed.abstract || submission.abstract || "";
-    const citationAuthors = (submittedAuthors || []).map((author) => [author.first_name, author.middle_initial, author.surname].filter(Boolean).join(" ")).filter(Boolean);
+    const citationAuthors = finalAuthors.map((author) => author.name || [author.firstName, author.middleInitial, author.surname].filter(Boolean).join(" ")).filter(Boolean);
     const publicTitle = parsed.title || submission.title;
     citationData = createApa7JournalCitation({ authors: citationAuthors.length ? citationAuthors : [submission.author_name], title: publicTitle, year: new Date().getFullYear(), journalTitle: journal?.title || "", volume: resolvedVolume, issue: resolvedIssueNumber, pages: resolvedPages, doi: parsed.doi });
     const slug = existingPublication?.slug || publicationSlug(publicTitle, submission.id);
@@ -513,8 +567,19 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
       publicArticleUrl = new URL(`/publications/${created.slug}`, `${getSiteUrl()}/`).toString();
     }
 
-    const promotedAuthors = await resolveAuthorsFromSubmission(admin, parsed.submissionId, submission.author_name);
-    if (publicationId) await syncPublicationAuthors(admin, publicationId, promotedAuthors);
+    const promotedAuthors = finalAuthors.map((author) => ({
+      name: author.name || [author.firstName, author.middleInitial, author.surname].filter(Boolean).join(" "),
+      orcid: author.orcid || null,
+      affiliation: author.affiliation || null,
+      credentials: author.academicTitle || null,
+      corresponding: author.corresponding,
+    }));
+    if (publicationId) {
+      await syncPublicationAuthors(admin, publicationId, promotedAuthors);
+      await syncPublicationAuthorMetadata(admin, publicationId, finalAuthors);
+    }
+
+    parsed.metadata.authorMetadata = finalAuthors;
   }
 
   const publicationMetadata = {

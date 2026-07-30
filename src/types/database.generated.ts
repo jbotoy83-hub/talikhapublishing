@@ -1138,21 +1138,45 @@ export type Database = {
       }
       publication_authors: {
         Row: {
+          academic_title: string | null
+          affiliation: string | null
           author_id: string
           corresponding: boolean
+          family_name: string | null
+          given_name: string | null
+          metadata: Json
+          middle_name: string | null
+          orcid: string | null
           position: number
+          position_title: string | null
           publication_id: string
         }
         Insert: {
+          academic_title?: string | null
+          affiliation?: string | null
           author_id: string
           corresponding?: boolean
+          family_name?: string | null
+          given_name?: string | null
+          metadata?: Json
+          middle_name?: string | null
+          orcid?: string | null
           position: number
+          position_title?: string | null
           publication_id: string
         }
         Update: {
+          academic_title?: string | null
+          affiliation?: string | null
           author_id?: string
           corresponding?: boolean
+          family_name?: string | null
+          given_name?: string | null
+          metadata?: Json
+          middle_name?: string | null
+          orcid?: string | null
           position?: number
+          position_title?: string | null
           publication_id?: string
         }
         Relationships: [
