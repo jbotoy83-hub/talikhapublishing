@@ -1857,11 +1857,11 @@ main {
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #eef3f0;
+  background: linear-gradient(135deg, #eef5f0, #dfeee5);
   box-shadow: inset 0 0 0 1px rgba(33, 77, 55, 0.2), 0 3px 10px rgba(20, 36, 28, 0.12);
 }
 .author-photo-circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.author-photo-empty { display: grid; place-items: center; width: 100%; height: 100%; color: #8aa093; }
+.author-photo-empty { display: grid; place-items: center; width: 100%; height: 100%; color: #1f6b46; font-size: 18px; font-weight: 800; letter-spacing: .02em; }
 .author-photo-meta { min-width: 0; flex: 1; }
 .author-photo-meta strong { display: block; font-size: 0.82rem; font-weight: 700; color: var(--text-body); }
 .author-photo-meta span { display: block; font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
@@ -4231,8 +4231,8 @@ dd,
 .publication-record > .publication-card header p { max-width: 62ch; }
 .publication-record .publication-fields { gap: 20px 18px; }
 .publication-record .publication-fields label, .publication-record .publication-author-fields label { display: grid; gap: 7px; color: #435048; font-size: 12px; font-weight: 650; }
-.publication-record .publication-fields input, .publication-record .publication-fields select, .publication-record .publication-fields textarea, .publication-record .publication-author-fields input { margin-top: 6px; border-color: #d6dfd8; border-radius: 8px; background: #fbfdfb; color: #20332a; font-size: 13px; }
-.publication-record .publication-control { height: 40px; min-height: 40px; border: 1px solid #aeb9b1; border-radius: 8px; background: #fff; padding-inline: 11px; color: #20332a; font-size: 13px; box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
+.publication-record .publication-fields input, .publication-record .publication-fields select, .publication-record .publication-fields textarea, .publication-record .publication-author-fields input { margin-top: 6px; border-color: rgba(74, 103, 86, .34); border-radius: 8px; background: #fbfdfb; color: #20332a; font-size: 13px; }
+.publication-record .publication-control { height: 40px; min-height: 40px; border: 1px solid rgba(74, 103, 86, .48); border-radius: 8px; background: #fff; padding-inline: 11px; color: #20332a; font-size: 13px; box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
 .publication-record textarea.publication-control { height: auto; min-height: 108px; padding-block: 10px; resize: vertical; line-height: 1.5; }
 .publication-record .publication-control[readonly] { border-color: #d6dfd8; background: #f7faf8; color: #526258; cursor: default; }
 .publication-record .publication-control:focus-visible { border-color: #214d35; box-shadow: 0 0 0 3px rgba(33, 77, 53, .14); }
@@ -4269,16 +4269,18 @@ dd,
 .publication-author-card > header { flex-wrap: wrap; }
 .publication-author-photo { display: flex; align-items: center; gap: 10px; flex: 0 0 210px; border: 1px solid #dedfe3; border-radius: 10px; padding: 9px 11px; }
 .publication-author-photo .avatar { flex: 0 0 auto; }
-.publication-photo-viewport { display: block; flex: 0 0 56px; width: 56px; height: 56px; overflow: hidden; border-radius: 50%; background: #f1ead7; }
+.publication-photo-viewport { display: block; flex: 0 0 56px; width: 56px; height: 56px; overflow: hidden; border-radius: 50%; background: linear-gradient(135deg, #eef5f0, #dfeee5); color: #1f6b46; box-shadow: inset 0 0 0 1px rgba(31,107,70,.2); }
 .publication-photo-viewport img { display: block; width: 100%; height: 100%; object-fit: cover; transform-origin: center; }
 .publication-photo-viewport .avatar { width: 56px; height: 56px; }
 .publication-author-photo .publication-photo-viewport { display: block; }
-.publication-photo-empty { display: grid !important; width: 100%; height: 100%; place-items: center; color: #7c8078; font-size: 9px; font-weight: 750; text-align: center; }
+.publication-photo-empty { display: grid !important; width: 100%; height: 100%; place-items: center; color: #1f6b46; font-size: 18px; font-weight: 800; letter-spacing: .02em; text-align: center; }
 .publication-author-photo span { display: grid; gap: 3px; min-width: 0; }
 .publication-inline-edit { display: inline-flex; align-items: center; min-height: 36px; margin-top: 14px; border: 1px solid #214d35; border-radius: 9px; background: #214d35; padding: 0 13px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
 .publication-inline-edit:hover { background: #183b29; }
 .publication-author-photo strong { color: #1f3027; font-size: 13px; }
 .publication-author-photo small { color: #858991; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.author-photo-upload { display: inline-flex; align-items: center; gap: 5px; width: fit-content; color: #1f6b46; font-size: 11px; font-weight: 700; cursor: pointer; }
+.author-photo-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .publication-photo-controls { display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr)); gap: 8px; width: 100%; margin-top: 10px; border-top: 1px solid #e0e5e1; padding-top: 10px; }
 .publication-photo-controls label { display: grid; gap: 4px; color: #526258; font-size: 10px; font-weight: 700; }
 .publication-photo-controls input { width: 100%; accent-color: #214d35; }
@@ -4297,14 +4299,14 @@ dd,
 .publication-metadata-ready strong { color: #70452e; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
 .publication-preflight-note { margin: 16px 0 0; border-radius: 11px; background: #eaf3ec; padding: 12px 14px; color: #47715a; font-size: 12px; line-height: 1.45; }
 .publication-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-.publication-editor-panels .publication-fields { grid-template-columns: minmax(0, 1.4fr) 58px 58px; gap: 10px; }
+.publication-editor-panels .publication-fields { grid-template-columns: minmax(0, 1.5fr) minmax(76px, .34fr) minmax(76px, .34fr); gap: 10px; }
 .publication-editor-panels .publication-fields .page-guidance { grid-column: 1 / -1; }
 .publication-editor-panels .publication-fields .publication-warning { grid-column: 1 / -1; white-space: normal; }
 .publication-editor-panels .publication-subsection .publication-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .publication-editor-panels .publication-subsection .publication-wide-field { grid-column: 1 / -1; }
-.publication-editor-panels .publication-subsection { border: 1px solid #aeb9b1; border-radius: 10px; background: #fcfefd; padding: 14px; }
-.publication-editor-panels .publication-fields input, .publication-editor-panels .publication-fields textarea, .publication-editor-panels .publication-fields select { border: 1px solid #6c776f; background: #fff; }
-.publication-editor-panels .publication-fields input:focus, .publication-editor-panels .publication-fields textarea:focus, .publication-editor-panels .publication-fields select:focus { border-color: #17251d; box-shadow: 0 0 0 2px rgba(23, 37, 29, .1); }
+.publication-editor-panels .publication-subsection { border: 1px solid rgba(74, 103, 86, .32); border-radius: 10px; background: #fcfefd; padding: 14px; }
+.publication-editor-panels .publication-fields input, .publication-editor-panels .publication-fields textarea, .publication-editor-panels .publication-fields select { border: 1px solid rgba(74, 103, 86, .48); background: #fff; }
+.publication-editor-panels .publication-fields input:focus, .publication-editor-panels .publication-fields textarea:focus, .publication-editor-panels .publication-fields select:focus { border-color: #3c7655; box-shadow: 0 0 0 2px rgba(60, 118, 85, .16); }
 .publication-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .publication-metrics .publication-control { font-variant-numeric: tabular-nums; }
 .publication-fields > label, .publication-fields > label input, .doi-row label { min-width: 0; }
@@ -4885,6 +4887,7 @@ dd,
   .publication-material { min-height: 0; border-right: 0; border-bottom: 1px solid #e5ebe7; }
   .publication-material:last-child { border-bottom: 0; }
   .publication-author-photo { width: 100%; box-sizing: border-box; flex-basis: auto; }
+  .publication-editor-panels .publication-fields { grid-template-columns: 1fr; }
   .publication-author-count { margin-left: 0; width: 100%; }
   .publication-author-fields { grid-template-columns: 1fr; }
   .publication-author-fields label:nth-child(4),

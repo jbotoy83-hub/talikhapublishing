@@ -11,7 +11,8 @@ const fileKinds = new Set([
   "final_pdf",
   "author_certificate",
   "publication_certificate",
-  "social_media_artwork"
+  "social_media_artwork",
+  "authorPhoto"
 ]);
 
 const allowedDocumentTypes = new Set([
@@ -48,28 +49,35 @@ export async function POST(request: Request) {
   const submissionId = String(form?.get("submissionId") || "").trim();
   const fileKind = String(form?.get("fileKind") || "").trim();
   const upload = form?.get("file");
+  const authorPosition = Number(form?.get("authorPosition") || 0);
   if (!/^[0-9a-f-]{36}$/i.test(submissionId) || !fileKinds.has(fileKind) || !(upload instanceof File)) return respondToRecord(request, submissionId || "unknown", "workflowError", "Choose a valid document and file type.");
-  if (!upload.size || upload.size > 15 * 1024 * 1024 || !allowedDocumentTypes.has(upload.type)) return respondToRecord(request, submissionId, "workflowError", "Upload a supported PDF, Word, JPG, or PNG file no larger than 15 MB.");
+  if (fileKind === "authorPhoto" && (!Number.isInteger(authorPosition) || authorPosition < 1 || authorPosition > 12)) return respondToRecord(request, submissionId, "workflowError", "Choose a valid author before uploading a profile photo.");
+  const maxSize = fileKind === "authorPhoto" ? 5 * 1024 * 1024 : 15 * 1024 * 1024;
+  if (!upload.size || upload.size > maxSize || !allowedDocumentTypes.has(upload.type)) return respondToRecord(request, submissionId, "workflowError", fileKind === "authorPhoto" ? "Upload a JPG or PNG profile photo no larger than 5 MB." : "Upload a supported PDF, Word, JPG, or PNG file no larger than 15 MB.");
+  if (fileKind === "authorPhoto" && !["image/jpeg", "image/png"].includes(upload.type)) return respondToRecord(request, submissionId, "workflowError", "Profile photos must be uploaded as JPG or PNG images.");
   if (["final_pdf", "author_certificate", "publication_certificate"].includes(fileKind) && upload.type !== "application/pdf") return respondToRecord(request, submissionId, "workflowError", "Final PDFs and certificates must be uploaded as PDF files.");
   if (fileKind === "social_media_artwork" && !["image/jpeg", "image/png"].includes(upload.type)) return respondToRecord(request, submissionId, "workflowError", "Social-media artwork must be a JPG or PNG image.");
 
   const bucket = fileKind === "author_proof" ? "submission-proofs" : fileKind.includes("certificate") || fileKind === "social_media_artwork" ? "certificates" : "submission-files";
-  const path = `${submissionId}/${fileKind}/${randomUUID()}-${safeName(upload.name)}`;
+  const authorPrefix = fileKind === "authorPhoto" ? `author-${String(authorPosition).padStart(3, "0")}-editorial-` : "";
+  const originalName = `${authorPrefix}${safeName(upload.name)}`;
+  const path = `${submissionId}/${fileKind}/${randomUUID()}-${originalName}`;
   const bytes = Buffer.from(await upload.arrayBuffer());
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const { data: previous } = await admin
+  let previousQuery = admin
     .from("submission_files")
     .select("id")
     .eq("submission_id", submissionId)
-    .eq("file_kind", fileKind)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const { count } = await admin
+    .eq("file_kind", fileKind);
+  if (fileKind === "authorPhoto") previousQuery = previousQuery.like("original_name", `${authorPrefix}%`);
+  const { data: previous } = await previousQuery.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  let countQuery = admin
     .from("submission_files")
     .select("id", { count: "exact", head: true })
     .eq("submission_id", submissionId)
     .eq("file_kind", fileKind);
+  if (fileKind === "authorPhoto") countQuery = countQuery.like("original_name", `${authorPrefix}%`);
+  const { count } = await countQuery;
   const { error: storageError } = await admin.storage.from(bucket).upload(path, bytes, { contentType: upload.type, upsert: false });
   if (storageError) return respondToRecord(request, submissionId, "workflowError", "The file could not be stored securely. Please try again.");
 
@@ -78,7 +86,7 @@ export async function POST(request: Request) {
     file_kind: fileKind,
     storage_bucket: bucket,
     storage_path: path,
-    original_name: safeName(upload.name),
+    original_name: originalName,
     mime_type: upload.type,
     size_bytes: upload.size,
     sha256,
@@ -95,13 +103,24 @@ export async function POST(request: Request) {
   await admin.from("workflow_events").insert({
     submission_id: submissionId,
     event_type: "file_attached",
-    internal_title: "Production file attached",
-    internal_description: `${safeName(upload.name)} was attached as ${fileKind.replaceAll("_", " ")}.`,
+    internal_title: fileKind === "authorPhoto" ? "Publication author photo updated" : "Production file attached",
+    internal_description: `${originalName} was attached as ${fileKind.replaceAll("_", " ")}.`,
     visibility: "internal",
     actor_type: user.role,
     actor_id: user.id,
-    metadata: { file_id: file.id, file_kind: fileKind, storage_bucket: bucket }
+    metadata: { file_id: file.id, file_kind: fileKind, storage_bucket: bucket, ...(fileKind === "authorPhoto" ? { author_position: authorPosition, supersedes_file_id: previous?.id || null } : {}) }
   });
+
+  if (fileKind === "authorPhoto") {
+    const { data: publicationRecord } = await admin.from("publication_records").select("id,metadata").eq("submission_id", submissionId).maybeSingle();
+    if (publicationRecord) {
+      const metadata = (publicationRecord.metadata as Record<string, unknown>) || {};
+      const authorMetadata = Array.isArray(metadata.authorMetadata) ? [...metadata.authorMetadata] as Array<Record<string, unknown>> : [];
+      const index = authorPosition - 1;
+      authorMetadata[index] = { ...(authorMetadata[index] || {}), position: authorPosition, photoFileId: file.id };
+      await admin.from("publication_records").update({ metadata: { ...metadata, authorMetadata } }).eq("id", publicationRecord.id);
+    }
+  }
 
   if (["final_pdf", "publication_certificate", "social_media_artwork", "peer_review"].includes(fileKind)) {
     const pointer: Record<string, unknown> = {};

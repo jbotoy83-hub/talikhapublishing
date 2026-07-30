@@ -27,6 +27,7 @@ const publicationAuthorInput = z.object({
   affiliation: z.string().trim().max(240).default(""),
   email: z.string().trim().email().max(254).default("editorial@example.invalid"),
   orcid: orcidField,
+  photoFileId: uuid.optional(),
   photoZoom: z.number().min(1).max(3).default(1),
   photoPositionX: z.number().min(0).max(100).default(50),
   photoPositionY: z.number().min(0).max(100).default(50),

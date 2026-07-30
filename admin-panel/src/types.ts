@@ -21,6 +21,7 @@ export type ReviewAuthor = {
   occupation: string;
   orcid?: string;
   photo?: string | null;
+  photoFileId?: string;
   photoZoom?: number;
   photoPositionX?: number;
   photoPositionY?: number;
@@ -37,6 +38,7 @@ export type PublicationAuthorMetadata = {
   affiliation: string;
   orcid: string;
   corresponding: boolean;
+  photoFileId?: string;
   photoZoom?: number;
   photoPositionX?: number;
   photoPositionY?: number;

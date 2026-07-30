@@ -207,6 +207,12 @@ function authorPhotoUrlForIndex(submission: EditorialSubmission, index: number):
   const pick = exact || photos[index] || photos[0];
   return pick ? `/api/admin/files/${pick.id}` : null;
 }
+function authorInitials(author: Pick<ReviewAuthor, "firstName" | "surname" | "name">): string {
+  const parts = (author.name || "").trim().split(/\s+/).filter(Boolean);
+  const first = (author.firstName || "").trim() || parts[0] || "";
+  const surname = (author.surname || "").trim() || (parts.length > 1 ? parts.at(-1) || "" : "");
+  return [first, surname].filter(Boolean).map((part) => part.charAt(0)).join("").toUpperCase().slice(0, 2) || "A";
+}
 function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
   if (submission.authors?.length) return submission.authors;
   const details = submission.authorDetails;
@@ -225,6 +231,7 @@ function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
         occupation: d.position || (index === 0 ? "Submitting author" : "Co-author"),
         orcid: d.orcid || "",
         photo: authorPhotoUrlForIndex(submission, index),
+        photoFileId: (submission.files || []).find((file) => file.file_kind === "authorPhoto" && (file.original_name || "").toLowerCase().startsWith(`author-${String(index + 1).padStart(3, "0")}`))?.id,
       };
     });
   }
@@ -238,6 +245,7 @@ function authorsFor(submission: EditorialSubmission): ReviewAuthor[] {
       occupation: "Submitting author",
       orcid: "",
       photo: authorPhotoUrlForIndex(submission, 0),
+      photoFileId: (submission.files || []).find((file) => file.file_kind === "authorPhoto")?.id,
     },
   ];
 }
@@ -2381,6 +2389,8 @@ function LegacySubmissionReview({
       occupation: metadata.occupation,
       affiliation: metadata.affiliation,
       orcid: metadata.orcid,
+      photoFileId: metadata.photoFileId || authors[index]?.photoFileId,
+      photo: metadata.photoFileId ? `/api/admin/files/${metadata.photoFileId}` : authors[index]?.photo,
       photoZoom: metadata.photoZoom,
       photoPositionX: metadata.photoPositionX,
       photoPositionY: metadata.photoPositionY,
@@ -2638,7 +2648,7 @@ function LegacySubmissionReview({
               <span className="author-photo-circle">
                 {author.photo
                   ? <img src={author.photo} alt={`${author.name || "Author"} profile photo`} />
-                  : <span className="author-photo-empty"><ImageIcon size={22} strokeWidth={1.6} /></span>}
+                  : <span className="author-photo-empty">{authorInitials(author)}</span>}
               </span>
               <div className="author-photo-meta">
                 <strong>Profile photo</strong>
@@ -2654,7 +2664,7 @@ function LegacySubmissionReview({
                     <Download size={14} strokeWidth={1.9} /> Download photo
                   </a>
                 ) : (
-                  <span className="author-photo-none">Not provided</span>
+                  <span className="author-photo-none">Initials fallback</span>
                 )}
               </div>
             </div>
@@ -3090,6 +3100,8 @@ function PublicationRecordEditor({
       : false;
   const [activePublicationAuthor, setActivePublicationAuthor] = useState(0);
   const [savingRecord, setSavingRecord] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [recordMessage, setRecordMessage] = useState("");
   const [editingRecord, setEditingRecord] = useState(() =>
     isEditableRecord(record),
@@ -3118,6 +3130,28 @@ function PublicationRecordEditor({
   };
   const updatePhotoSetting = (key: "photoZoom" | "photoPositionX" | "photoPositionY", value: number) => {
     onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, [key]: value } : author));
+  };
+  const uploadPublicationAuthorPhoto = async (file?: File) => {
+    if (!file || !selectedAuthor) return;
+    setUploadingPhoto(true);
+    setRecordMessage("");
+    const form = new FormData();
+    form.set("submissionId", submission.id);
+    form.set("fileKind", "authorPhoto");
+    form.set("authorPosition", String(activePublicationAuthor + 1));
+    form.set("file", file);
+    const response = await fetch("/api/admin/workflow-files", { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" }, body: form }).catch(() => null);
+    const body = await response?.json().catch(() => null);
+    setUploadingPhoto(false);
+    if (!response?.ok || !body?.file) {
+      setRecordMessage(body?.error || "The profile photo could not be saved.");
+      return;
+    }
+    const savedFile = body.file as NonNullable<EditorialSubmission["files"]>[number];
+    const photo = `/api/admin/files/${savedFile.id}`;
+    onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, photo, photoFileId: savedFile.id, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 } : author));
+    onSubmissionUpdate({ ...submission, files: [...(submission.files || []).filter((item) => item.id !== savedFile.id), savedFile] });
+    setRecordMessage("Publication profile photo saved. The submitted original remains preserved.");
   };
   const updatePublicationCounter = (key: "readCount" | "downloadCount", value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -3196,6 +3230,7 @@ function PublicationRecordEditor({
           affiliation: author.affiliation || "",
           email: author.email || "",
           orcid: author.orcid || "",
+          photoFileId: author.photoFileId,
           photoZoom: author.photoZoom ?? 1,
           photoPositionX: author.photoPositionX ?? 50,
           photoPositionY: author.photoPositionY ?? 50,
@@ -3210,7 +3245,7 @@ function PublicationRecordEditor({
       setRecordMessage(body?.error || "The publication record could not be saved.");
       return;
     }
-    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", corresponding: index === 0, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
+    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", photoFileId: author.photoFileId, corresponding: index === 0, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
     setRecordMessage("Production record saved to the publication database.");
     setEditingRecord(false);
   };
@@ -3283,17 +3318,18 @@ function PublicationRecordEditor({
             {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
           <div className="publication-author-photo">
-            <span className="publication-photo-viewport">{selectedAuthor?.photo ? <img src={selectedAuthor.photo} alt={`${selectedAuthor.name || "Author"} submitted profile`} style={{ objectPosition: `${selectedAuthor.photoPositionX ?? 50}% ${selectedAuthor.photoPositionY ?? 50}%`, transform: `scale(${selectedAuthor.photoZoom ?? 1})` }} /> : <span className="publication-photo-empty">No photo</span>}</span>
+            <span className="publication-photo-viewport">{selectedAuthor?.photo ? <img src={selectedAuthor.photo} alt={`${selectedAuthor.name || "Author"} profile`} style={{ objectPosition: `${selectedAuthor.photoPositionX ?? 50}% ${selectedAuthor.photoPositionY ?? 50}%`, transform: `scale(${selectedAuthor.photoZoom ?? 1})` }} /> : <span className="publication-photo-empty">{selectedAuthor ? authorInitials(selectedAuthor) : "A"}</span>}</span>
             <span>
               <strong>2×2 profile picture</strong>
               {selectedAuthor?.photo ? (
                 <a className="author-photo-dl" href={selectedAuthor.photo} download={`${(selectedAuthor.name || "author").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "author"}-photo.jpg`}><Download size={12} strokeWidth={1.9} /> Download</a>
               ) : (
-                <small>{(selectedAuthor?.name || "author").toLowerCase().replaceAll(" ", "-")}.webp</small>
+                <small>Initials fallback</small>
               )}
+              {editingRecord && selectedAuthor && <label className="author-photo-upload"><Upload size={12} strokeWidth={1.9} /> {uploadingPhoto ? "Saving photo…" : selectedAuthor.photo ? "Replace photo" : "Add photo"}<input ref={photoInputRef} type="file" accept="image/jpeg,image/png" disabled={uploadingPhoto} onChange={(event) => { void uploadPublicationAuthorPhoto(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>}
             </span>
           </div>
-          {selectedAuthor?.photo && editingRecord && <div className="publication-photo-controls"><label>Zoom<input type="range" min="1" max="3" step="0.05" value={selectedAuthor.photoZoom ?? 1} onChange={(event) => updatePhotoSetting("photoZoom", Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionX ?? 50} onChange={(event) => updatePhotoSetting("photoPositionX", Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionY ?? 50} onChange={(event) => updatePhotoSetting("photoPositionY", Number(event.target.value))} /></label></div>}
+          {editingRecord && selectedAuthor && <div className="publication-photo-controls"><label>Zoom<input type="range" min="1" max="3" step="0.05" value={selectedAuthor.photoZoom ?? 1} onChange={(event) => updatePhotoSetting("photoZoom", Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionX ?? 50} onChange={(event) => updatePhotoSetting("photoPositionX", Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionY ?? 50} onChange={(event) => updatePhotoSetting("photoPositionY", Number(event.target.value))} /></label></div>}
         </header>
         <div className="publication-author-switcher" role="tablist" aria-label="Publication authors">
           {authors.map((item, index) => <button type="button" key={item.id} className={index === activePublicationAuthor ? "active" : ""} onClick={() => setActivePublicationAuthor(index)} role="tab" aria-selected={index === activePublicationAuthor}>{index + 1}. {item.name || "New author"}</button>)}
