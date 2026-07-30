@@ -4294,7 +4294,7 @@ dd,
 .publication-citation-tabs button.active { border-color: #214d35; background: #214d35; color: #fff; }
 .publication-citation-preview blockquote { margin: 0; padding: 16px; color: #26372d; font-family: Georgia, serif; font-size: 15px; line-height: 1.6; }
 .publication-citation-preview blockquote em { font-style: italic; }
-.publication-citation-actions { display: flex; align-items: center; gap: 10px; border-top: 1px solid #e1e8e2; padding: 10px; }
+.publication-citation-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; border-top: 1px solid #e1e8e2; padding: 10px; }
 .publication-citation-actions span { color: #728077; font-size: 10px; line-height: 1.4; }
 .publication-materials { padding: 0; overflow: hidden; }
 .publication-materials > header { align-items: flex-start; padding: 20px 20px 0; }

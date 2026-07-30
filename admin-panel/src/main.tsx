@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
-import { formatApa, formatMla, formatChicago, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
+import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, formatCrossref, formatDataCite, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
 import type { Publication } from "../../src/lib/types";
 import { FloatingDock } from "./components/floating-dock";
 import { TeamAccounts } from "./components/team-accounts";
@@ -3034,6 +3034,16 @@ function PublicationCitationPreview({ submission, authors, record }: { submissio
   const publication = publicationForCitation(submission, authors, record);
   const segments = style === "APA 7" ? formatApa(publication) : style === "MLA 9" ? formatMla(publication) : formatChicago(publication);
   const plain = segsToPlain(segments);
+  const downloadCitation = (content: string, extension: string, mime: string) => {
+    const url = URL.createObjectURL(new Blob([content], { type: mime }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${publication.slug}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
   const copyCitation = async () => {
     try { await navigator.clipboard.writeText(plain); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { /* Clipboard permissions are optional. */ }
   };
@@ -3042,7 +3052,7 @@ function PublicationCitationPreview({ submission, authors, record }: { submissio
       {(["APA 7", "MLA 9", "Chicago"] as AdminCitationStyle[]).map((item) => <button type="button" key={item} role="tab" aria-selected={style === item} className={style === item ? "active" : ""} onClick={() => setStyle(item)}>{item}</button>)}
     </div>
     <blockquote>{renderCitationSegments(segments)}</blockquote>
-    <div className="publication-citation-actions"><button type="button" onClick={() => void copyCitation()}>{copied ? "Copied" : "Copy citation"}</button><span>Additional exports are available on the public article: BibTeX, RIS, Crossref JSON, and DataCite JSON.</span></div>
+    <div className="publication-citation-actions"><button type="button" onClick={() => void copyCitation()}>{copied ? "Copied" : "Copy citation"}</button><button type="button" onClick={() => downloadCitation(formatBibtex(publication), "bib", "application/x-bibtex")}>BibTeX</button><button type="button" onClick={() => downloadCitation(formatRis(publication), "ris", "application/x-research-info-systems")}>RIS</button><button type="button" onClick={() => downloadCitation(formatCrossref(publication), "crossref.json", "application/json")}>Crossref JSON</button><button type="button" onClick={() => downloadCitation(formatDataCite(publication), "datacite.json", "application/json")}>DataCite JSON</button></div>
   </div>;
 }
 
