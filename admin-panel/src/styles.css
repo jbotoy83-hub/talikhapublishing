@@ -3893,6 +3893,8 @@ dd,
   min-width: 0;
   flex: 1 1 620px;
 }
+.review-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.review-title-line h1 { margin: 8px 0 0; }
 .review-heading > div:first-child > span {
   color: #8a8e95;
   font-size: 9px;
@@ -3912,6 +3914,10 @@ dd,
   color: #73777e;
   font-size: 11px;
 }
+.publication-summary { padding: 14px 16px 16px; }
+.publication-summary .publication-copy-grid { margin-top: 12px; }
+.publication-summary .publication-copy-grid div { min-height: 72px; padding: 11px 14px; }
+.publication-summary header p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .review-heading-actions {
   display: flex;
   min-width: min(100%, 252px);
@@ -4244,13 +4250,22 @@ dd,
   .publication-materials-progress { border-top: 1px solid #d5e1d8; border-left: 0; padding: 12px 0 0; }
 }
 .publication-author-card { padding: 20px; }
+.publication-author-card > header { flex-wrap: wrap; }
 .publication-author-photo { display: flex; align-items: center; gap: 10px; flex: 0 0 210px; border: 1px solid #dedfe3; border-radius: 10px; padding: 9px 11px; }
 .publication-author-photo .avatar { flex: 0 0 auto; }
+.publication-photo-viewport { display: block; flex: 0 0 56px; width: 56px; height: 56px; overflow: hidden; border-radius: 50%; background: #f1ead7; }
+.publication-photo-viewport img { display: block; width: 100%; height: 100%; object-fit: cover; transform-origin: center; }
+.publication-photo-viewport .avatar { width: 56px; height: 56px; }
+.publication-author-photo .publication-photo-viewport { display: block; }
+.publication-photo-empty { display: grid !important; width: 100%; height: 100%; place-items: center; color: #7c8078; font-size: 9px; font-weight: 750; text-align: center; }
 .publication-author-photo span { display: grid; gap: 3px; min-width: 0; }
 .publication-inline-edit { display: inline-flex; align-items: center; min-height: 36px; margin-top: 14px; border: 1px solid #214d35; border-radius: 9px; background: #214d35; padding: 0 13px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
 .publication-inline-edit:hover { background: #183b29; }
 .publication-author-photo strong { color: #1f3027; font-size: 13px; }
 .publication-author-photo small { color: #858991; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.publication-photo-controls { display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr)); gap: 8px; width: 100%; margin-top: 10px; border-top: 1px solid #e0e5e1; padding-top: 10px; }
+.publication-photo-controls label { display: grid; gap: 4px; color: #526258; font-size: 10px; font-weight: 700; }
+.publication-photo-controls input { width: 100%; accent-color: #214d35; }
 .publication-author-switcher { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .publication-author-switcher button { min-height: 35px; border: 1px solid #dfe4e1; border-radius: 8px; background: #fff; padding: 0 11px; color: #525b55; font-size: 12px; font-weight: 600; }
 .publication-author-switcher button.active { border-color: #b8d0c0; background: #edf5ef; color: #24543a; }
@@ -4271,6 +4286,9 @@ dd,
 .publication-editor-panels .publication-fields .publication-warning { grid-column: 1 / -1; white-space: normal; }
 .publication-editor-panels .publication-subsection .publication-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .publication-editor-panels .publication-subsection .publication-wide-field { grid-column: 1 / -1; }
+.publication-editor-panels .publication-subsection { border: 1px solid #aeb9b1; border-radius: 10px; background: #fcfefd; padding: 14px; }
+.publication-editor-panels .publication-fields input, .publication-editor-panels .publication-fields textarea, .publication-editor-panels .publication-fields select { border: 1px solid #6c776f; background: #fff; }
+.publication-editor-panels .publication-fields input:focus, .publication-editor-panels .publication-fields textarea:focus, .publication-editor-panels .publication-fields select:focus { border-color: #17251d; box-shadow: 0 0 0 2px rgba(23, 37, 29, .1); }
 .publication-metrics { grid-template-columns: repeat(2, minmax(0, 220px)); }
 .publication-fields > label, .publication-fields > label input, .doi-row label { min-width: 0; }
 .publication-fields select { width: 100%; height: 42px; border: 1px solid #d7ddd9; border-radius: 8px; background: #fff; padding: 0 11px; color: #28382f; font-size: 13px; }

@@ -2381,6 +2381,9 @@ function LegacySubmissionReview({
       occupation: metadata.occupation,
       affiliation: metadata.affiliation,
       orcid: metadata.orcid,
+      photoZoom: metadata.photoZoom,
+      photoPositionX: metadata.photoPositionX,
+      photoPositionY: metadata.photoPositionY,
     })));
   }, [publicationRecord?.id]);
   const openPublicationRecord = () => {
@@ -2494,16 +2497,14 @@ function LegacySubmissionReview({
             <ChevronRight aria-hidden="true" />
             <span aria-current="page">{reviewTab === "publication" ? "Publication record" : "Review"}</span>
           </nav>
-          <h1>{reviewTab === "review" ? "Submission review" : publicationRecord && (publicationRecord.status === "Ready to publish" || publicationRecord.status === "Scheduled" || (publicationRecord.status === "For approval" && scheduleUnlocked)) ? "Publishing schedule" : "Publication record"}</h1>
+          <div className="review-title-line">
+            <h1>{reviewTab === "review" ? "Submission review" : publicationRecord && (publicationRecord.status === "Ready to publish" || publicationRecord.status === "Scheduled" || (publicationRecord.status === "For approval" && scheduleUnlocked)) ? "Publishing schedule" : "Publication record"}</h1>
+            <span className={`submission-status ${(reviewTab === "publication" ? publicationRecord?.status || "Draft" : submission.status).toLowerCase().replaceAll(" ", "-")}`}>{reviewTab === "publication" ? publicationRecord?.status || "Draft" : submission.status}</span>
+          </div>
           <p>
             Confirm the author’s information, manuscript details, and payment
             receipt.
           </p>
-          <span
-            className={`submission-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}
-          >
-            {submission.status}
-          </span>
         </div>
         <div className="review-heading-actions" aria-label="Review actions">
           <button type="button" className="review-save-action" onClick={saveReview}>
@@ -3115,6 +3116,9 @@ function PublicationRecordEditor({
       return next;
     }));
   };
+  const updatePhotoSetting = (key: "photoZoom" | "photoPositionX" | "photoPositionY", value: number) => {
+    onAuthorsChange(authors.map((author, index) => index === activePublicationAuthor ? { ...author, [key]: value } : author));
+  };
   const authorManuscripts = (submission.files || []).filter((file) => file.file_kind === "manuscript");
   const finalManuscript = (submission.files || []).filter((file) => file.file_kind === "final_pdf").at(-1);
   const peerReviewFile = (submission.files || []).filter((file) => file.file_kind === "peer_review").at(-1);
@@ -3190,6 +3194,9 @@ function PublicationRecordEditor({
           affiliation: author.affiliation || "",
           email: author.email || "",
           orcid: author.orcid || "",
+          photoZoom: author.photoZoom ?? 1,
+          photoPositionX: author.photoPositionX ?? 50,
+          photoPositionY: author.photoPositionY ?? 50,
           corresponding: index === 0,
         })),
         metadata: {},
@@ -3201,7 +3208,7 @@ function PublicationRecordEditor({
       setRecordMessage(body?.error || "The publication record could not be saved.");
       return;
     }
-    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", corresponding: index === 0 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
+    onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", corresponding: index === 0, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
     setRecordMessage("Production record saved to the publication database.");
     setEditingRecord(false);
   };
@@ -3257,7 +3264,7 @@ function PublicationRecordEditor({
         <button type="button" onClick={() => scrollToRecordSection("publication-citation-section")}>Citation</button>
       </nav>
       <section className="publication-card publication-summary">
-        <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>This record was opened from the author’s selected journal and is linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
+        <header><div><span>Publication destination</span><h2>{record.journal}</h2><p>Opened from the selected journal · linked to {submissionReference(submission)}.</p></div><span className="publication-state">{record.status}</span></header>
         <div className="publication-copy-grid">
           <div><span>Authors</span><strong>{authors.map((author) => author.name || "New author").join(", ")}</strong></div>
           <div><span>Author manuscript</span>{authorManuscripts.length ? <div className="publication-manuscript-links">{authorManuscripts.map((file) => <a key={file.id} className="manuscript-dl-btn" href={`/api/admin/files/${file.id}?stream=1&download=1`} title={`Download ${file.original_name || "author manuscript"}`}><Download size={14} strokeWidth={1.9} /><strong>{file.original_name || submission.fileName}</strong></a>)}</div> : <strong>{submission.fileName}</strong>}</div>
@@ -3275,7 +3282,7 @@ function PublicationRecordEditor({
             {canManagePublication && !editingRecord && <button type="button" className="publication-inline-edit" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
           </div>
           <div className="publication-author-photo">
-            <Avatar src={selectedAuthor?.photo || submission.image} size="lg" />
+            <span className="publication-photo-viewport">{selectedAuthor?.photo ? <img src={selectedAuthor.photo} alt={`${selectedAuthor.name || "Author"} submitted profile`} style={{ objectPosition: `${selectedAuthor.photoPositionX ?? 50}% ${selectedAuthor.photoPositionY ?? 50}%`, transform: `scale(${selectedAuthor.photoZoom ?? 1})` }} /> : <span className="publication-photo-empty">No photo</span>}</span>
             <span>
               <strong>2×2 profile picture</strong>
               {selectedAuthor?.photo ? (
@@ -3285,6 +3292,7 @@ function PublicationRecordEditor({
               )}
             </span>
           </div>
+          {selectedAuthor?.photo && editingRecord && <div className="publication-photo-controls"><label>Zoom<input type="range" min="1" max="3" step="0.05" value={selectedAuthor.photoZoom ?? 1} onChange={(event) => updatePhotoSetting("photoZoom", Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionX ?? 50} onChange={(event) => updatePhotoSetting("photoPositionX", Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" step="1" value={selectedAuthor.photoPositionY ?? 50} onChange={(event) => updatePhotoSetting("photoPositionY", Number(event.target.value))} /></label></div>}
         </header>
         <div className="publication-author-switcher" role="tablist" aria-label="Publication authors">
           {authors.map((item, index) => <button type="button" key={item.id} className={index === activePublicationAuthor ? "active" : ""} onClick={() => setActivePublicationAuthor(index)} role="tab" aria-selected={index === activePublicationAuthor}>{index + 1}. {item.name || "New author"}</button>)}
@@ -3300,11 +3308,6 @@ function PublicationRecordEditor({
           <label>Gmail account<input value={selectedAuthor.email || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("email", event.target.value)} /></label>
           <label>ORCID<input value={selectedAuthor.orcid || ""} readOnly={!editingRecord} onChange={(event) => updatePublicationAuthor("orcid", event.target.value)} /></label>
         </div>}
-        <div className="publication-metadata-ready">
-          <span>Metadata-ready DOI</span>
-          <strong>{record.doi || "Generate a DOI after the author snapshot is complete"}</strong>
-        </div>
-        <p className="publication-preflight-note">✓ Preflight reads the final snapshot for name, affiliation, author order, corresponding author, and ORCID validation.</p>
       </section>
       <section id="publication-metadata-section" className="publication-card">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>
