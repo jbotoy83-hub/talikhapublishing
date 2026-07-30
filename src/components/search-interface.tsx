@@ -2,18 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icon";
 import type { SearchResponse, SearchFilters, FacetItem } from "@/lib/search";
 import { formatPublicationDate } from "@/lib/journal-presentation";
 import { isOpenAccess } from "@/lib/citation-format";
 
 function useUrlState() {
-  const [params, setParams] = useState<URLSearchParams>(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""));
-  useEffect(() => {
-    const handler = () => setParams(new URLSearchParams(window.location.search));
-    window.addEventListener("popstate", handler);
-    return () => window.removeEventListener("popstate", handler);
-  }, []);
+  const router = useRouter();
+  const params = useSearchParams();
   const update = useCallback((next: Record<string, string | undefined>) => {
     const sp = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(next)) {
@@ -22,9 +19,8 @@ function useUrlState() {
     if (!sp.get("page")) sp.delete("page");
     const qs = sp.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    window.history.replaceState(null, "", url);
-    setParams(new URLSearchParams(qs));
-  }, []);
+    router.replace(url, { scroll: false });
+  }, [router]);
   return { params, update };
 }
 
@@ -60,6 +56,7 @@ export function SearchInterface() {
   const [query, setQuery] = useState(params.get("q") || "");
   const debounceRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const skipInitialQueryUpdateRef = useRef(true);
 
   const filters: SearchFilters = {
     q: params.get("q") || undefined,
@@ -94,9 +91,17 @@ export function SearchInterface() {
   useEffect(() => { doSearch(filters); }, [params.toString()]);
 
   useEffect(() => {
+    setQuery(params.get("q") || "");
+  }, [params]);
+
+  useEffect(() => {
+    if (skipInitialQueryUpdateRef.current) {
+      skipInitialQueryUpdateRef.current = false;
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      update({ q: query || undefined, page: undefined });
+      update({ q: query.trim() || undefined, page: undefined });
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
@@ -119,7 +124,7 @@ export function SearchInterface() {
         </div>
         <p>Browse the archive one record at a time.</p>
       </div>
-      <div className="search-bar-wrap">
+      <form className="search-bar-wrap" onSubmit={(event) => { event.preventDefault(); update({ q: query.trim() || undefined, page: undefined }); }}>
         <div className="search-bar">
           <Icon name="search" className="search-bar-icon h-5 w-5" />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search publications, authors, keywords…" className="search-bar-input" aria-label="Search" />
@@ -134,7 +139,7 @@ export function SearchInterface() {
             <option value="title">Title A–Z</option>
           </select>
         </label>
-      </div>
+      </form>
 
       {activePills.length > 0 && (
         <div className="search-pills" aria-label="Active filters">

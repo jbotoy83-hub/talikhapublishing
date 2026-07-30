@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CONTACT_EMAIL, SITE_NAME, SITE_TAGLINE, SOCIAL_LINKS } from "@/lib/site";
 import { Brand } from "./brand";
@@ -18,6 +18,7 @@ export function SiteHeader({ journals }: { journals: HeaderJournal[] }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
 
   const runSearch = (event: FormEvent) => {
@@ -25,6 +26,10 @@ export function SiteHeader({ journals }: { journals: HeaderJournal[] }) {
     const value = query.trim();
     router.push(value ? `/search?q=${encodeURIComponent(value)}` : "/search");
   };
+
+  useEffect(() => {
+    setQuery(searchParams.get("q") || "");
+  }, [searchParams]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
