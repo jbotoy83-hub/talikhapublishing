@@ -3169,6 +3169,7 @@ function PublicationRecordEditor({
           <h1 id="publication-record-heading">{record.publicTitle || manuscriptTitle}</h1>
           <p>{recordStatusCopy[record.status]}</p>
           <div className="publication-command-actions">
+            {canManagePublication && !editingRecord && <button type="button" className="publication-command-primary" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
             {record.status === "Draft" && <button type="button" className="publication-command-primary" onClick={onOpenQualityCheck}><ClipboardCheck size={16} /> Open manual quality check</button>}
             {record.status === "For approval" && canManagePublication && <button type="button" className="publication-command-primary" onClick={onOpenPublish}><CheckCircle2 size={16} /> Review approval and schedule</button>}
             {record.publicArticleUrl && <a className="publication-command-link" href={record.publicArticleUrl} target="_blank" rel="noreferrer"><Globe size={15} /> View public page</a>}
