@@ -2,7 +2,7 @@ import "server-only";
 import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import sharp from "sharp";
-import { certificateBlockText, resolveCertificateContent, type CertificateBlock } from "@/lib/certificates";
+import { resolveCertificateContent, type CertificateBlock } from "@/lib/certificates";
 import { CERTIFICATE_ASSET_BUCKET } from "@/lib/certificate-editor";
 
 type Template = { background_bucket?: string | null; background_path?: string | null } | null | undefined;

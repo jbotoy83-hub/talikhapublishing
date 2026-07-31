@@ -8,7 +8,6 @@ import {
   getAuthorProgress,
   isWorkflowStage,
   getUpcomingWorkflowStages,
-  type WorkflowStage,
 } from "@/lib/editorial-workflow";
 
 describe("workflowStages", () => {

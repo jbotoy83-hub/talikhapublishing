@@ -62,3 +62,15 @@ Format per entry: date · action · files/area · evidence · result.
 - **Action:** Converted 8 stale `// eslint-disable-next-line react-hooks/... -- <reason>` directives into plain `// <reason>` comments across `admin-panel/src/main.tsx` (4 sites) and `admin-panel/src/components/certificates/certificate-workspace.tsx` (1 site). ESLint reported these directives as unused ("no problems were reported"), so the underlying rules no longer fire there; removing the directive clears the warning without creating a new one, while the plain comment preserves the original intent (e.g. "allowedViews is derived from isAdmin; including it would cause infinite loop"). An initial `eslint --fix` was rejected because it left trailing-whitespace-only lines and discarded the intent comments; the manual conversion yields a clean 8-line diff.
 - **Verification:** `npm run lint` → **160 warnings** (down from 168), **0 unused-disable directives remaining**, 0 errors. `npm run typecheck` → 0 errors. `npm run test` → 89 passed. The remaining 160 warnings are pre-existing `react-hooks` warnings (set-state-in-effect / refs / preserve-manual-memoization) in the admin monolith — Phase 5/6 territory, not mechanical cleanup.
 - **Result:** Lint gate is cleaner and intent documentation is preserved. Comment-only change; **no behavior change.**
+
+### 12. Phase 4 — remove unused imports and a dead local type (mechanical cleanup)
+- **Action:** Removed 8 genuinely-unused symbols flagged by `@typescript-eslint/no-unused-vars`, each verified as neither used nor re-exported (typecheck is the safety net — removing a used import would fail it):
+  - `src/lib/search.ts`: `getJournals` import (`searchPublications` only calls `getPublications`).
+  - `src/lib/content.ts`: `demoJournals` import + unused local `type IssueRow`.
+  - `src/lib/render-certificate.ts`: `certificateBlockText` import.
+  - `src/components/certificates/template-editor.tsx`: `ArrowDownToLine`, `ChevronDown` icon imports.
+  - `src/components/search-interface.tsx`: `Pagination` wrapper import (its sub-components remain in use).
+  - `src/__tests__/workflow-transitions.test.ts`: unused `type WorkflowStage` import.
+- **Deliberately deferred (not in this batch):** the ~18 unused components/functions inside the 7,000-line `admin-panel/src/main.tsx` monolith (e.g. `ProductionWorkspace`, `ScheduleView`, `CertificatesWorkspace`, `markForApproval`, `publishSubmission`) — these require rigorous per-item dead-code verification (§7.2) and may be intentional WIP; and the `icon.tsx` `MinusIcon` import (icon registries often keep intentional inventory). Tracked for Phase 5/8.
+- **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → **152 warnings** (down from 160), no-unused-vars **51 → 43**, 0 errors; `npm run test` → 89 passed; `npm run build` → PASS.
+- **Result:** 8 dead symbols removed across 6 files; **no behavior change.**

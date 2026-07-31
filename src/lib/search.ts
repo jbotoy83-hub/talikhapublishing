@@ -1,5 +1,5 @@
 import type { Publication } from "./types";
-import { getPublications, getJournals } from "./content";
+import { getPublications } from "./content";
 
 export type SearchFilters = {
   q?: string;

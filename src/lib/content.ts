@@ -2,7 +2,7 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cache } from "react";
-import { demoAuthors, demoJournals, demoPublications } from "@/data/demo-content";
+import { demoAuthors, demoPublications } from "@/data/demo-content";
 import { isDemoContentEnabled } from "@/lib/launch";
 import type { Author, Journal, Publication } from "@/lib/types";
 import { getPublicSupabase } from "@/lib/supabase/public";
@@ -86,8 +86,6 @@ function withStoreJournals(publications: Publication[]): Publication[] {
     return sj ? { ...p, journal: sj } : p;
   });
 }
-
-type IssueRow = { id: string; volume: string; issue_number: string; title: string | null; status: string | null; publication_date: string | null; cover_image_url: string | null };
 
 function storeIssuesFor(journalId: string, slug?: string): StoreIssue[] {
   const store = readJournalStore();

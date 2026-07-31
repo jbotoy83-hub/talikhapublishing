@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlignCenter, AlignLeft, AlignRight, ArrowDownToLine, BringToFront, ChevronDown, Copy, FileImage, FileUp, ImagePlus, Layers3, Lock, Minus, MousePointer2, Plus, Redo2, RotateCw, Save, Trash2, Undo2, Unlock } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, BringToFront, Copy, FileImage, FileUp, ImagePlus, Layers3, Lock, Minus, MousePointer2, Plus, Redo2, RotateCw, Save, Trash2, Undo2, Unlock } from "lucide-react";
 import { certificateBlockText, type CertificateBlock, type CertificateFieldKey } from "@/lib/certificates";
 
 type Page = { id: string; page_number: number; width: number; height: number };

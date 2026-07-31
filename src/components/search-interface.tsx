@@ -7,7 +7,7 @@ import { Icon } from "@/components/icon";
 import type { SearchResponse, SearchFilters, FacetItem } from "@/lib/search";
 import { formatPublicationDate } from "@/lib/journal-presentation";
 import { isOpenAccess } from "@/lib/citation-format";
-import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 function useUrlState() {
   const router = useRouter();
