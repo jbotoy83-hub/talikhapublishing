@@ -63,7 +63,7 @@
   - Session refresh + route guard: `src/proxy.ts` (Next middleware). It calls `supabase.auth.getUser()` on every matched request and redirects unauthenticated users away from `/admin/*` (except `/admin/login` and `/admin/welcome`) to `/admin/login?next=...`.
   - Identity resolution: `src/lib/auth.ts` — `getAdminUser()` reads JWT claims via `supabase.auth.getClaims()`, loads the `profiles` row, and resolves role (`admin` | `editor` | `viewer`). `requireAdmin()` redirects viewers/non-users to login.
   - API guards: `src/lib/admin-api.ts` — `requireEditorApi()` (admin/editor) and `requireAdminApi()` (admin only) return `401`/`403` `NextResponse`s; callers check with `isApiError()`.
-- Admin allowlist: `ADMIN_EMAILS` env (comma-separated) plus a **hardcoded** email in `configuredAdminEmails()` (`src/lib/auth.ts`) — see CONCERNS.md.
+- Admin allowlist: `ADMIN_EMAILS` env (comma-separated) in `configuredAdminEmails()` (`src/lib/auth.ts`). No hardcoded email (removed 2026-07-31, SEC-2); `profiles.role = 'admin'` is the alternative.
 - Local dev bypass: `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) returns a fake admin when Supabase is not connected or `LOCAL_ADMIN_BYPASS=true`; forced off in production.
 - Roles drive both UI access (`access_views`, `requires_account_setup` on `profiles`) and API authorization.
 
@@ -95,7 +95,7 @@
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PROJECT_REF`.
 - Rate limiting: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
 - Bot protection: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.
-- Admin: `ADMIN_EMAILS` (note the hardcoded bypass email in code).
+- Admin: `ADMIN_EMAILS` (comma-separated allowlist; no hardcoded email).
 - Site identity: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_NAME`, `NEXT_PUBLIC_SITE_DESCRIPTION`, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`.
 - Launch gates: `SITE_INDEXING_ENABLED`, `DEMO_CONTENT_ENABLED`, `SUBMISSIONS_ENABLED`, `CONTENT_APPROVED`, `LEGAL_APPROVED`, `OWNER_LAUNCH_APPROVED`, `DATABASE_SECURITY_APPROVED`.
 - Optional: `REMOTE_IMAGE_HOSTS` (comma-separated HTTPS hosts for `next/image`), `JOURNAL_STORE_TOKEN`, `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`.

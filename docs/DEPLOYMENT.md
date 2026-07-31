@@ -61,7 +61,7 @@ Site identity / feature gates (see `.env.example` for the full set):
 - `DEMO_CONTENT_ENABLED` — falls back to demo content when the database has none.
 - `CONTENT_APPROVED`, `LEGAL_APPROVED`, `OWNER_LAUNCH_APPROVED`, `DATABASE_SECURITY_APPROVED` — manual launch gates enforced only when indexing is enabled.
 - `TURNSTILE_SECRET_KEY` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY` — optional Cloudflare Turnstile bot protection. When unset, submissions rely on the honeypot field + per-IP rate limiting.
-- `ADMIN_EMAILS` — optional comma-separated admin allowlist (alternative to the `profiles.role`).
+- `ADMIN_EMAILS` — comma-separated admin allowlist (alternative to `profiles.role`). Required for production by the launch-readiness gate; there is **no hardcoded fallback**, so each administrator's email must be listed here (or their profile must have `role = 'admin'`).
 
 The content-security policy in `next.config.ts` allows `connect-src`/`img-src` to the
 Supabase origin (derived from `NEXT_PUBLIC_SUPABASE_URL`) plus Cloudflare Turnstile.
@@ -149,7 +149,7 @@ Roles: `admin`, `editor`, `viewer`. Alternatively, add the email to `ADMIN_EMAIL
 ### 7.2 Signing in
 
 `/admin/login` supports password sign-in (works now) and magic-link sign-in (requires
-the redirect URLs in §9.1). The current admin is `jbotoy83@gmail.com`.
+the redirect URLs in §9.1). Administrator accounts are configured via `ADMIN_EMAILS` (or `profiles.role = 'admin'`); no administrator email is hardcoded in the codebase.
 
 ## 8. Security posture
 

@@ -50,11 +50,8 @@
 
 ## Security Considerations
 
-**Hardcoded administrator allowlist bypass:**
-- Risk: `jbotoy83@gmail.com` is always included in the administrator set, independent of `ADMIN_EMAILS`; authenticating as that address can auto-promote the profile to admin.
-- Files: `src/lib/auth.ts:28-75`, `.env.example:46`, `docs/DEPLOYMENT.md:64`
-- Current mitigation: The user must still authenticate through Supabase.
-- Recommendations: Remove the hardcoded address and require explicit, audited `ADMIN_EMAILS` or a database role; preserve the existing role on allowlist removal.
+**Hardcoded administrator allowlist bypass — RESOLVED (2026-07-31):**
+- The hardcoded `jbotoy83@gmail.com` was removed from `configuredAdminEmails()` (`src/lib/auth.ts`); the admin allowlist now comes solely from `ADMIN_EMAILS` (or `profiles.role = 'admin'`). The launch-readiness gate already requires `ADMIN_EMAILS` for production, and the owner confirmed their admin access is preserved before removal.
 
 **Viewer can upload workflow files:**
 - Risk: The workflow-file upload route checks only that a user exists, not that the user is an editor or administrator. A viewer session can attach production files to a submission.

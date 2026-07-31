@@ -27,7 +27,8 @@ function isLocalAdminBypassEnabled() {
 
 function configuredAdminEmails() {
   return new Set(
-    ["jbotoy83@gmail.com", ...(process.env.ADMIN_EMAILS || "").split(",")]
+    (process.env.ADMIN_EMAILS || "")
+      .split(",")
       .map((email) => email.trim().toLocaleLowerCase())
       .filter(Boolean)
   );
