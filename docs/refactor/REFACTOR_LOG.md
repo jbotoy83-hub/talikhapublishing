@@ -167,3 +167,14 @@ Format per entry: date · action · files/area · evidence · result.
 - **Not done (optional further hardening, noted in RISK_REGISTER):** restricting the bypass to loopback requests requires threading request context into `getAdminUser()` — a larger change, deferred.
 - **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS. **Testing limitation:** no integration test exercises the bypass (blocked on a Supabase dev project); verified by type-checking and reasoning about the guard logic.
 - **Result:** A missing service-role key no longer grants admin access in non-production; the bypass is explicit opt-in only. `RISK_REGISTER.md` (SEC-6) updated.
+
+### 24. Phase 9 — SEC-5: require Redis for rate limiting + make fail-open visible (policy fix)
+- **Vulnerability:** `allowRequest()` (`src/lib/rate-limit.ts`) returns `true` (allow) when Upstash Redis is not configured, so the five abuse-sensitive public endpoints — `submissions/init`, `submissions/complete`, `track`, `track/requests/respond`, `search` — had no effective distributed rate limit without Redis, and the fail-open was silent.
+- **Policy (owner-chosen):** require Redis + keep fail-open + log it.
+- **Changes:**
+  - Added `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` to the production launch-readiness `requireValue` list (`scripts/check-launch-readiness.mjs`), so a production deploy cannot pass readiness without Redis configured (enforcing what `.env.example` already documented).
+  - `allowRequest()` now logs a one-time `[rate-limit]` warning (per instance) when Redis is absent, so the fail-open is visible in server logs instead of silent. Runtime behavior is otherwise unchanged (still fail-open → preserves availability; a Redis outage won't block legitimate submissions).
+  - `.env.example` Upstash note updated to state the readiness gate enforces it and that limiting fails open (with a warning) otherwise.
+- **Residual risk (documented in RISK_REGISTER):** a runtime Redis outage still disables limiting until restored. Stronger options (fail closed everywhere / for submissions only, or a Vercel platform limiter) were declined for now.
+- **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS; `npm run readiness` runs and now flags missing Upstash vars (expected where they are unset).
+- **Result:** Production readiness now requires Redis, and any fail-open is logged. `RISK_REGISTER.md` (SEC-5) updated.

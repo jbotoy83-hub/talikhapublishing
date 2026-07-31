@@ -25,9 +25,17 @@ export function getRequestRateLimitKey(headers: Headers) {
     || "unknown";
 }
 
+let warnedNoRedis = false;
+
 export async function allowRequest(key: string, limit = 5, windowMs = 15 * 60 * 1000) {
   const limiter = getLimiter(limit, windowMs);
-  if (!limiter) return true;
+  if (!limiter) {
+    if (!warnedNoRedis) {
+      warnedNoRedis = true;
+      console.warn("[rate-limit] Upstash Redis is not configured; rate limiting is disabled (fail-open). Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to enable it.");
+    }
+    return true;
+  }
   const { success } = await limiter.limit(key);
   return success;
 }
