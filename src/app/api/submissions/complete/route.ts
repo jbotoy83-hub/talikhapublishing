@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     .eq("id", submissionId)
     .maybeSingle();
   if (pendingError || !pendingSubmission) return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+  if (pendingSubmission.status === "submitted") return NextResponse.json({ reference: pendingSubmission.reference });
   if (pendingSubmission.status !== "uploading") return NextResponse.json({ error: "This submission can no longer be completed." }, { status: 409 });
 
   const fileRows = [];

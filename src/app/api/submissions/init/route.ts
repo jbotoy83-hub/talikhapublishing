@@ -19,6 +19,17 @@ function safeName(name: string) {
   return sanitized || "file";
 }
 
+async function createUploadInstructions(admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>, submissionId: string, files: Array<{ key: string; field: "manuscript" | "authorPhoto" | "paymentProof"; name: string }>) {
+  const uploads = [];
+  for (const file of files) {
+    const path = `${submissionId}/${file.field}/${randomUUID()}-${safeName(file.name)}`;
+    const { data, error: uploadError } = await admin.storage.from("submission-files").createSignedUploadUrl(path, { upsert: false });
+    if (uploadError || !data?.token) return null;
+    uploads.push({ key: file.key, field: file.field, path, token: data.token });
+  }
+  return uploads;
+}
+
 export async function POST(request: NextRequest) {
   if (!isSubmissionsEnabled()) return NextResponse.json({ error: "Public submissions are currently closed." }, { status: 503 });
   const ip = getRequestRateLimitKey(request.headers);
@@ -54,8 +65,20 @@ export async function POST(request: NextRequest) {
   if (!issue || issue.journal_id !== journal.id || issue.status === "archived" || (issueMetadata.submissionDeadline && issueMetadata.submissionDeadline < today)) {
     return NextResponse.json({ error: "That issue is no longer accepting submissions. Please refresh the form." }, { status: 409 });
   }
+  const { data: existing } = await admin
+    .from("submissions")
+    .select("id, reference, status")
+    .eq("idempotency_key", input.idempotencyKey)
+    .maybeSingle();
+  if (existing) {
+    if (existing.status === "submitted") return NextResponse.json({ error: "This submission attempt has already been completed." }, { status: 409 });
+    if (existing.status !== "uploading") return NextResponse.json({ error: "This submission attempt can no longer be resumed." }, { status: 409 });
+    const uploads = await createUploadInstructions(admin, existing.id, input.files);
+    if (!uploads) return NextResponse.json({ error: "Could not prepare private file storage." }, { status: 500 });
+    return NextResponse.json({ submissionId: existing.id, reference: existing.reference, uploads }, { status: 200 });
+  }
   const reference = `TAL-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-  const { data: submission, error } = await admin.from("submissions").insert({ reference, title: input.workingTitle, publication_type: input.publicationType, preferred_journal_id: journal.id, assigned_issue_id: issue.id, journal_title_snapshot: journal.title, volume_snapshot: issue.volume, issue_snapshot: issue.issue_number, abstract: "", author_name: input.authorName, author_email: input.authorEmail, affiliation: input.affiliation || null, phone: input.phone || null, author_notes: input.notes || null, author_details: input.authorDetails, status: "uploading", consent_at: new Date().toISOString(), source_ip_hash: null }).select("id").single();
+  const { data: submission, error } = await admin.from("submissions").insert({ idempotency_key: input.idempotencyKey, reference, title: input.workingTitle, publication_type: input.publicationType, preferred_journal_id: journal.id, assigned_issue_id: issue.id, journal_title_snapshot: journal.title, volume_snapshot: issue.volume, issue_snapshot: issue.issue_number, abstract: "", author_name: input.authorName, author_email: input.authorEmail, affiliation: input.affiliation || null, phone: input.phone || null, author_notes: input.notes || null, author_details: input.authorDetails, status: "uploading", consent_at: new Date().toISOString(), source_ip_hash: null }).select("id").single();
   if (error || !submission) return NextResponse.json({ error: "Could not create the protected submission record." }, { status: 500 });
 
   const { error: paymentError } = await admin.from("payments").insert({
@@ -76,15 +99,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Could not create the payment record." }, { status: 500 });
   }
 
-  const uploads = [];
-  for (const file of input.files) {
-    const path = `${submission.id}/${file.field}/${randomUUID()}-${safeName(file.name)}`;
-    const { data, error: uploadError } = await admin.storage.from("submission-files").createSignedUploadUrl(path, { upsert: false });
-    if (uploadError || !data?.token) {
-      await admin.from("submissions").update({ status: "upload_failed" }).eq("id", submission.id);
-      return NextResponse.json({ error: "Could not prepare private file storage." }, { status: 500 });
-    }
-    uploads.push({ key: file.key, field: file.field, path, token: data.token });
+  const uploads = await createUploadInstructions(admin, submission.id, input.files);
+  if (!uploads) {
+    await admin.from("submissions").update({ status: "upload_failed" }).eq("id", submission.id);
+    return NextResponse.json({ error: "Could not prepare private file storage." }, { status: 500 });
   }
   return NextResponse.json({ submissionId: submission.id, reference, uploads }, { status: 201 });
 }

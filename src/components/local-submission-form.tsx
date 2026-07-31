@@ -26,6 +26,21 @@ const MAX_SUBMIT_ATTEMPTS = 3;
 const MIN_PROCESS_MS = 2800;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
+async function fetchSubmission(input: RequestInfo | URL, init: RequestInit, attempts = 3): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetch(input, init);
+      if (response.ok || ![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw new Error("The connection was interrupted while submitting. Please check your internet connection and try again.");
+    }
+    await wait(700 * (attempt + 1));
+  }
+  throw lastError instanceof Error ? lastError : new Error("The submission service could not be reached. Please try again.");
+}
+
 function isRetryable(err: unknown) {
   const msg = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
   const fatal = [
@@ -446,7 +461,8 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   async function runServerSubmission(
     sj: { slug: string; id: string; issueId: string },
     supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
-    onStep: (step: ProcessingStep) => void
+    onStep: (step: ProcessingStep) => void,
+    idempotencyKey: string
   ): Promise<string> {
       const completed = uploadedFiles.filter((f) => f.status === "completed");
       const manuscript = completed.find((f) => f.purpose === "manuscript");
@@ -491,6 +507,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         .filter(Boolean).join("\n\n").slice(0, 3000);
 
       const initBody = {
+        idempotencyKey,
         workingTitle: form.title.trim(),
         publicationType: form.category.trim() || "Manuscript",
         preferredJournal: form.journal,
@@ -513,7 +530,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         paymentTotal: total
       };
 
-      const initRes = await fetch("/api/submissions/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(initBody) });
+      const initRes = await fetchSubmission("/api/submissions/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(initBody) });
       const init = (await initRes.json().catch(() => ({}))) as { submissionId?: string; reference?: string; uploads?: { key: string; field: string; path: string; token: string }[]; error?: string };
       if (!initRes.ok || !init.submissionId || !init.uploads) throw new Error(init.error || "The submission service could not start your record. Please try again.");
 
@@ -522,12 +539,17 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         const make = blobFor.get(ins.key);
         if (!make) throw new Error("A prepared file is missing. Please try submitting again.");
         const blob = await make();
-        const { error } = await supabase.storage.from("submission-files").uploadToSignedUrl(ins.path, ins.token, blob, { contentType: blob.type || "application/octet-stream", upsert: false });
+        let error: { message?: string } | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) await wait(700 * attempt);
+          ({ error } = await supabase.storage.from("submission-files").uploadToSignedUrl(ins.path, ins.token, blob, { contentType: blob.type || "application/octet-stream", upsert: false }));
+          if (!error) break;
+        }
         if (error) throw new Error(`Could not upload one of your files. ${error.message || "Please try again."}`);
       }
 
       onStep("verifying");
-      const completeRes = await fetch("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
+      const completeRes = await fetchSubmission("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
       const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; error?: string };
       if (!completeRes.ok || !complete.reference) throw new Error(complete.error || "Your files were uploaded, but the record could not be finalized. Please contact the editorial team.");
 
@@ -618,11 +640,12 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     }
 
     let lastError = "";
+    const idempotencyKey = crypto.randomUUID();
     for (let current = 1; current <= MAX_SUBMIT_ATTEMPTS; current++) {
       try {
         const startedAt = Date.now();
         const ref = isServer
-          ? await runServerSubmission(sj!, supabase!, setProcessingStep)
+          ? await runServerSubmission(sj!, supabase!, setProcessingStep, idempotencyKey)
           : await runLocalSubmission(setProcessingStep);
         const elapsed = Date.now() - startedAt;
         if (elapsed < MIN_PROCESS_MS) await wait(MIN_PROCESS_MS - elapsed);
