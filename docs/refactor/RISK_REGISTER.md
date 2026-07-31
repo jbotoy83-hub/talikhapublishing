@@ -1,0 +1,56 @@
+# Risk Register — Talikha Publishing Refactor
+
+**Last updated:** 2026-07-31
+Risks are rated **Likelihood** (L/M/H) × **Impact** (L/M/H). Security and data-integrity risks are treated as high priority regardless of score. Sources: `.planning/codebase/CONCERNS.md` (2026-07-30 audit), baseline investigation (2026-07-31).
+
+> Refactor rule: security fixes may change defective behavior, but each must be **isolated, documented, tested, and reported separately** from ordinary refactoring (master instruction §9, §12). None of these are addressed during baseline.
+
+---
+
+## A. Security risks (Phase 9 — isolated, documented fixes)
+
+| ID | Risk | Files | L×I | Notes / mitigation direction |
+|----|------|-------|-----|------------------------------|
+| SEC-1 | **Unauthenticated admin dashboard.** `/api/admin/dashboard` reads via service-role without an auth guard; service-role bypasses RLS, so it is publicly callable. | `src/app/api/admin/dashboard/route.ts`; guard pattern in `src/lib/admin-api.ts` | M×H | Add `requireEditorApi`/`requireAdminApi` guard. Verify every `/api/admin/*` handler has a guard (audit). |
+| SEC-2 | **Hardcoded admin allowlist bypass.** `jbotoy83@gmail.com` is always in the admin set, independent of `ADMIN_EMAILS`; authenticating as that address can auto-promote to admin. | `src/lib/auth.ts:28-75`; `.env.example:46` | M×H | Remove hardcoded address; require explicit audited `ADMIN_EMAILS` or a DB role; preserve existing role on removal. |
+| SEC-3 | **Viewer can upload workflow files.** Upload route checks only that a user exists, not editor/admin role. A viewer session can attach production files. | `src/app/api/admin/workflow-files/route.ts:36-56`; `src/lib/admin-api.ts:7-13` | M×H | Use `requireEditorApi()` (or equivalent) before accepting upload. |
+| SEC-4 | **Reference-only tracking exposes private artifacts.** `/api/track` accepts a reference/tracking/receipt number and returns author-visible events + 1-hour signed file URLs + certificate URLs. Reference has only an 8-hex random suffix; rate limiting optional. | `src/app/api/track/route.ts:21-122`; `track/requests/respond/route.ts:57-97`; `src/lib/rate-limit.ts:21-28` | M×H | Require a second factor (author email/OTP); make shared rate limiting mandatory in prod; avoid returning file links from reference-only lookup. |
+| SEC-5 | **Rate limiting fails open without Redis.** When Upstash vars absent, `allowRequest()` returns `true`; submission/track endpoints have no effective distributed limit. In-memory `Map` does not survive across serverless instances. | `src/lib/rate-limit.ts:3-28` | H×M | Fail closed for abuse-sensitive public routes or use a platform-backed limiter; make Upstash a deployment readiness requirement. |
+| SEC-6 | **Implicit local admin bypass.** Any non-production process without a service-role key gets a synthetic admin from `getAdminUser()`. A misconfigured staging env could expose admin APIs. | `src/lib/auth.ts:16-43`; `src/app/api/admin/*` | L×H | Require explicit `LOCAL_ADMIN_BYPASS=true`, restrict to loopback dev, fail closed in preview/staging. |
+| SEC-7 | **Undocumented `CRON_SECRET`.** `/api/cron/journal-lifecycle` requires `CRON_SECRET` in production but `.env.example` omits it; a deploy without it silently 401s the Vercel cron and stops lifecycle work. | `src/app/api/cron/journal-lifecycle/route.ts:5-17`; `vercel.json`; `.env.example` | M×M | Document and validate `CRON_SECRET`; monitor cron failures/lifecycle freshness. |
+
+## B. Data-integrity / fragile-area risks (protect with tests before refactoring)
+
+| ID | Risk | Files | L×I | Notes |
+|----|------|-------|-----|-------|
+| FRAG-1 | **Editorial workflow state machine.** Stage transitions, payment gates, author-facing labels, events, and DB functions span app code + migrations; only pure helper behavior is unit-tested. | `src/lib/editorial-workflow.ts`, `editorial-workflow-server.ts`, `src/app/api/admin/submissions/[id]/transition/route.ts`, `supabase/migrations/20260718114052_unified_editorial_workflow.sql` | M×H | Add transition integration tests before changing gates. Update transition map + server route + SQL + author projections together. |
+| FRAG-2 | **Multi-step submission + browser staging.** IndexedDB staging, signed uploads, retries, payment metadata, final status coordinated across browser/server. Partial failures can leave `uploading`/`upload_failed` records or orphaned objects. | `src/components/local-submission-form.tsx`, `file-upload-system.tsx`, `src/lib/file-storage.ts`, `api/submissions/init|complete` | M×H | Test refresh/retry/duplicate-completion/partial-upload/cleanup. The snapshotted idempotency work (`ba58b3d`) directly addresses duplicate completion — verify it. |
+| FRAG-3 | **Certificate generation pipeline.** Editing, PDF rendering, storage writes, numbering, previews, publication attachment, workflow events coordinated in large client/server modules. | `admin-panel/src/components/certificates/certificate-workspace.tsx`, `api/admin/certificates/records/[recordId]/issue/route.ts`, `src/lib/render-certificate.ts`, `certificate-import.ts` | M×H | Treat issuance as idempotent; verify storage/DB cleanup on failure; test real PDF output. **Do not renumber/regenerate existing certificates.** |
+| FRAG-4 | **Dual journal state model.** Admin keeps client/localStorage state while syncing loosely-validated JSONB metadata via journal-store; last-write-wins can overwrite edits. | `admin-panel/src/main.tsx`, `admin-panel/src/lib/journal-catalog.ts`, `src/app/api/journal-store/route.ts`, `src/data/journal-store.json` | M×M | Make DB authoritative; validate full payload with schema; add conflict/version handling. |
+
+## C. Performance risks (Phase 6/7 — measured improvements only)
+
+| ID | Risk | Files | L×I | Notes |
+|----|------|-------|-----|-------|
+| PERF-1 | **Unbounded admin workspace read model.** Initial workspace loads all submissions, publication records, journals, issues, authors, certificate records, media in parallel; no limit/cursor. | `src/app/api/admin/workspace/route.ts:16-25`, `admin-panel/src/main.tsx` | H×M | Split by workspace; paginate; select view-specific fields; lazy-load certificates/media. |
+| PERF-2 | **Large admin client bundle.** ~1.07 MB minified main JS chunk + 404 kB CSS; Vite warns >500 kB. Eagerly includes certificate editing, PDF gen, doc parsing. | `admin-panel/src/main.tsx`, `certificate-workspace.tsx`, `admin-panel/vite.config.ts` | H×M | Route/view-level dynamic imports; keep PDF/editor tooling out of initial chunk. See `PERFORMANCE_BASELINE.md`. |
+| PERF-3 | **Full-file signature validation on completion.** Downloads every uploaded file and reads entire blob into memory to check magic bytes. | `src/app/api/submissions/complete/route.ts:44-70` | M×M | Bound file count; inspect only header bytes; move expensive validation to async path. |
+| PERF-4 | **Unbounded base64 image handling in journal sync.** Accepts data URLs, decodes full base64, uploads with no request/image size limit. | `src/app/api/journal-store/route.ts:87-105,212-246` | M×M | Enforce request/image byte+dimension limits before decoding; use signed uploads for large assets. |
+
+## D. Platform / process risks
+
+| ID | Risk | Files | L×I | Notes |
+|----|------|-------|-----|-------|
+| PLAT-1 | **Install integrity / version skew.** Two manifests use caret ranges; root `postinstall` runs nested `npm install`; root admin build uses `npx --yes vite build`; root and admin TypeScript differ by major version. **Manifested at baseline as a corrupt `admin-panel/node_modules` (missing `jszip.min.js`, broken `pako` resolution) that failed the build.** Repaired via `npm ci --prefix admin-panel`. | `package.json`, `admin-panel/package.json`, both lockfiles | H×M | Use lockfile-only CI installs (`npm ci`); pin admin build to local script; align toolchain versions; verify both lockfiles in CI. Consider Defender exclusions on Windows. |
+| PLAT-2 | **No CI / monitoring.** No GitHub Actions workflow or error-tracking; operational logs are console-based. | `.github/` (absent) | M×M | Out of refactor scope to add, but document as remaining debt; gates currently run locally. |
+| PLAT-3 | **Test coverage gaps.** No API/authorization/RLS/payment/certificate-issuance/e2e submission coverage; service-role usage means policy/migration drift is not caught by TS/UI tests. | `src/app/api/`, `src/lib/auth.ts`, `admin-api.ts`, `src/proxy.ts`, `supabase/migrations/` | H×H | Phase 3 adds characterization tests for protected behavior. Highest-priority gap. |
+| PLAT-4 | **Documentation/map drift.** Operational docs reference a nonexistent `src/app/admin/page.tsx`; map docs claimed lint broken / 25 tests. | `docs/DEPLOYMENT.md`, `AGENTS.md`, `.planning/codebase/*` | M×L | Corrected in `BASELINE_REPORT.md` §5; keep docs synced. |
+| PLAT-5 | **Two submission implementations.** Active `/submit` uses `LocalSubmissionForm`; older `SubmissionForm` remains with overlapping logic. | `src/app/(public)/submit/page.tsx`, `src/components/local-submission-form.tsx`, `submission-form.tsx`, `file-upload-system.tsx` | M×M | Confirm production form, then isolate/remove unused implementation (Phase 8 dead-code rule applies — full reference search before removal). |
+
+## Risk response summary
+
+- **Address in Phase 3 (tests first):** FRAG-1..4, PLAT-3 — protect behavior before any refactor.
+- **Address in Phase 6/7 (measured):** PERF-1..4.
+- **Address in Phase 9 (isolated security commits):** SEC-1..7.
+- **Address in Phase 8 (consolidation):** FRAG-4, PLAT-5.
+- **Carry as remaining debt / owner actions:** PLAT-2, PLAT-1 (CI hardening), SEC-4 second-factor design.
