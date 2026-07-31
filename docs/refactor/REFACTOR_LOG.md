@@ -101,3 +101,8 @@ Format per entry: date · action · files/area · evidence · result.
 - **Verification:** `npm run lint` → exit 0, **144 warnings** (down from 147 — three `_`-prefixed unused symbols now ignored, including `_discardedPdf`), **0 errors**. Lint-config-only change; typecheck/build unaffected.
 - **Note:** `globalIgnores` in `eslint.config.mjs` does not include `tmp/`, so scratch files there can crash the flat-config run (observed: a temporary `.cjs` caused an eslint fatal exit 2). Recommend adding `"tmp/**"` to `globalIgnores` (separate, owner-approved change).
 - **Result:** Intentional discards no longer flagged; **no code deleted, no behavior change.**
+
+### 16. Phase 4 — add `tmp/**` to ESLint global ignores
+- **Action:** Added `"tmp/**"` to `globalIgnores` in `eslint.config.mjs`. The `tmp/` directory is gitignored scratch space; without an ESLint ignore, scratch scripts placed there (e.g. a temporary `.cjs`) are picked up by `eslint .` and crash the flat-config run with a fatal exit 2 (observed during the component-excision work).
+- **Verification:** `npm run lint` → exit 0, **144 warnings**, 0 errors (unchanged; no `tmp/` files currently linted).
+- **Result:** Scratch files in `tmp/` no longer break lint runs; **no behavior change.**

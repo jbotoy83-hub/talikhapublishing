@@ -38,6 +38,7 @@ export default defineConfig([
     "**/*.min.js",
     "**/*.min.mjs",
     "output/**",
+    "tmp/**",
     "src/main.js",
     "src/submissionStore.js",
     "src/journalStore.js",
