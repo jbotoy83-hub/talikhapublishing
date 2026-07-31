@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getAdminUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isApiError, requireEditorApi } from "@/lib/admin-api";
 
 /**
  * The single read model for the unified /admin workspace.  Browser views must
  * consume this endpoint rather than inventing a second local editorial store.
  */
 export async function GET() {
-  const user = await getAdminUser();
-  if (!user) return NextResponse.json({ connected: false, error: "Unauthorized" }, { status: 401 });
+  const user = await requireEditorApi();
+  if (isApiError(user)) return user;
 
   const admin = getSupabaseAdmin();
   if (!admin) return NextResponse.json({ connected: false, data: null });

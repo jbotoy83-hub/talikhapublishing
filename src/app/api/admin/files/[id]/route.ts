@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getAdminUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isApiError, requireEditorApi } from "@/lib/admin-api";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getAdminUser(); if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await requireEditorApi(); if (isApiError(user)) return user;
   const admin = getSupabaseAdmin(); if (!admin) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
   const { id } = await params; const { data: file } = await admin.from("submission_files").select("storage_path, storage_bucket, mime_type, original_name").eq("id", id).maybeSingle();
   if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
