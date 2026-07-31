@@ -64,7 +64,7 @@
   - Identity resolution: `src/lib/auth.ts` — `getAdminUser()` reads JWT claims via `supabase.auth.getClaims()`, loads the `profiles` row, and resolves role (`admin` | `editor` | `viewer`). `requireAdmin()` redirects viewers/non-users to login.
   - API guards: `src/lib/admin-api.ts` — `requireEditorApi()` (admin/editor) and `requireAdminApi()` (admin only) return `401`/`403` `NextResponse`s; callers check with `isApiError()`.
 - Admin allowlist: `ADMIN_EMAILS` env (comma-separated) in `configuredAdminEmails()` (`src/lib/auth.ts`). No hardcoded email (removed 2026-07-31, SEC-2); `profiles.role = 'admin'` is the alternative.
-- Local dev bypass: `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) returns a fake admin when Supabase is not connected or `LOCAL_ADMIN_BYPASS=true`; forced off in production.
+- Local dev bypass: `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) returns a fake admin only when `LOCAL_ADMIN_BYPASS=true` is set explicitly; forced off in production and fails closed in staging/preview (SEC-6, 2026-07-31).
 - Roles drive both UI access (`access_views`, `requires_account_setup` on `profiles`) and API authorization.
 
 ## Monitoring & Observability

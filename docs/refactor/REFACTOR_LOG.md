@@ -158,3 +158,12 @@ Format per entry: date · action · files/area · evidence · result.
 - **Not changed (out of scope):** the admin SPA uses `jbotoy83`/`jbotoy83@gmail.com` as cosmetic display fallbacks (`admin-panel/src/main.tsx`); these grant nothing and are an optional later cleanup.
 - **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS. **Testing limitation:** no integration test exercises the auth allowlist (blocked on a Supabase dev project); verified by type-checking and reasoning about the role/allowlist logic.
 - **Result:** No administrator email is hardcoded; admin access is governed by `ADMIN_EMAILS` / `profiles.role`. `RISK_REGISTER.md` (SEC-2) updated.
+
+### 23. Phase 9 — SEC-6: remove implicit local admin bypass (security fix)
+- **Vulnerability:** `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) had an implicit fallback — `if (!getSupabaseAdmin()) return true;` — so any non-production environment missing the service-role key silently granted a synthetic admin to every request. A misconfigured staging/preview deployment (`NODE_ENV` not `"production"`, no service-role key) would expose all admin APIs.
+- **Fix:** removed the implicit fallback. The bypass is now enabled ONLY when `LOCAL_ADMIN_BYPASS=true` is set explicitly (and never in production — both the `NODE_ENV === "production"` guard and the launch-readiness gate forbid it). Staging/preview now fail closed unless they explicitly opt in.
+- **Behavior change (intended):** local development of the admin UI *without* Supabase configured now requires `LOCAL_ADMIN_BYPASS=true` in `.env.local` (documented in `.env.example`). Local dev with Supabase configured is unaffected (it authenticates normally); production is unaffected.
+- **Docs updated:** `.env.example` (LOCAL_ADMIN_BYPASS note) and the codebase map (`.planning/codebase/INTEGRATIONS.md`).
+- **Not done (optional further hardening, noted in RISK_REGISTER):** restricting the bypass to loopback requests requires threading request context into `getAdminUser()` — a larger change, deferred.
+- **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS. **Testing limitation:** no integration test exercises the bypass (blocked on a Supabase dev project); verified by type-checking and reasoning about the guard logic.
+- **Result:** A missing service-role key no longer grants admin access in non-production; the bypass is explicit opt-in only. `RISK_REGISTER.md` (SEC-6) updated.

@@ -15,14 +15,13 @@ export type AdminUser = {
 
 /**
  * Local-only escape hatch for working on the admin UI before Supabase admin
- * credentials are provisioned. Automatically enabled when Supabase is not
- * connected, or when LOCAL_ADMIN_BYPASS=true is set explicitly.
+ * credentials are provisioned. Enabled ONLY when LOCAL_ADMIN_BYPASS=true is set
+ * explicitly (and never in production). Staging/preview environments fail closed
+ * unless they opt in, so a missing service-role key no longer grants admin access.
  */
 function isLocalAdminBypassEnabled() {
   if (process.env.NODE_ENV === "production") return false;
-  if (process.env.LOCAL_ADMIN_BYPASS === "true") return true;
-  if (!getSupabaseAdmin()) return true;
-  return false;
+  return process.env.LOCAL_ADMIN_BYPASS === "true";
 }
 
 function configuredAdminEmails() {
