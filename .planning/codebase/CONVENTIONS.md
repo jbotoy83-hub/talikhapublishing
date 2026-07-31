@@ -1,6 +1,6 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-07-30
+**Analysis Date:** 2026-07-31 (refreshed)
 
 ## Naming Patterns
 
@@ -32,8 +32,11 @@
 
 **Linting:**
 - Root linting is configured in `eslint.config.mjs` with `eslint-config-next/core-web-vitals` and `eslint-config-next/typescript`.
-- `react-hooks/set-state-in-effect` and `react-hooks/purity` are warnings; `react-hooks/rules-of-hooks` remains enforced by the Next configuration.
-- Generated output, `node_modules`, selected legacy files, and `components/**` are ignored by `eslint.config.mjs`.
+- `eslint-plugin-react-hooks` is explicitly imported and registered (fixed 2026-07-31; previously the plugin was unresolvable).
+- `react-hooks/set-state-in-effect`, `react-hooks/purity`, `react-hooks/refs`, `react-hooks/preserve-manual-memoization`, and `react-hooks/immutability` are warnings; `react-hooks/rules-of-hooks` remains enforced by the Next configuration.
+- `@typescript-eslint/no-unused-vars` is a warning with `varsIgnorePattern: "^_"` and `argsIgnorePattern: "^_"` (underscore-prefixed names are intentionally unused).
+- `@typescript-eslint/no-explicit-any` and `react/no-unescaped-entities` are warnings.
+- Generated output, `node_modules`, selected legacy files, `tmp/**`, and `components/**` are ignored by `eslint.config.mjs`.
 - Keep lint scope in mind: the root `npm run lint` command scans the repository, while admin correctness is separately covered by TypeScript/Vite build checks.
 
 ## Import Organization
@@ -122,4 +125,4 @@ There is no import-order plugin or formatter enforcing this order. Match the nea
 
 ---
 
-*Convention analysis: 2026-07-30*
+*Convention analysis: 2026-07-31 (refreshed)*

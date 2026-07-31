@@ -1,7 +1,7 @@
-<!-- refreshed: 2026-07-31 -->
+<!-- refreshed: 2026-07-31 (full remap) -->
 # Architecture
 
-**Analysis Date:** 2026-07-31
+**Analysis Date:** 2026-07-31 (refreshed)
 
 ## System Overview
 
@@ -177,19 +177,18 @@
 ## Architectural Constraints
 
 - **Threading:** Single-threaded Node event loop; no worker threads in app code. PDF workers (`pdfjs-dist`) run client-side.
-- **Global state:** The admin SPA keeps a module-level mutable `JOURNAL_CATALOG` singleton (`admin-panel/src/main.tsx:807`) synced to `localStorage` and a `talikha:catalog` CustomEvent. The rate-limiter cache is a module-level `Map` (`src/lib/rate-limit.ts:8`) — does not survive across serverless instances.
+- **Global state:** The admin SPA keeps a module-level mutable `JOURNAL_CATALOG` singleton (`admin-panel/src/main.tsx`) synced to `localStorage` and a `talikha:catalog` CustomEvent. The rate-limiter cache is a module-level `Map` (`src/lib/rate-limit.ts:8`) — does not survive across serverless instances. A one-time `console.warn` fires when Redis is absent (SEC-5).
 - **Cross-app import:** The admin SPA imports shared modules from the parent repo via relative paths (`../../src/lib/apa-citation`, `../../src/lib/citation-format`, `../../src/lib/types`) and a Vite alias for `@/components/icons` → `../src/components/icons`. This couples the two apps at build time.
 - **React dedupe:** Admin Vite aliases `react`/`react-dom` to the root `node_modules` to avoid two React copies (`admin-panel/vite.config.ts:13`).
-- **Service-role trust boundary:** Because `getSupabaseAdmin` bypasses RLS, every privileged handler MUST call an `admin-api.ts` guard. Missing a guard = unauthenticated data access (see CONCERNS.md for an existing gap).
+- **Service-role trust boundary:** Because `getSupabaseAdmin` bypasses RLS, every privileged handler MUST call an `admin-api.ts` guard. As of 2026-07-31, all 14 admin sub-routes are guarded (SEC-1, SEC-8 resolved).
 - **Circular imports:** None detected at the module level; the cross-app imports are one-directional (admin → root `src/lib`).
 
 ## Anti-Patterns
 
-### Admin route without an auth guard
+### Admin route without an auth guard — RESOLVED (2026-07-31)
 
-**What happens:** A `/api/admin/*` handler reads/writes via `getSupabaseAdmin` without calling `requireEditorApi`/`requireAdminApi`.
-**Why it's wrong:** The service-role client bypasses RLS, so the endpoint becomes publicly callable. `/api/admin/dashboard` currently has this gap (CONCERNS.md).
-**Do this instead:** Start every handler with the guard pattern in `src/app/api/admin/submissions/[id]/advance/route.ts:6` — `const user = await requireEditorApi(); if (isApiError(user)) return user;`.
+**Status:** All 14 `/api/admin/*` sub-routes now call `requireEditorApi()` or `requireAdminApi()` as their first statement. The `/api/admin/dashboard` gap (SEC-1) and the `/api/admin/files/[id]` + `/api/admin/workspace` viewer access (SEC-8) were fixed on 2026-07-31.
+**Do this instead:** Start every new handler with the guard pattern in `src/app/api/admin/submissions/[id]/advance/route.ts:6` — `const user = await requireEditorApi(); if (isApiError(user)) return user;`.
 
 ### Importing server-only logic into the admin SPA bundle
 
@@ -200,8 +199,8 @@
 ### Treating the in-memory rate limiter as production security
 
 **What happens:** Relying on `src/lib/rate-limit.ts` alone to throttle abuse.
-**Why it's wrong:** The limiter is per-instance memory (plus optional Upstash). On Vercel serverless, counters reset per invocation/region, and with no Upstash config it returns `true` for everything.
-**Do this instead:** Ensure `UPSTASH_REDIS_REST_URL`/`TOKEN` are set in production; treat the limiter as one layer alongside Turnstile and DB constraints.
+**Why it's wrong:** The limiter is per-instance memory (plus optional Upstash). On Vercel serverless, counters reset per invocation/region, and with no Upstash config it returns `true` for everything (fail-open). A one-time `console.warn` is now emitted when Redis is absent (SEC-5, 2026-07-31), but the limiter still allows all requests.
+**Do this instead:** Ensure `UPSTASH_REDIS_REST_URL`/`TOKEN` are set in production (enforced by the launch-readiness gate); treat the limiter as one layer alongside Turnstile and DB constraints.
 
 ## Error Handling
 
@@ -224,4 +223,4 @@
 
 ---
 
-*Architecture analysis: 2026-07-31*
+*Architecture analysis: 2026-07-31 (refreshed)*

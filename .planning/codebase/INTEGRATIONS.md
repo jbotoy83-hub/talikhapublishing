@@ -1,6 +1,6 @@
 # External Integrations
 
-**Analysis Date:** 2026-07-31
+**Analysis Date:** 2026-07-31 (refreshed)
 
 ## APIs & External Services
 
@@ -20,7 +20,7 @@
 **Distributed rate limiting (Upstash Redis):**
 - `src/lib/rate-limit.ts` — sliding-window limiter built on `@upstash/redis` + `@upstash/ratelimit`.
 - Used by public write endpoints (e.g. `src/app/api/submissions/init/route.ts` keys on `submission:<ip>`).
-- Falls back to "allow all" when Redis env vars are absent — this means no rate limiting locally or if misconfigured (see CONCERNS.md).
+- Falls back to "allow all" when Redis env vars are absent — this means no rate limiting locally or if misconfigured. A one-time `console.warn` is now emitted on first call when Redis is absent (SEC-5, 2026-07-31). The launch-readiness gate requires both vars for production.
 - Auth: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
 
 **CDN:**
@@ -64,7 +64,7 @@
   - Identity resolution: `src/lib/auth.ts` — `getAdminUser()` reads JWT claims via `supabase.auth.getClaims()`, loads the `profiles` row, and resolves role (`admin` | `editor` | `viewer`). `requireAdmin()` redirects viewers/non-users to login.
   - API guards: `src/lib/admin-api.ts` — `requireEditorApi()` (admin/editor) and `requireAdminApi()` (admin only) return `401`/`403` `NextResponse`s; callers check with `isApiError()`.
 - Admin allowlist: `ADMIN_EMAILS` env (comma-separated) in `configuredAdminEmails()` (`src/lib/auth.ts`). No hardcoded email (removed 2026-07-31, SEC-2); `profiles.role = 'admin'` is the alternative.
-- Local dev bypass: `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) returns a fake admin only when `LOCAL_ADMIN_BYPASS=true` is set explicitly; forced off in production and fails closed in staging/preview (SEC-6, 2026-07-31).
+- Local dev bypass: `isLocalAdminBypassEnabled()` (`src/lib/auth.ts`) returns a fake admin only when `LOCAL_ADMIN_BYPASS=true` is set explicitly; forced off in production and fails closed in staging/preview (SEC-6, 2026-07-31). The bypass is no longer implicit — a missing service-role key returns `null`, not a synthetic admin.
 - Roles drive both UI access (`access_views`, `requires_account_setup` on `profiles`) and API authorization.
 
 ## Monitoring & Observability
@@ -95,7 +95,7 @@
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PROJECT_REF`.
 - Rate limiting: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
 - Bot protection: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.
-- Admin: `ADMIN_EMAILS` (comma-separated allowlist; no hardcoded email).
+- Admin: `ADMIN_EMAILS` (comma-separated allowlist; no hardcoded email), `CRON_SECRET` (Bearer token for Vercel cron; documented in `.env.example`).
 - Site identity: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_NAME`, `NEXT_PUBLIC_SITE_DESCRIPTION`, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_LEGAL_EFFECTIVE_DATE`.
 - Launch gates: `SITE_INDEXING_ENABLED`, `DEMO_CONTENT_ENABLED`, `SUBMISSIONS_ENABLED`, `CONTENT_APPROVED`, `LEGAL_APPROVED`, `OWNER_LAUNCH_APPROVED`, `DATABASE_SECURITY_APPROVED`.
 - Optional: `REMOTE_IMAGE_HOSTS` (comma-separated HTTPS hosts for `next/image`), `JOURNAL_STORE_TOKEN`, `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`.
@@ -107,7 +107,7 @@
 
 **Incoming:**
 - Supabase Auth callback: `src/app/auth/callback/route.ts` (completes the email/OAuth login handshake).
-- Vercel cron hit: `GET /api/cron/journal-lifecycle` (`src/app/api/cron/journal-lifecycle/route.ts`) — scheduled, not a third-party webhook.
+- Vercel cron hit: `GET /api/cron/journal-lifecycle` (`src/app/api/cron/journal-lifecycle/route.ts`) — scheduled, not a third-party webhook. Authenticated via `CRON_SECRET` (Bearer token); documented in `.env.example` and enforced by the launch-readiness gate (SEC-7, 2026-07-31).
 - No third-party payment/webhook receiver — the payment provider is explicitly "not connected" (admin `BankView` in `admin-panel/src/main.tsx` shows placeholder/prototype data).
 
 **Outgoing:**
@@ -116,4 +116,4 @@
 
 ---
 
-*Integration audit: 2026-07-31*
+*Integration audit: 2026-07-31 (refreshed)*

@@ -1,6 +1,6 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-07-30
+**Analysis Date:** 2026-07-31 (refreshed)
 
 ## Test Framework
 
@@ -28,7 +28,7 @@ npm run test:watch           # Run Vitest in watch mode
 npx playwright test          # Run Playwright tests in tests/
 npx playwright show-report  # Open the Playwright HTML report
 npm run typecheck            # Root TypeScript check
-npm run lint                 # ESLint check
+npm run lint                 # ESLint check (now functional — react-hooks plugin resolved)
 npm run build                # Build admin assets, copy them, then build Next.js
 npm run check                # typecheck + lint + build
 npm run readiness             # Validate deployment environment/configuration
@@ -45,13 +45,17 @@ The root `package.json` owns Vitest and Playwright dependencies and scripts. `ad
 - No admin-panel-specific unit test directory is configured.
 
 **Naming:**
-- Unit files use `*.test.ts` or `*.test.tsx`; current example: `src/__tests__/workflow-transitions.test.ts`.
-- Playwright files use `*.spec.ts`; current examples: `tests/certificate-convert-to-field.spec.ts` and `tests/example.spec.ts`.
+- Unit files use `*.test.ts` or `*.test.tsx`.
+- Playwright files use `*.spec.ts`.
 
-**Current inventory:**
-- One Vitest file with 25 passing assertions covering editorial workflow transitions and author progress.
-- One application-focused Playwright file covering the certificate editor.
-- `tests/example.spec.ts` is the default Playwright example against `playwright.dev`, not a Talikha feature test.
+**Current inventory (5 unit files + 2 E2E specs):**
+- `src/__tests__/workflow-transitions.test.ts` — 25 assertions covering editorial workflow transitions and author progress.
+- `src/__tests__/citation-format.test.ts` — citation formatting logic.
+- `src/__tests__/display-formatting.test.ts` — author-display and journal-presentation formatting (added 2026-07-31).
+- `src/__tests__/publication-preflight-rules.test.ts` — preflight rule evaluation.
+- `src/__tests__/submission-schema.test.ts` — submission Zod schema characterization (added 2026-07-31).
+- `tests/certificate-convert-to-field.spec.ts` — certificate editor interaction (requires running Vite dev server).
+- `tests/example.spec.ts` — default Playwright example against `playwright.dev` (not a Talikha feature test).
 
 ## Test Structure
 
@@ -68,7 +72,7 @@ describe("progressIndexOf", () => {
 - Group related behavior with `describe`.
 - Use one behavior-focused `it` block per assertion group.
 - Prefer deterministic pure-function inputs and explicit expected values.
-- The current unit suite imports production functions directly from `@/lib/editorial-workflow`.
+- The current unit suite imports production functions directly from `@/lib/editorial-workflow`, `@/lib/apa-citation`, `@/lib/author-display`, `@/lib/journal-presentation`, `@/lib/publication-preflight-rules`, and `@/lib/submission`.
 
 **Browser suite organization:**
 - Use `test.describe` for a feature area.
@@ -80,12 +84,12 @@ describe("progressIndexOf", () => {
 **Framework:** No mocking library is configured.
 
 **Current pattern:**
-- Existing Vitest tests do not mock dependencies; they exercise pure workflow logic.
+- Existing Vitest tests do not mock dependencies; they exercise pure workflow logic and schema validation.
 - Existing Playwright tests use a real browser and live local UI rather than API mocks.
 - `src/__tests__/setup.ts` only installs DOM matchers; it does not create fixtures or replace services.
 
 **When adding unit tests:**
-- Prefer direct tests for pure modules such as `src/lib/apa-citation.ts`, `src/lib/author-display.ts`, `src/lib/journal-presentation.ts`, and `admin-panel/src/components/certificates/field-engine.ts`.
+- Prefer direct tests for pure modules such as `src/lib/apa-citation.ts`, `src/lib/author-display.ts`, `src/lib/journal-presentation.ts`, `src/lib/citation-format.ts`, `src/lib/publication-preflight-rules.ts`, and `admin-panel/src/components/certificates/field-engine.ts`.
 - Mock Supabase/client boundaries only when testing server orchestration; keep Zod schemas and pure transformations real.
 - Reset process/environment state and in-memory rate-limit state between tests if those modules become test targets.
 
@@ -105,13 +109,14 @@ describe("progressIndexOf", () => {
 **Requirements:** None enforced. No coverage provider or threshold is configured.
 
 **Current coverage posture:**
-- Automated coverage is narrow: workflow transition logic has unit coverage; most public routes, Supabase operations, auth, payment handling, file uploads, and admin workspaces do not.
+- Automated coverage is narrow but growing: workflow transition logic, citation formatting, display formatting, preflight rules, and submission schema validation have unit coverage.
+- Most public routes, Supabase operations, auth, payment handling, file uploads, and admin workspaces do not have automated tests.
 - `playwright-report/` and `.playwright-cli/` are diagnostic/report artifacts, not coverage output.
 
 ## Test Types
 
 **Unit tests:**
-- Use Vitest for deterministic domain and utility logic. Current scope is `src/lib/editorial-workflow.ts` in `src/__tests__/workflow-transitions.test.ts`.
+- Use Vitest for deterministic domain and utility logic. Current scope covers `src/lib/editorial-workflow.ts`, `src/lib/apa-citation.ts`, `src/lib/citation-format.ts`, `src/lib/author-display.ts`, `src/lib/journal-presentation.ts`, `src/lib/publication-preflight-rules.ts`, and `src/lib/submission.ts`.
 
 **Integration tests:**
 - None detected. Supabase queries and Next route handlers are not currently exercised by an automated integration suite.
@@ -124,10 +129,10 @@ describe("progressIndexOf", () => {
 ## Verification Practices
 
 - `npm run typecheck` currently passes the strict root TypeScript check.
-- `npm run test` currently passes the single Vitest file and all 25 assertions.
-- `npm run lint` is the intended ESLint gate, but the current installed dependency tree reports that `eslint.config.mjs` references `react-hooks/set-state-in-effect` and `react-hooks/purity` without a resolvable `react-hooks` plugin.
+- `npm run test` currently passes 5 Vitest files (workflow transitions, citation format, display formatting, preflight rules, submission schema).
+- `npm run lint` is now functional (the `eslint-plugin-react-hooks` import was resolved on 2026-07-31). Several rules are warnings rather than errors.
 - `npm run build` is the production compile gate for both apps: `build:admin` runs Vite, `copy:admin` places the static admin bundle under `public/admin`, and `next build` compiles the public app.
-- `npm run readiness` is a deployment/configuration gate implemented by `scripts/check-launch-readiness.mjs`; it validates required environment values, explicit boolean flags, launch approvals, URL/config consistency, and production safety checks. It is not a behavior test.
+- `npm run readiness` is a deployment/configuration gate implemented by `scripts/check-launch-readiness.mjs`; it validates required environment values, explicit boolean flags, launch approvals, URL/config consistency, and production safety checks. Known bug: it checks `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` instead of the actual runtime variable names (see CONCERNS.md).
 - Manual browser verification artifacts may be captured under `.playwright-cli/`, but they do not replace repeatable Playwright tests.
 
 ## Common Patterns
@@ -138,15 +143,15 @@ describe("progressIndexOf", () => {
 
 **Error testing:**
 - Current unit tests cover invalid workflow values and terminal/edge states, for example `null`, `undefined`, `""`, unknown progress, and `closed` in `src/__tests__/workflow-transitions.test.ts`.
+- Submission schema tests cover missing fields, invalid file kinds, oversized payloads, and edge-case string inputs.
 - API error response behavior is not currently automated. New route tests should cover malformed input, unauthorized access, unavailable services, state conflicts, and successful responses using the route's public response contract.
 
 **Recommended next coverage targets:**
-- Submission schema and file validation in `src/lib/submission.ts`.
 - Auth/role gates in `src/lib/auth.ts` and `src/lib/admin-api.ts`.
-- Pure citation/author formatting in `src/lib/apa-citation.ts` and `src/lib/author-display.ts`.
 - Public submission progression through `/submit`, including `src/app/api/submissions/init/route.ts` and `src/app/api/submissions/complete/route.ts`.
 - Admin workflow transitions and publication-record gates through the API handlers under `src/app/api/admin/submissions/[id]/`.
+- Rate-limit behavior with and without Redis configuration.
 
 ---
 
-*Testing analysis: 2026-07-30*
+*Testing analysis: 2026-07-31 (refreshed)*

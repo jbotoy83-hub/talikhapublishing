@@ -1,6 +1,6 @@
 # Technology Stack
 
-**Analysis Date:** 2026-07-31
+**Analysis Date:** 2026-07-31 (refreshed)
 
 This is a monorepo with two applications sharing one Supabase backend:
 
@@ -117,4 +117,4 @@ This is a monorepo with two applications sharing one Supabase backend:
 
 ---
 
-*Stack analysis: 2026-07-31*
+*Stack analysis: 2026-07-31 (refreshed)*
