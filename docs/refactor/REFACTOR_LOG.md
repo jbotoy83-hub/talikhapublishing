@@ -120,3 +120,14 @@ Format per entry: date · action · files/area · evidence · result.
 - **Finding:** `/api/admin/dashboard` has **no in-repo callers** — the admin SPA loads `/api/admin/workspace` instead, so it appears to be a legacy endpoint. Per the dead-code rule for routes, it was **secured, not removed**; the owner should confirm whether to keep or delete it.
 - **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS. **Testing limitation:** no integration test exercises this route yet (the integration/e2e suite is blocked on a Supabase dev project); correctness was verified by type-checking the guard wiring and reasoning about the role logic, not by an automated request test.
 - **Result:** Viewers and anonymous callers can no longer read editorial dashboard data. Isolated security fix; `RISK_REGISTER.md` (SEC-1) updated.
+
+### 19. Phase 9 — admin API authorization audit (SEC-3 verified; SEC-8 flagged for owner)
+- **Action:** Audited all 38 `/api/admin/*` route handlers for an authorization guard, cross-referencing the route list against `requireEditorApi`/`requireAdminApi`/`getAdminUser` usage.
+- **Findings:**
+  - **~33 routes are properly role-guarded:** the ~31 handlers using `requireEditorApi`/`requireAdminApi`, plus `accounts` and `audit`, which use `getAdminUser()` but then enforce `role === "admin"` inline (403 otherwise).
+  - **SEC-3 (`workflow-files`) is ALREADY MITIGATED** — both `POST` (line 44) and `DELETE` (line 153) call `requireEditorApi()` + `isApiError`. The 2026-07-30 audit entry was stale; no change made.
+  - **`activity` and `account-setup`** use `getAdminUser()` with no role check, but only ever write the *caller's own* profile/audit record (keyed by `user.id`) — benign self-service, not a vulnerability.
+  - **`logout`** has no guard — appropriate for signing out.
+  - **SEC-8 (NEW, needs owner decision):** `/api/admin/workspace` (the SPA's live data endpoint) and `/api/admin/files/[id]` use `getAdminUser()` with **no role check**, so an authenticated `viewer` can read all editorial data (submissions with author emails + payment metadata, publication records, certificates, media) and download any submission file. All *mutation* endpoints require editor/admin, so viewers cannot change anything; the open question is whether viewers should have **read** access. **Not changed** — this is a role-permission decision (changing it could either close a privilege escalation or break an intended read-only viewer role).
+- **Verification:** read-only audit; no code changed in this step. The SEC-1 fix (entry 18) was already verified.
+- **Result:** Authorization posture documented; SEC-3 closed as already-fixed; SEC-8 raised for owner decision in `RISK_REGISTER.md`.
