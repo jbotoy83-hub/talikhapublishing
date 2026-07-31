@@ -178,3 +178,12 @@ Format per entry: date · action · files/area · evidence · result.
 - **Residual risk (documented in RISK_REGISTER):** a runtime Redis outage still disables limiting until restored. Stronger options (fail closed everywhere / for submissions only, or a Vercel platform limiter) were declined for now.
 - **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → 143 warnings, 0 errors (unchanged); `npm run build` → PASS; `npm run readiness` runs and now flags missing Upstash vars (expected where they are unset).
 - **Result:** Production readiness now requires Redis, and any fail-open is logged. `RISK_REGISTER.md` (SEC-5) updated.
+
+### 25. Phase 9 — SEC-4: reference-only tracking (owner decision: accept, no second factor)
+- **Issue:** `/api/track` returns author-visible events + 1-hour signed manuscript/supporting-file URLs + certificate download URLs to anyone holding a submission reference / tracking number / receipt number (the reference has an 8-hex random suffix and is the only factor).
+- **Options considered:** (1) reference + author email; (2) tiered status-only-unless-email; (3) OTP via email (needs transactional email infra, which is a missing feature); (4) remove file URLs from tracking entirely.
+- **Owner decision:** keep reference-only access to BOTH status and files — no second factor — to preserve the current author experience.
+- **Action taken:** no code change (behavior intentionally preserved). Documented the decision and its mitigation in `RISK_REGISTER.md` (SEC-4 → ACCEPTED with mitigation) and removed SEC-4 from the remaining-debt list.
+- **Mitigation in place:** distributed rate limiting is now mandatory for production (SEC-5: 5 lookups / 15 min per IP via Upstash Redis), which makes brute-forcing the 8-hex reference impractical; tracking responses are `private, no-store`.
+- **Residual risk (accepted):** anyone who obtains or guesses a valid reference can still retrieve that submission's files/certificates. Revisit if references are ever leaked or stronger author authentication becomes a requirement.
+- **Result:** Phase 9 (security review) is complete — all eight SEC items are resolved (six fixed, SEC-3 verified already-fixed, SEC-4 accepted by owner decision with rate-limit mitigation).
