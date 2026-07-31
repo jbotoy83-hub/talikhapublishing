@@ -1,225 +1,227 @@
+<!-- refreshed: 2026-07-31 -->
 # Architecture
 
-**Analysis Date:** 2026-07-30
+**Analysis Date:** 2026-07-31
+
+## System Overview
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              Clients (browser)                             │
+├───────────────────────────────────┬──────────────────────────────────────┤
+│   Public site (Next.js 16 RSC)     │   Admin panel (Vite + React 19 SPA)   │
+│   `src/app/`  `components/`        │   `admin-panel/src/main.tsx`          │
+│   Served at `/`  (localhost:3000)  │   Built → `public/admin/`, served `/admin` │
+└──────────────┬────────────────────┴───────────────┬──────────────────────┘
+               │ RSC reads (anon)                    │ fetch `/api/admin/*` (cookies)
+               │ public writes `/api/*`              │ fetch `/api/journal-store`
+               ▼                                      ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│            Next.js server layer  (route handlers + middleware)            │
+│   `src/proxy.ts` (session refresh + /admin guard)                         │
+│   `src/app/api/**/route.ts`  →  `src/lib/*` (server logic, "server-only") │
+│   `src/lib/admin-api.ts` (auth guards)   `src/lib/auth.ts` (identity)     │
+└──────────────┬───────────────────────────────────────────┬───────────────┘
+               │ anon / service-role clients                │
+               ▼                                             ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│   Supabase  (`src/lib/supabase/` factories)                                │
+│   Postgres (34 tables + functions) · Auth (SSR cookies) · Storage buckets  │
+│   `submission-files` (private) · `editorial-media` (public)                │
+└──────────────────────────────────────────────────────────────────────────┘
+        ▲                                   ▲
+        │ rate limit                        │ bot check
+┌───────┴────────┐                  ┌───────┴──────────────┐
+│ Upstash Redis  │                  │ Cloudflare Turnstile  │
+│ `rate-limit.ts`│                  │ `turnstile.ts`        │
+└────────────────┘                  └───────────────────────┘
+```
+
+## Component Responsibilities
+
+| Component | Responsibility | File |
+|-----------|----------------|------|
+| Middleware / proxy | Refresh Supabase session cookie; redirect unauthenticated `/admin` traffic to login; set no-index/no-store headers | `src/proxy.ts` |
+| Identity resolver | Resolve the current admin user from JWT claims + `profiles`; enforce role; local dev bypass | `src/lib/auth.ts` |
+| API auth guards | `requireEditorApi` / `requireAdminApi` / body + error helpers for route handlers | `src/lib/admin-api.ts` |
+| Supabase clients | Null-guarded client factories (server/browser/public/admin service-role) | `src/lib/supabase/*.ts` |
+| Public content reads | Server-side reads of journals/issues/publications/authors; demo + JSON-store fallbacks | `src/lib/content.ts` |
+| Editorial workflow | Submission state transitions, checklist, payment gating (wraps DB functions) | `src/lib/editorial-workflow-server.ts`, `src/lib/editorial-workflow.ts` |
+| Journal lifecycle | Derives current/submission issues; runs on cron and before reads/writes | `src/lib/journal-lifecycle.ts` |
+| Journal store sync | Persists the admin-edited catalog to `journals`/`issues` + uploads covers | `src/app/api/journal-store/route.ts` |
+| Public submission intake | Validates, rate-limits, Turnstile-checks, creates submission + payment + signed uploads | `src/app/api/submissions/init/route.ts` |
+| Launch gates | Feature flags + production launch assertion | `src/lib/launch.ts` |
+| Admin SPA | Single-page editorial workspace (overview, inbox, journals, certificates, preflight, team) | `admin-panel/src/main.tsx` + `admin-panel/src/components/*` |
+| Admin build bridge | Copies Vite build into `public/admin/` for Next to serve | `scripts/copy-admin-build.mjs` |
 
 ## Pattern Overview
 
-**Overall:** Two-application monorepo: a Next.js App Router site and a Vite/React admin SPA share one Supabase project. The Next.js app owns server rendering, authentication, APIs, and deployment; the admin SPA is compiled into the Next.js app as static `/admin` assets.
+**Overall:** Two-app monorepo. A server-rendered Next.js App Router site plus a client-rendered Vite SPA that talks to Next.js service-role API route handlers, all backed by one Supabase project.
 
 **Key Characteristics:**
-- Public pages are Next.js Server Components under `src/app/(public)/` and read published content through server-side domain helpers.
-- The admin UI is a client-only SPA rooted at `admin-panel/src/main.tsx`; it uses same-origin `fetch` calls and does not contain a Supabase client.
-- Next.js route handlers under `src/app/api/` are the application boundary for mutations, privileged reads, file access, and public form APIs.
-- Supabase provides PostgreSQL, Auth, private object storage, RPC functions, and row-level security; service-role access is confined to server modules.
-- `npm run build` builds the admin app, copies it to `public/admin`, then builds the Next.js app for Vercel.
-
-## System Boundary
-
-```text
-Browser
-  |
-  +--> Next.js public routes: `src/app/(public)/`
-  |       |-- Server Components -> `src/lib/content.ts` -> public Supabase client
-  |       `-- Client components -> public API routes / browser Supabase client when needed
-  |
-  +--> Admin shell: `/admin` -> `public/admin/index.html`
-          |-- Vite bundle from `admin-panel/src/main.tsx`
-          `-- same-origin `/api/admin/*` -> auth guard -> service-role Supabase client
-
-Next.js server / route handlers
-  |-- Auth/session: `src/proxy.ts`, `src/lib/auth.ts`, `src/app/auth/callback/route.ts`
-  |-- Domain logic: `src/lib/`
-  `-- Supabase: `src/lib/supabase/{server,browser,public,admin}.ts`
-
-Supabase project
-  |-- PostgreSQL schema and RLS: `supabase/migrations/`
-  |-- Auth sessions and profiles
-  `-- Private/public storage buckets and signed URLs
-```
-
-## Application Boundaries
-
-### Public Next.js application
-
-- Location: `src/app/`, `src/components/`, `src/lib/`, and root configuration files.
-- Entry: `src/app/layout.tsx` and `src/app/(public)/page.tsx`.
-- Responsibilities: public page rendering, metadata, JSON-LD, feeds, sitemap/robots, public search, submission intake, tracking, certificate access, and all server APIs.
-- Public content reads use `getPublicSupabase()` from `src/lib/supabase/public.ts` and fall back to `src/data/journal-store.json` or `src/data/demo-content.ts` only when the configured launch mode permits it.
-- Server-only modules such as `src/lib/auth.ts`, `src/lib/supabase/admin.ts`, and `src/lib/supabase/public.ts` must not be imported by client components.
-
-### Admin Vite/React application
-
-- Source: `admin-panel/index.html`, `admin-panel/src/main.tsx`, `admin-panel/src/components/`, and `admin-panel/src/lib/`.
-- Responsibilities: authenticated editorial workspace views for submissions, production, scheduling, authors, studies, journals, featured publications, announcements, media, reports, activity, inbox, team accounts, and certificates.
-- `admin-panel/src/main.tsx` is currently the SPA shell and a large view coordinator. View selection is URL state (`?view=...`) mapped to the `workspaceViews` array; it is not a separate Next route or React Router tree.
-- The SPA calls `/api/admin/*` and `/api/journal-store` on the same origin. It has no direct Supabase import; the one root-source import is the shared citation helper `src/lib/apa-citation.ts`.
-- Some non-authoritative UI state is kept in browser storage, including journal catalog edits, local development samples, schedule drafts, certificate editor layouts, and wallpaper preferences. Supabase-backed workspace data remains the production source of truth.
-
-### Production serving boundary
-
-1. `admin-panel/vite.config.ts` uses `/admin/` as the production asset base.
-2. Root `package.json` runs `build:admin`, then `scripts/copy-admin-build.mjs` copies `admin-panel/dist` to `public/admin`.
-3. `next.config.ts` rewrites `/admin` and `/admin/` to `/admin/index.html`.
-4. `src/proxy.ts` protects `/admin` while excluding built admin assets and common static extensions from session interception.
-5. `src/app/admin/login/page.tsx` and `src/app/admin/welcome/page.tsx` are real Next.js pages; the workspace itself is the embedded SPA.
-6. `vercel.json` adds the scheduled `/api/cron/journal-lifecycle` invocation.
+- React Server Components for the public site; client components only where interactivity is needed (`"use client"`).
+- The admin panel is a **static SPA bundled into the Next public folder** and served under `/admin` via rewrites — it is not a Next route. Its data access is entirely through `fetch("/api/admin/...")`.
+- Service-role Supabase client (`getSupabaseAdmin`) is the workhorse for all writes; RLS is effectively bypassed server-side, so authorization is enforced in app code (`src/lib/admin-api.ts`).
+- Null-guarded integration: every Supabase/Redis factory returns `null` when unconfigured, and callers degrade gracefully (demo content / local JSON store / "allow all").
+- Feature-flagged launch: indexing, submissions, and demo content are gated by env vars (`src/lib/launch.ts`).
 
 ## Layers
 
-### Route and presentation layer
+**Route layer (Next.js App Router):**
+- Purpose: URL → handler mapping, layouts, metadata, RSC pages.
+- Location: `src/app/` (route group `(public)` for marketing/content pages, `admin/` for the login/preview shells, `api/` for handlers, plus `auth/callback`, `certificate-access/[token]`, `feed.xml`, `llms.txt`).
+- Contains: `page.tsx`, `layout.tsx`, `route.ts`, `loading.tsx`, `not-found.tsx`, `sitemap.ts`, `robots.ts`, `manifest.ts`.
+- Depends on: `src/lib/*`, `src/components/*`.
+- Used by: browsers (HTML) and the admin SPA (JSON APIs).
 
-- Purpose: define URLs, page composition, loading states, metadata, and browser interactions.
-- Location: `src/app/`, `src/components/`, `admin-panel/src/main.tsx`, and `admin-panel/src/components/`.
-- Public route groups include home, journals/issues, publications, authors, services, editorial standards, FAQ, search, submit, track, privacy, terms, certificate access, feeds, and discovery files.
-- Admin presentation is split between Next auth/setup pages and the embedded Vite SPA.
-- Depends on: domain helpers, client factories, and route handlers.
+**Server logic layer:**
+- Purpose: all business logic, validation, Supabase queries, PDF/citation/certificate generation.
+- Location: `src/lib/` (every file starts with `import "server-only"` where it touches the server).
+- Contains: domain modules (`content.ts`, `submission.ts`, `editorial-workflow-server.ts`, `certificates.ts`, `journal-lifecycle.ts`, `publication-preflight.ts`, `search.ts`, `team-accounts.ts`, etc.).
+- Depends on: `src/lib/supabase/*`, `src/types/database.generated.ts`.
+- Used by: route handlers and RSC pages.
 
-### API and application layer
+**Client/SPA layer:**
+- Purpose: interactive UI. Public site client components in `src/components/`; the entire admin SPA in `admin-panel/src/`.
+- Location: `src/components/` (site), `admin-panel/src/main.tsx` + `admin-panel/src/components/` (admin).
+- Depends on: browser Supabase client (`src/lib/supabase/browser.ts`) for the site; `fetch` to `/api/*` for the admin.
+- Used by: end users and editors.
 
-- Purpose: validate requests, enforce access, orchestrate domain operations, and return HTML, JSON, streams, redirects, or signed-file redirects.
-- Location: `src/app/api/**/route.ts`.
-- Groups: `admin/`, `submissions/`, `publications/`, `track/`, `journal-store/`, `announcements/`, `search/`, and `cron/journal-lifecycle/`.
-- Admin routes use `src/lib/admin-api.ts` for editor mutations or `getAdminUser()` for authenticated reads and session/account operations.
-- Public submission routes use Zod schemas, rate limits, optional Cloudflare Turnstile verification, and private storage validation.
-
-### Domain and workflow layer
-
-- Purpose: hold reusable business rules and database orchestration outside route handlers.
-- Location: `src/lib/`.
-- Important modules: `content.ts`, `submission.ts`, `editorial-workflow.ts`, `editorial-workflow-server.ts`, `journal-lifecycle.ts`, `certificates.ts`, `certificate-editor.ts`, `certificate-import.ts`, `certificate-security.ts`, `file-storage.ts`, `receipt-pdf.tsx`, `search.ts`, and `team-accounts.ts`.
-- Workflow transitions use the ordered stages in `src/lib/editorial-workflow.ts`; server-side transition and publication behavior is implemented in `src/lib/editorial-workflow-server.ts` and related API routes.
-- Journal synchronization is invoked by public journal reads and the journal-store route through `src/lib/journal-lifecycle.ts`.
-
-### Persistence layer
-
-- Purpose: store editorial records, publication records, user profiles, audit/workflow events, certificate data, journal metadata, and private files.
-- Schema source: 36 timestamped SQL migrations in `supabase/migrations/`, plus `supabase/seed.sql`.
-- Type contract: `src/types/database.generated.ts`, generated from the linked public schema by `npm run db:types`.
-- Clients: `src/lib/supabase/server.ts` for SSR cookies, `browser.ts` for browser-authenticated client use, `public.ts` for stateless public reads, and `admin.ts` for server-only service-role operations.
-- Storage access is through Supabase Storage. Private submission and certificate files are served through short-lived signed URLs or server-streamed responses.
+**Data layer:**
+- Purpose: persistence and auth.
+- Location: Supabase (Postgres/Auth/Storage); migrations in `supabase/migrations/`.
+- Depends on: nothing in-repo (external).
+- Used by: the server logic layer via the client factories.
 
 ## Data Flow
 
-### Public page render
+### Primary Request Path — public page read
 
-1. A request enters Next.js and passes through `src/proxy.ts`; public paths are allowed through while the session is refreshed when Supabase is configured.
-2. A Server Component under `src/app/(public)/` calls a helper such as `getPublications()`, `getJournals()`, or `getAuthors()` from `src/lib/content.ts`.
-3. The helper reads published rows through `src/lib/supabase/public.ts`, maps database rows to `src/lib/types.ts`, and uses local fallback data only if the public client is unavailable or a read fails.
-4. `src/app/(public)/layout.tsx` adds shared header/footer, announcements, privacy controls, JSON-LD, and cached journal navigation.
-5. Client components hydrate for search, forms, viewers, consent, tracking, and other interactions.
+1. Request hits middleware → session refreshed, headers set (`src/proxy.ts:28`).
+2. RSC page/layout runs; `assertLaunchConfiguration()` validates launch gates (`src/app/layout.tsx:71`).
+3. Page calls a `src/lib/content.ts` getter (e.g. `getPublications`, `getJournals`).
+4. `content.ts` reads via `getPublicSupabase()`/`getSupabaseAdmin()`, falling back to `src/data/journal-store.json` and `src/data/demo-content.ts` when Supabase is absent or demo mode is on (`src/lib/content.ts:46`).
+5. Rendered HTML returned.
 
-### Public submission
+### Admin Path — editorial write
 
-1. `src/app/(public)/submit/page.tsx` loads journals and submission targets for `src/components/submission-form.tsx`.
-2. The form sends validated metadata and file descriptors to `src/app/api/submissions/init/route.ts`.
-3. The init route checks launch state, rate limits, optional Turnstile, the journal/issue target, and payment metadata; it creates a submission in `uploading` state and returns signed upload tokens for private `submission-files` storage.
-4. The browser uploads each file directly to the signed storage path.
-5. The form calls `src/app/api/submissions/complete/route.ts`; the route verifies object existence, size/type rules, file signatures, and the expected path, then creates `submission_files`, changes the submission to `submitted`, and emits initial author-visible workflow events.
-6. `src/components/processing-overlay.tsx` presents the four fixed processing stages while this request is pending; it is presentation state and does not replace server workflow state.
+1. Editor loads `/admin`; middleware redirects to `/admin/login` if no session (`src/proxy.ts:31`).
+2. SPA (`admin-panel/src/main.tsx`) calls `fetch("/api/admin/...")` with `credentials: "same-origin"`.
+3. Route handler runs an auth guard first: `const user = await requireEditorApi(); if (isApiError(user)) return user;` (`src/lib/admin-api.ts:7`).
+4. Body parsed/validated: `readJsonBody` + a Zod schema (`src/lib/admin-api.ts:29`).
+5. Server logic calls `getSupabaseAdmin()` (service-role) and often a DB function (e.g. `transition_submission`) — see `src/app/api/admin/submissions/[id]/advance/route.ts`.
+6. JSON response (`{ ok, data }` or `{ error }`) returned to the SPA.
 
-### Admin workspace hydration
+### Public Submission Path
 
-1. `admin-panel/src/main.tsx` records an `admin_app_opened` activity event through `/api/admin/activity`.
-2. It loads the unified read model from `src/app/api/admin/workspace/route.ts`.
-3. That route resolves the authenticated admin user and reads submissions, publication records, journals, issues, authors, certificate templates/records, and media with the service-role client.
-4. The SPA maps the response into its local view types, derives counts and badges from current workflow stages, and uses `/api/admin/files/[id]` for protected file previews/downloads.
-5. A `401` response causes the SPA to return to `/admin/login` with the current location encoded as `next`.
+1. SPA/form POSTs to `/api/submissions/init` (`src/app/api/submissions/init/route.ts:33`).
+2. Gates: `isSubmissionsEnabled()` → rate limit (`allowRequest`) → body size → Zod `submissionInitSchema.safeParse` → honeypot (`input.website`) → Turnstile (`verifyTurnstileToken`).
+3. Validates journal/issue are still open via service-role reads.
+4. Idempotency check on `idempotency_key`; inserts `submissions` + `payments`; creates signed upload URLs for the private `submission-files` bucket.
+5. Client uploads files directly to Supabase Storage with the signed tokens, then `/api/submissions/complete` finalizes.
 
-### Admin editorial mutation
+### Journal Catalog Sync Path
 
-1. A workspace view submits JSON, `FormData`, or a file request to an endpoint under `src/app/api/admin/`.
-2. Mutating routes call `requireEditorApi()` from `src/lib/admin-api.ts`; authenticated read/session routes use `getAdminUser()` and administrator-only routes also check `user.role`.
-3. The handler validates request data with Zod or explicit type/size checks, invokes domain logic, and writes through `getSupabaseAdmin()`.
-4. Workflow changes use `src/lib/editorial-workflow-server.ts` or the database `transition_submission` RPC, update audit/workflow events, and may create receipts, publication records, certificates, or signed files.
-5. The SPA updates its local state, URL view, counts, and visible status badges from the response or a refreshed read model.
+1. Admin edits the catalog in `JournalsView` (`admin-panel/src/main.tsx`) and clicks save → `publishCatalogToSite` POSTs to `/api/journal-store`.
+2. `POST /api/journal-store` (`src/app/api/journal-store/route.ts:213`) upserts `journals` and `issues`, uploads base64 covers to the `editorial-media` bucket, records `media_assets`, and sets `current_issue_id`/`submission_issue_id`.
+3. Public reads pick up the new catalog through `content.ts` (DB-first) on the next request.
 
-### Journal management synchronization
-
-1. `admin-panel/src/main.tsx` loads the catalog from `/api/journal-store` and mirrors a safe local copy in `localStorage` for responsive editing.
-2. `src/app/api/journal-store/route.ts` reads canonical journals/issues from Supabase when available and maps editorial metadata into the admin catalog shape.
-3. Journal and issue edits are sent back to the same route; images are uploaded to the `editorial-media` bucket and metadata is recorded in `media_assets`.
-4. `src/data/journal-store.json` is a development fallback, not the production authority.
-
-### Author tracking and response
-
-1. `src/app/(public)/track/page.tsx` calls `src/app/api/track/route.ts` with a reference, tracking number, or receipt number.
-2. The route resolves the record through the service-role client, assembles public-safe workflow events, signed files, requests, and certificate links, and returns private no-store JSON.
-3. Author responses go through `src/app/api/track/requests/respond/route.ts`, which rate-limits the request and invokes the `respond_to_author_request` database RPC.
-
-## Authentication and Authorization
-
-### Sign-in flow
-
-1. `/admin/login` renders `src/components/admin-login-form.tsx`.
-2. Supabase Auth sends the callback to `src/app/auth/callback/route.ts`, which exchanges the code for a session using `src/lib/supabase/server.ts` and redirects to the requested safe path.
-3. `src/proxy.ts` refreshes the cookie session and redirects unauthenticated `/admin` page requests to `/admin/login?next=...`.
-4. `src/lib/auth.ts` reads JWT claims and the `profiles` row, resolves `admin`, `editor`, or `viewer`, and exposes `accessViews` and account-setup state.
-
-### Enforcement points
-
-- Page protection is applied in `src/proxy.ts`; `/admin/login` and `/admin/welcome` are allowed through the page guard.
-- API protection is handler-level because `/api/admin/*` is outside the `/admin` page prefix. Of the 32 current admin route handlers, 23 use `requireEditorApi()`, while authenticated read/account/file routes use `getAdminUser()` and `audit` additionally requires the `admin` role. `/api/admin/logout` intentionally only signs out the session.
-- Service-role access is server-only in `src/lib/supabase/admin.ts`; the admin SPA must call an API route instead of importing Supabase.
-- Development-only local bypass exists in `src/lib/auth.ts` when not in production and Supabase is unavailable or `LOCAL_ADMIN_BYPASS=true`.
-- `configuredAdminEmails()` in `src/lib/auth.ts` combines the configured `ADMIN_EMAILS` allowlist with the current owner email and can promote a matching profile to `admin`.
+**State Management:**
+- Public site: server state in Supabase; RSC reads; minimal client state.
+- Admin SPA: local React state in `main.tsx`; the journal catalog is also mirrored to `localStorage` (`talikha-journal-catalog-v2`) as an offline cache, with the server treated as authoritative (`admin-panel/src/main.tsx:796`).
 
 ## Key Abstractions
 
-**Supabase client factories:** `src/lib/supabase/server.ts`, `browser.ts`, `public.ts`, `admin.ts`, and `config.ts` select the appropriate credentials and execution context. They return `null` when required configuration is absent so callers can provide a fallback or a clear 503 response.
+**Supabase client factories:**
+- Purpose: centralize client creation + null-guarding so missing env never crashes a request.
+- Examples: `src/lib/supabase/server.ts`, `admin.ts`, `browser.ts`, `public.ts`, `config.ts`.
+- Pattern: read env → return `SupabaseClient | null`; callers branch on `null`.
 
-**Admin guards:** `src/lib/auth.ts` owns user/role resolution and page redirects; `src/lib/admin-api.ts` owns editor API authorization, JSON parsing, and common error mapping.
+**API guard + response helpers:**
+- Purpose: uniform authz and error shaping across ~40 admin route handlers.
+- Examples: `src/lib/admin-api.ts` (`requireEditorApi`, `requireAdminApi`, `isApiError`, `readJsonBody`, `apiErrorResponse`).
+- Pattern: guard returns `AdminUser | NextResponse`; caller short-circuits on `isApiError`.
 
-**Workflow stages:** `src/lib/editorial-workflow.ts` defines canonical stages, progress boundaries, public labels, and activity descriptions. `src/lib/editorial-workflow-server.ts` applies them to database records and audit events.
+**Editorial workflow / DB functions:**
+- Purpose: keep submission state transitions transactional in Postgres.
+- Examples: `src/lib/editorial-workflow-server.ts` wraps DB functions like `transition_submission`, `confirm_payment_and_start_review`.
+- Pattern: app code calls a named Postgres function rather than ad-hoc UPDATEs.
 
-**Content mapping:** `src/lib/content.ts` translates Supabase publication, journal, issue, and author rows into the public model types in `src/lib/types.ts`.
-
-**Generated database types:** `src/types/database.generated.ts` is the TypeScript contract for the 36-migration Supabase schema and must be regenerated rather than hand-edited.
+**Launch gates:**
+- Purpose: prevent premature production exposure.
+- Examples: `src/lib/launch.ts` (`isIndexingEnabled`, `isSubmissionsEnabled`, `assertLaunchConfiguration`).
+- Pattern: boolean env readers + a hard throw in the root layout when indexing is misconfigured.
 
 ## Entry Points
 
-**Next.js site:** `src/app/layout.tsx` loads fonts, metadata, launch assertions, and global styles; `src/app/(public)/page.tsx` is the public home route.
+**Public site root layout:**
+- Location: `src/app/layout.tsx`.
+- Triggers: every public route.
+- Responsibilities: fonts (Inter/Literata via `next/font`), metadata/OG/robots, launch assertion, global styles.
 
-**Admin server entry:** `src/app/admin/login/page.tsx` is the login page; `src/app/admin/welcome/page.tsx` handles first-account setup; `src/proxy.ts` is the session/page guard.
+**Middleware:**
+- Location: `src/proxy.ts` (exported `proxy` + `config.matcher`).
+- Triggers: all matched requests.
+- Responsibilities: Supabase session refresh, `/admin` auth redirect, security/SEO headers.
 
-**Admin SPA entry:** `admin-panel/index.html` mounts `admin-panel/src/main.tsx`, which mounts React with `createRoot` and owns the workspace shell.
+**Admin SPA bootstrap:**
+- Location: `admin-panel/src/main.tsx` (mounted from `admin-panel/index.html`).
+- Triggers: loading `/admin`.
+- Responsibilities: renders the sidebar shell and all workspaces; imports shared citation logic from `../../src/lib/`.
 
-**Submission entry:** `src/components/submission-form.tsx` starts the public intake flow; `src/app/api/submissions/init/route.ts` and `complete/route.ts` are the server boundary.
-
-**Scheduled entry:** `src/app/api/cron/journal-lifecycle/route.ts` is invoked by the Vercel cron in `vercel.json`.
-
-**Verification entry points:** `src/__tests__/` contains Vitest unit tests; `tests/` contains Playwright browser tests configured by `playwright.config.ts`.
-
-## Error Handling
-
-**Strategy:** Validate at the boundary, return explicit HTTP responses, use null-guarded clients, and keep user-facing fallbacks readable.
-
-**Patterns:**
-- `src/lib/admin-api.ts` uses `readJsonBody()`, `apiErrorResponse()`, and `isApiError()` for consistent API short-circuiting.
-- Public and admin routes return `400` for invalid input, `401`/`403` for access failures, `409` for stale workflow/journal targets, `429` for rate limits, `503` for missing backend configuration, and `500` for unexpected storage/database failures.
-- Storage routes delete or reject invalid uploads and only expose private files through signed redirects or controlled streams.
-- Public content helpers log read failures and fall back to safe local data; admin workspace failures return `connected: false` or a 503 response instead of fabricating production data.
-
-## Cross-Cutting Concerns
-
-**Validation:** Zod schemas and explicit checks in `src/lib/submission.ts`, `src/lib/admin-api.ts`, and route handlers.
-
-**Authentication:** Supabase Auth SSR cookies, session refresh in `src/proxy.ts`, role resolution in `src/lib/auth.ts`, and route-level guards.
-
-**Security:** CSP and security headers in `next.config.ts`; private/no-store admin responses; Turnstile and rate limiting for public intake; private storage with signed access; audit events for administrative activity and file access.
-
-**Caching:** React `cache()` and page revalidation in public content/layout helpers; explicit `no-store` for admin/workflow responses; public search uses short shared cache headers in `src/app/api/search/route.ts`.
-
-**Deployment:** Vercel hosts the single Next.js deployment; `vercel.json` supplies the journal lifecycle cron; the admin Vite bundle is copied into the Next build output.
+**API route handlers:**
+- Location: `src/app/api/**/route.ts`.
+- Triggers: fetches from the SPA and public forms, plus the Vercel cron.
+- Responsibilities: all server-side mutations and privileged reads.
 
 ## Architectural Constraints
 
-- Keep the admin SPA on same-origin `/api/admin/*` endpoints; do not add a browser Supabase client to `admin-panel/`.
-- Keep service-role modules server-only and out of client components.
-- Treat `public/admin/` and `admin-panel/dist/` as build output; edit `admin-panel/src/` instead.
-- Treat Supabase-backed workspace data and database workflow stages as authoritative; localStorage samples are for development/UI continuity only.
-- Only `/admin` and `/admin/` are rewrites to the SPA shell; login and welcome remain Next pages.
-- Keep public routes in `src/app/(public)/` and public shared UI in `src/components/`; the separate root `components/` directory is not the active Next alias target.
+- **Threading:** Single-threaded Node event loop; no worker threads in app code. PDF workers (`pdfjs-dist`) run client-side.
+- **Global state:** The admin SPA keeps a module-level mutable `JOURNAL_CATALOG` singleton (`admin-panel/src/main.tsx:807`) synced to `localStorage` and a `talikha:catalog` CustomEvent. The rate-limiter cache is a module-level `Map` (`src/lib/rate-limit.ts:8`) — does not survive across serverless instances.
+- **Cross-app import:** The admin SPA imports shared modules from the parent repo via relative paths (`../../src/lib/apa-citation`, `../../src/lib/citation-format`, `../../src/lib/types`) and a Vite alias for `@/components/icons` → `../src/components/icons`. This couples the two apps at build time.
+- **React dedupe:** Admin Vite aliases `react`/`react-dom` to the root `node_modules` to avoid two React copies (`admin-panel/vite.config.ts:13`).
+- **Service-role trust boundary:** Because `getSupabaseAdmin` bypasses RLS, every privileged handler MUST call an `admin-api.ts` guard. Missing a guard = unauthenticated data access (see CONCERNS.md for an existing gap).
+- **Circular imports:** None detected at the module level; the cross-app imports are one-directional (admin → root `src/lib`).
+
+## Anti-Patterns
+
+### Admin route without an auth guard
+
+**What happens:** A `/api/admin/*` handler reads/writes via `getSupabaseAdmin` without calling `requireEditorApi`/`requireAdminApi`.
+**Why it's wrong:** The service-role client bypasses RLS, so the endpoint becomes publicly callable. `/api/admin/dashboard` currently has this gap (CONCERNS.md).
+**Do this instead:** Start every handler with the guard pattern in `src/app/api/admin/submissions/[id]/advance/route.ts:6` — `const user = await requireEditorApi(); if (isApiError(user)) return user;`.
+
+### Importing server-only logic into the admin SPA bundle
+
+**What happens:** Reaching into `src/lib/*` modules that `import "server-only"` or touch `process.env` / Node APIs from `admin-panel/src/`.
+**Why it's wrong:** `server-only` throws when bundled for the browser, and Node APIs break the SPA build.
+**Do this instead:** Only import pure, browser-safe shared modules (e.g. `src/lib/apa-citation.ts`, `src/lib/citation-format.ts`, `src/lib/types.ts`). New shared logic must stay free of `server-only`/Node imports — see how `admin-panel/src/main.tsx:5` imports citations.
+
+### Treating the in-memory rate limiter as production security
+
+**What happens:** Relying on `src/lib/rate-limit.ts` alone to throttle abuse.
+**Why it's wrong:** The limiter is per-instance memory (plus optional Upstash). On Vercel serverless, counters reset per invocation/region, and with no Upstash config it returns `true` for everything.
+**Do this instead:** Ensure `UPSTASH_REDIS_REST_URL`/`TOKEN` are set in production; treat the limiter as one layer alongside Turnstile and DB constraints.
+
+## Error Handling
+
+**Strategy:** Fail soft on reads, fail explicit on writes. Integration clients return `null` when unconfigured; route handlers return structured JSON errors.
+
+**Patterns:**
+- Route handlers wrap logic in `try/catch` and return `apiErrorResponse(error, fallback)` which maps `ZodError` → 400 with the first issue message (`src/lib/admin-api.ts:41`).
+- Auth failures return `401`/`403` `NextResponse` from the guards; callers detect via `isApiError`.
+- Public content reads swallow errors and fall back to defaults (`src/lib/content.ts:51` catch → `DEFAULT_JOURNAL_STORE`).
+- Launch misconfiguration throws hard in the root layout (`src/lib/launch.ts:88`) to block indexing.
+- The admin SPA surfaces server `error` strings in inline messages (e.g. journal sync failures in `admin-panel/src/main.tsx`).
+
+## Cross-Cutting Concerns
+
+**Logging:** Minimal — bracketed `console.error` tags in sync paths; an `audit_events` table for administrative actions written by handlers.
+**Validation:** Zod `safeParse`/`parse` at every API boundary (`src/lib/submission.ts`, `src/lib/admin-api.ts`); DB-level constraints + Postgres functions for invariants.
+**Authentication:** Supabase SSR cookies refreshed in `src/proxy.ts`; identity + role resolved in `src/lib/auth.ts`; per-handler authorization in `src/lib/admin-api.ts`.
+**Security headers:** Centralized in `next.config.ts` (CSP, HSTS, X-Frame-Options DENY, Permissions-Policy, COOP) plus `poweredByHeader: false`.
+**Feature flags:** Env-driven gates in `src/lib/launch.ts` control indexing, submissions, demo content, and AI-training consent.
 
 ---
 
-*Architecture analysis: 2026-07-30*
+*Architecture analysis: 2026-07-31*
