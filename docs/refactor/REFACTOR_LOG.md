@@ -106,3 +106,9 @@ Format per entry: date · action · files/area · evidence · result.
 - **Action:** Added `"tmp/**"` to `globalIgnores` in `eslint.config.mjs`. The `tmp/` directory is gitignored scratch space; without an ESLint ignore, scratch scripts placed there (e.g. a temporary `.cjs`) are picked up by `eslint .` and crash the flat-config run with a fatal exit 2 (observed during the component-excision work).
 - **Verification:** `npm run lint` → exit 0, **144 warnings**, 0 errors (unchanged; no `tmp/` files currently linted).
 - **Result:** Scratch files in `tmp/` no longer break lint runs; **no behavior change.**
+
+### 17. Phase 4 — remove superseded ProductionWorkspace component (mechanical cleanup)
+- **Action:** Removed the dead `ProductionWorkspace` component (v1) from `admin-panel/src/main.tsx` — a compact 4-line function (its JSX is a single line) superseded by `ProductionWorkspaceV2`. Used a content-anchored excision from `function ProductionWorkspace({ submissions, onOpenSubmission }` to `function ProductionViewTabs({ view, counts }`, which removes only `ProductionWorkspace` and **preserves the shared `ProductionViewTabs` helper** (defined immediately after, used by the live `ProductionWorkspaceV2`).
+- **Why the earlier attempt failed (now corrected):** the first attempt used `function ProductionWorkspaceV2` as the end marker, which wrongly swept up `ProductionViewTabs` (defined between the two) and broke the live V2 (`react/jsx-no-undef`). Using `ProductionViewTabs` as the end marker fixes this.
+- **Verification:** `npm run typecheck --prefix admin-panel` → 0 errors; `npm run lint` → **143 warnings** (down from 144), **0 errors**, **0 `jsx-no-undef`** (confirms `ProductionViewTabs` intact); `npm run test` → 89 passed; `npm run build` → PASS. Diff: 5 deletions, clean seam.
+- **Result:** `ProductionWorkspace` (v1) removed; `ProductionViewTabs` and `ProductionWorkspaceV2` preserved; **no behavior change.** Phase 4 mechanical cleanup is now complete.

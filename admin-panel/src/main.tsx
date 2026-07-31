@@ -1634,11 +1634,6 @@ function JournalsView({ submissions, publicationRecords, onOpenSubmission, onUpd
   );
 }
 
-function ProductionWorkspace({ submissions, onOpenSubmission }: { submissions: EditorialSubmission[]; onOpenSubmission: (id: string) => void }) {
-  const production = submissions.filter((submission) => ["Accepted", "Scheduled for publishing", "Published"].includes(submission.status));
-  return <section className="studies-page"><div className="studies-hero"><div><span>Editorial workspace</span><h1>Publication production</h1><p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p></div><div className="hero-shapes"><i /><i /><i /></div></div><div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">{production.map((submission) => <button key={submission.id} onClick={() => onOpenSubmission(submission.id)} className="flex w-full items-center justify-between gap-5 border-b border-slate-100 px-5 py-4 text-left last:border-0 hover:bg-slate-50"><span><strong className="block text-sm text-slate-900">{submission.title}</strong><small className="mt-1 block text-xs text-slate-500">{submission.author} · {submission.id}</small></span><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">{submission.status}</span></button>)}{!production.length && <p className="p-10 text-center text-sm text-slate-500">No shared production records are available.</p>}</div></section>;
-}
-
 function ProductionViewTabs({ view, counts }: { view: "Needs action" | "Approval" | "Published" | "Closed"; counts: Record<"Needs action" | "Approval" | "Published" | "Closed", number> }) {
   const tabs = [
     { title: "Needs action", icon: Inbox, count: counts["Needs action"] },
