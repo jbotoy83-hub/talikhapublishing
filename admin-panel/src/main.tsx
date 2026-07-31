@@ -2031,17 +2031,6 @@ function StudiesView({ submissions, publicationRecords, onOpenRecord }: { submis
     </section>
   );
 }
-const submissionStatusOrder: SubmissionStatus[] = [
-  "New",
-  "In progress",
-  "Review",
-  "Revise",
-  "Accepted",
-  "For approval",
-  "Scheduled for publishing",
-  "Published",
-  "Rejected",
-];
 
 function statusActions(status: SubmissionStatus) {
   const actions: Record<
@@ -2292,10 +2281,6 @@ function LegacySubmissionReview({
   const middleInitial = author.middleInitial?.trim() || nameParts.slice(1, -1).map((part) => part.replace(/[^a-z]/gi, "").charAt(0).toUpperCase()).filter(Boolean).map((initial) => `${initial}.`).join(" ");
   const middleName = middleInitial || "";
   const lastName = author.surname?.trim() || (nameParts.length > 1 ? nameParts.at(-1) || "" : "");
-  const updateNamePart = (key: "firstName" | "middleInitial" | "surname", value: string) => {
-    const next = { firstName, middleInitial: middleName === "—" ? "" : middleName, surname: lastName, [key]: value };
-    setAuthors((current) => current.map((item, index) => index === activeAuthor ? { ...item, ...next, name: [next.firstName, next.middleInitial, next.surname].filter(Boolean).join(" ") } : item));
-  };
   const updateAuthor = (key: keyof ReviewAuthor, value: string) => {
     setAuthors((current) =>
       current.map((item, index) =>
@@ -3022,19 +3007,6 @@ function LegacySubmissionReview({
       </Dialog>
     </section>
   );
-}
-function publicationCitation(
-  submission: EditorialSubmission,
-  authors: ReviewAuthor[],
-  record: PublicationRecord,
-) {
-  const names = authors.map((author) => author.name).filter(Boolean);
-  const citation = createApa7JournalCitation({ authors: names.length ? names : [submission.author], title: submission.title, year: new Date(submission.submittedAt).getFullYear() || new Date().getFullYear(), journalTitle: record.journal, volume: record.volume, issue: record.issue, pages: record.pageStart && record.pageEnd ? `${record.pageStart}–${record.pageEnd}` : "", doi: record.doi });
-  const authorList = citation.author_text;
-  return citation.formatted_citation;
-  const pages = record.pageStart && record.pageEnd ? `, ${record.pageStart}–${record.pageEnd}` : "";
-  const doi = record.doi ? ` https://doi.org/${record.doi}` : "";
-  return `${authorList || submission.author} (2026). ${submission.title}. ${record.journal}, ${record.volume}(${record.issue})${pages}.${doi}`;
 }
 
 function ApaCitationPreview({ submission, authors, record }: { submission: EditorialSubmission; authors: ReviewAuthor[]; record: PublicationRecord }) {
@@ -6281,7 +6253,6 @@ function OverviewDashboard({
   const yTicks: number[] = [];
   for (let value = yMax; value >= 0; value -= yStep) yTicks.push(value);
   if (yTicks[yTicks.length - 1] !== 0) yTicks.push(0);
-  const currentMonthCount = buckets[buckets.length - 1].count;
   const publishedCount = publishedStageCount || publicationRecords.filter((record) => record.status === "Published").length;
   const issueCount = new Set(publicationRecords.map((record) => `${record.journal}-${record.volume}-${record.issue}`)).size;
   const authorCount = realData?.totalAuthors ?? new Set(submissions.map((submission) => submission.author)).size;

@@ -74,3 +74,18 @@ Format per entry: date · action · files/area · evidence · result.
 - **Deliberately deferred (not in this batch):** the ~18 unused components/functions inside the 7,000-line `admin-panel/src/main.tsx` monolith (e.g. `ProductionWorkspace`, `ScheduleView`, `CertificatesWorkspace`, `markForApproval`, `publishSubmission`) — these require rigorous per-item dead-code verification (§7.2) and may be intentional WIP; and the `icon.tsx` `MinusIcon` import (icon registries often keep intentional inventory). Tracked for Phase 5/8.
 - **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → **152 warnings** (down from 160), no-unused-vars **51 → 43**, 0 errors; `npm run test` → 89 passed; `npm run build` → PASS.
 - **Result:** 8 dead symbols removed across 6 files; **no behavior change.**
+
+### 13. Phase 4 — remove dead local declarations from the admin monolith (mechanical cleanup)
+- **Action:** Removed 4 never-referenced local declarations from `admin-panel/src/main.tsx` (29 lines), each confirmed dead by a full reference grep and verified side-effect-free (no orphaned imports/variables):
+  - `submissionStatusOrder` — unused module-level status array.
+  - `updateNamePart` — unused local helper in `LegacySubmissionReview` (`middleName`/`lastName` remain used by the JSX, so not orphaned).
+  - `publicationCitation` — unused citation formatter that also contained unreachable code after an early `return` (the `createApa7JournalCitation` import stays used by `ApaCitationPreview`, so not orphaned).
+  - `currentMonthCount` — unused computed constant in `OverviewDashboard`.
+- **Verification:** `npm run typecheck` → 0 errors; `npm run lint` → **148 warnings** (down from 152), no-unused-vars **43 → 39**, 0 errors, no new warnings; `npm run test` → 89 passed; `npm run build` → PASS.
+- **Deferred for owner decision (NOT removed — see stop-condition §16):** the remaining monolith dead code needs judgment because it is whole components / business actions / prop-threading rather than trivial locals:
+  - Deprecated components superseded by v2s: `ProductionWorkspace` (→ `ProductionWorkspaceV2`), `ScheduleView` (→ `FunctionalScheduleView`); plus unused `CertificatesWorkspace` and `ApaCitationPreview`.
+  - Never-called business-action functions: `openPublicationRecord`, `markForApproval`, `publishSubmission`.
+  - Unused prop destructures in a prop-threading chain (the prop is used elsewhere): `onOpenProductionList`, `onReturnToSubmissions`, `onOpenSubmission`, `isConnected`.
+  - `_discardedPdf` is an **intentional** rest-destructure discard idiom — must NOT be removed; better handled by an eslint `varsIgnorePattern: "^_"` config tweak.
+  - `workspaceMenuOpen` `useState` (value and setter both unused).
+- **Result:** 4 dead declarations removed; **no behavior change.** Deferred items listed for owner review.
