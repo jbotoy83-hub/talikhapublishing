@@ -507,7 +507,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
 
   // Snapshot the template once when text editing begins, so a whole typing session
   // collapses into a single undo step (and per-keystroke updates skip snapshotting).
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- templateRef is read intentionally without being a dep
+  // templateRef is read intentionally without being a dep
   useEffect(() => {
     if (editingBlockId && !prevEditingRef.current && templateRef.current) {
       setUndoStack((s) => [...s.slice(-29), JSON.stringify(templateRef.current)]);

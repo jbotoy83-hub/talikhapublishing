@@ -4339,8 +4339,8 @@ function FunctionalScheduleView({ createRequested = false, onCreateOpened }: { c
     setEditing({ ...emptyTask, id: `task-${Date.now()}` });
     setError("");
   };
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- opens editor dialog in response to prop signal; not a state mirror
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- openNew/onCreateOpened are stable callbacks recreated each render; effect intentionally fires only when createRequested flips
+  // opens editor dialog in response to prop signal; not a state mirror
+  // openNew/onCreateOpened are stable callbacks recreated each render; effect intentionally fires only when createRequested flips
   useEffect(() => {
     if (!createRequested) return;
     openNew();
@@ -6970,8 +6970,8 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
   const effectiveRole = previewRole;
   const isAdmin = effectiveRole === "admin";
   const allowedViews = isAdmin ? null : (assignedViews || ["overview", "schedule", "authors", "studies", "reports", "certificates", "production", "media", "inbox"]).map((view) => viewIndex(view));
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- restores URL view on role change; reads window.location
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- allowedViews is derived from isAdmin (the dep); including it would cause infinite loop
+  // restores URL view on role change; reads window.location
+  // allowedViews is derived from isAdmin (the dep); including it would cause infinite loop
   useEffect(() => {
     const locationView = viewFromLocation();
     if (!allowedViews || allowedViews.includes(locationView)) setActiveState(locationView);
@@ -7087,7 +7087,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
         window.sessionStorage.removeItem("talikha-admin-workflow-notice");
       }
     } catch { /* The workflow transition remains complete if storage is unavailable. */ }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- merges localStorage samples on mount; reads window.localStorage
+    // merges localStorage samples on mount; reads window.localStorage
     setEditorialSubmissions((records) => mergeLocalSamples(records));
     const syncLocalSamples = (event: StorageEvent) => {
       if (event.key === localSampleKey) setEditorialSubmissions((records) => mergeLocalSamples(records.filter((record) => !record.id.startsWith("TP-"))));
@@ -7218,8 +7218,8 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     setSelectedSubmissionId(null);
     setSubmissionsOpen(false);
   };
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- deep-link resolver; reads URL params after data loads, cannot run during render
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable; effect re-runs when submissions arrive or ready flag flips
+  // deep-link resolver; reads URL params after data loads, cannot run during render
+  // setters are stable; effect re-runs when submissions arrive or ready flag flips
   useEffect(() => {
     if (!submissionsReady) return;
     const params = new URLSearchParams(window.location.search);
