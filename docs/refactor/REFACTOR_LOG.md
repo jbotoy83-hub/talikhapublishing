@@ -47,3 +47,8 @@ Format per entry: date · action · files/area · evidence · result.
 ### 8. Established baseline documentation
 - **Action:** Created `docs/refactor/` and authored the Phase 0 baseline documents: `BASELINE_REPORT.md`, `REFACTOR_LOG.md`, `RISK_REGISTER.md`, `REFACTOR_PLAN.md`, `CODEBASE_MAP.md`, `TEST_MATRIX.md`, `PERFORMANCE_BASELINE.md`.
 - **Result:** Phase 0 deliverables complete; ready to proceed to Phase 2/3.
+
+### 9. Phase 3 — submission schema characterization tests (T-SUB-1)
+- **Action:** Added `src/__tests__/submission-schema.test.ts` characterizing the current behavior of `submissionInitSchema`, `submissionCompleteSchema`, and `submissionFileRules` in `src/lib/submission.ts`. Coverage: idempotency-key UUID requirement; working-title trim + min/max; `publicationType` enum (case-sensitive); `consent` literal-true; `website` honeypot (must be empty); author email + `authorDetails` bounds (1–12); payment method/reference custom messages; and the file `superRefine` rules (exactly one manuscript and one payment proof; per-field size/type limits; file-key format; 14-file cap; author photos optional). Exact messages asserted only where the code defines them; boolean pass/fail elsewhere to avoid zod-version brittleness.
+- **Verification:** `npm run test` → **57 passed** (32 existing + 25 new) across 4 files. `npm run typecheck` → 0 errors. `npm run lint` → unchanged 168 warnings / 0 errors (test file adds no new issues).
+- **Result:** Submission-intake validation is now protected by characterization tests. **No production code changed.**
