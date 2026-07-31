@@ -83,7 +83,6 @@ export function SiteHeader({ journals }: { journals: HeaderJournal[] }) {
                 </div>
               </div>
             </div>
-            <Link className="nav-link" href="/services">Services</Link>
             <Link className="nav-link" href="/authors">Authors</Link>
             <Link className="nav-link" href="/track">Track Submission</Link>
           </div>
@@ -104,7 +103,6 @@ export function SiteHeader({ journals }: { journals: HeaderJournal[] }) {
           <Link onClick={closeMenu} className="block rounded-lg px-3 py-3 hover:bg-forest-50" href="/">Home</Link>
           <div className="px-3 pt-4 text-xs uppercase tracking-widest text-gray-400">Journals</div>
           {journals.map((journal) => <Link onClick={closeMenu} key={journal.slug} className="block rounded-lg px-3 py-2 text-base hover:bg-forest-50" href={`/journals/${journal.slug}`}>{journal.title}</Link>)}
-          <Link onClick={closeMenu} className="block rounded-lg px-3 py-3 hover:bg-forest-50" href="/services">Services</Link>
           <Link onClick={closeMenu} className="block rounded-lg px-3 py-3 hover:bg-forest-50" href="/authors">Authors</Link>
           <Link onClick={closeMenu} className="block rounded-lg px-3 py-3 hover:bg-forest-50" href="/track">Track Submission</Link>
         </nav>

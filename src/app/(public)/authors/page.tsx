@@ -26,7 +26,7 @@ type AuthorRecord = { author: Author; count: number; journals: Journal[]; latest
 export async function generateMetadata({ searchParams }: { searchParams: Promise<AuthorParams> }): Promise<Metadata> {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page) || 1);
-  const filtered = Boolean(params.q?.trim() || params.journal || (params.works && params.works !== "any") || (params.sort && params.sort !== "name") || params.view === "card" || params.mode === "rankings");
+  const filtered = Boolean(params.q?.trim() || params.journal || (params.works && params.works !== "any") || (params.sort && params.sort !== "name") || params.mode === "rankings");
   return {
     title: page > 1 ? `Authors - Page ${page}` : "Authors",
     description: `Meet the researchers, educators, poets, and writers published by ${SITE_NAME}.`,
@@ -109,7 +109,6 @@ export default async function AuthorsPage({ searchParams }: { searchParams: Prom
   const journal = journalFacets.some((item) => item.slug === params.journal) ? params.journal || "" : "";
   const works = params.works && WORK_VALUES.includes(params.works) ? params.works : "any";
   const sort = params.sort === "publications" || params.sort === "recent" ? params.sort : "name";
-  const view = params.view === "card" ? "card" : "list";
   const mode = params.mode === "rankings" ? "rankings" : "directory";
   const perPage = [10, 20, 50].includes(Number(params.perPage)) ? Number(params.perPage) : 10;
   const page = Math.max(1, Number(params.page) || 1);
@@ -159,7 +158,7 @@ export default async function AuthorsPage({ searchParams }: { searchParams: Prom
         authors={payload}
         journals={journalFacets}
         totals={{ authors: authors.length, journals: journalFacets.length }}
-        initial={{ q, journal, works, sort, view, mode, page, perPage }}
+        initial={{ q, journal, works, sort, mode, page, perPage }}
       />
     </main>
   );

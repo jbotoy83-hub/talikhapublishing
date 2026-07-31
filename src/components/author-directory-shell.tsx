@@ -23,7 +23,6 @@ type DirInitial = {
   journal: string;
   works: string;
   sort: string;
-  view: "list" | "card";
   mode: "directory" | "rankings";
   page: number;
   perPage: number;
@@ -62,16 +61,6 @@ function ListIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-    </svg>
-  );
-}
-function GridIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" rx="1.4" />
-      <rect x="14" y="3" width="7" height="7" rx="1.4" />
-      <rect x="3" y="14" width="7" height="7" rx="1.4" />
-      <rect x="14" y="14" width="7" height="7" rx="1.4" />
     </svg>
   );
 }
@@ -138,21 +127,6 @@ function Avatar({ author, size }: { author: DirAuthor; size: number }) {
   );
 }
 
-function Chips({ journals }: { journals: DirAuthor["journals"] }) {
-  if (!journals.length) return <span className="ad-muted">—</span>;
-  return (
-    <span className="ad-chips">
-      {journals.map((journal) => {
-        const tone = chipTone(journal.slug);
-        return (
-          <span key={journal.id} className="ad-chip" style={{ background: tone.bg, color: tone.fg, borderColor: tone.bd }}>
-            {journal.title}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
 
 export function AuthorDirectoryShell({
   authors,
@@ -169,7 +143,6 @@ export function AuthorDirectoryShell({
   const [journalSet, setJournalSet] = useState<string[]>(initial.journal ? [initial.journal] : []);
   const [works, setWorks] = useState(initial.works);
   const [sort, setSort] = useState(initial.sort);
-  const [view, setView] = useState<"list" | "card">(initial.view);
   const [mode, setMode] = useState<"directory" | "rankings">(initial.mode);
   const [page, setPage] = useState(initial.page);
   const [perPage, setPerPage] = useState(initial.perPage);
@@ -182,7 +155,6 @@ export function AuthorDirectoryShell({
     if (journalSet.length === 1) params.set("journal", journalSet[0]);
     if (works !== "any") params.set("works", works);
     if (sort !== "name") params.set("sort", sort);
-    if (view !== "list") params.set("view", view);
     if (mode !== "directory") params.set("mode", mode);
     if (page > 1) params.set("page", String(page));
     if (perPage !== 10) params.set("perPage", String(perPage));
@@ -190,7 +162,7 @@ export function AuthorDirectoryShell({
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(null, "", next);
     }
-  }, [q, journalSet, works, sort, view, mode, page, perPage]);
+  }, [q, journalSet, works, sort, mode, page, perPage]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLocaleLowerCase();
@@ -381,12 +353,6 @@ export function AuthorDirectoryShell({
           <section className="ad-list" aria-label={mode === "rankings" ? "Contributor rankings" : "Contributors"}>
             <div className="ad-list-head">
               <h2>{mode === "rankings" ? "Rankings" : "Contributors"}<span>{rows.length} {rows.length === 1 ? "result" : "results"}</span></h2>
-              {mode === "directory" && (
-                <div className="ad-seg ad-seg-view" role="group" aria-label="Layout">
-                  <button type="button" aria-pressed={view === "list"} className={view === "list" ? "is-active" : ""} onClick={() => setView("list")}><ListIcon /><span>List view</span></button>
-                  <button type="button" aria-pressed={view === "card"} className={view === "card" ? "is-active" : ""} onClick={() => setView("card")}><GridIcon /><span>Card view</span></button>
-                </div>
-              )}
             </div>
 
             {rows.length === 0 ? (
@@ -396,57 +362,35 @@ export function AuthorDirectoryShell({
                 <p>{hasFilters ? "Try clearing a filter or searching a different name, affiliation, or journal." : "Published author profiles will appear here as records are connected."}</p>
                 {hasFilters && <button type="button" className="ad-empty-clear" onClick={() => { setQ(""); setJournalSet([]); setWorks("any"); setSort("name"); resetPage(); }}>Clear all filters</button>}
               </div>
-            ) : mode === "directory" && view === "card" ? (
-              <div className="ad-card-grid">
+            ) : (
+              <div className="ad-grid2">
                 {paged.map((author) => (
-                  <article key={author.id} className="ad-card">
-                    <Link href={`/authors/${author.slug}`} className="ad-card-link">
-                      <Avatar author={author} size={56} />
-                      <div className="ad-card-id">
-                        <h3>{author.name}</h3>
-                        {author.credentials && <p>{author.credentials}</p>}
+                  <article key={author.id} className="ad-card2">
+                    <div className="ad-card2-top">
+                      <span className="ad-card2-tags">
+                        {author.journals.length ? author.journals.slice(0, 3).map((journal, jIndex) => {
+                          if (jIndex === 0) return <span key={journal.id} className="ad-card2-lead">{journal.title}</span>;
+                          const tone = chipTone(journal.slug);
+                          return <span key={journal.id} className="ad-card2-tag" style={{ background: tone.bg, color: tone.fg, borderColor: tone.bd }}>{journal.title}</span>;
+                        }) : <span className="ad-card2-lead">Contributor</span>}
+                      </span>
+                      {mode === "rankings" ? <span className="ad-card2-rank">#{author.globalRank}</span> : <span className="ad-card2-go" aria-hidden="true"><ArrowIcon /></span>}
+                    </div>
+                    <h3 className="ad-card2-name"><Link href={`/authors/${author.slug}`}>{author.name}</Link></h3>
+                    {(author.credentials || author.affiliation) && <p className="ad-card2-sub">{author.credentials || author.affiliation}</p>}
+                    {author.latest && (
+                      <div className="ad-card2-latest">
+                        <span className="ad-card2-latest-k">Latest publication</span>
+                        <Link href={`/publications/${author.latest.slug}`} className="ad-card2-latest-title">{author.latest.title}</Link>
+                        <small>{author.latest.dateLabel}</small>
                       </div>
-                      <Chips journals={author.journals} />
-                      <div className="ad-card-foot">
-                        <span><b>{author.publicationCount}</b> works</span>
-                        <span><b>{author.journals.length}</b> {author.journals.length === 1 ? "journal" : "journals"}</span>
-                      </div>
-                      <span className="ad-card-cta">View profile <ArrowIcon /></span>
-                    </Link>
+                    )}
+                    <div className="ad-card2-meta">
+                      <div><span className="ad-card2-meta-k">Works</span><b>{author.publicationCount}</b></div>
+                      <div><span className="ad-card2-meta-k">Journals</span><b>{author.journals.length}</b></div>
+                    </div>
                   </article>
                 ))}
-              </div>
-            ) : (
-              <div className="ad-table-wrap">
-                <table className="ad-table">
-                  <thead>
-                    <tr>
-                      <th className="c-contributor">Contributor</th>
-                      <th className="c-journals">Journals</th>
-                      <th className="c-latest">Latest publication</th>
-                      <th className="c-works">Works</th>
-                      <th className="c-jcount">Journals</th>
-                      <th className="c-action">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paged.map((author) => (
-                      <tr key={author.id}>
-                        <td className="c-contributor">
-                          <Link href={`/authors/${author.slug}`} className="ad-row-id">
-                            <Avatar author={author} size={40} />
-                            <span>{author.name}</span>
-                          </Link>
-                        </td>
-                        <td className="c-journals"><Chips journals={author.journals} /></td>
-                        <td className="c-latest">{author.latest ? <Link href={`/publications/${author.latest.slug}`} className="ad-latest"><strong>{author.latest.title}</strong><small>{author.latest.dateLabel}</small></Link> : <span className="ad-muted">—</span>}</td>
-                        <td className="c-works"><b>{author.publicationCount}</b></td>
-                        <td className="c-jcount"><b>{author.journals.length}</b></td>
-                        <td className="c-action"><Link href={`/authors/${author.slug}`} className="ad-view">View profile</Link></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             )}
 
