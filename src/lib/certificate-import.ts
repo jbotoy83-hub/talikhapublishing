@@ -86,7 +86,8 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
   if (!submissionId) throw new Error("This publication is not connected to a manuscript.");
   const stageResult = await admin.from("submissions").select("id,current_stage,author_name,affiliation,author_details").eq("id", submissionId).single();
   if (stageResult.error || !stageResult.data) throw new Error(stageResult.error?.message || "Manuscript not found.");
-  if (!String(stageResult.data.current_stage || "").startsWith("production_")) throw new Error("A certificate can be prepared only from a publication record in production.");
+  const currentStage = String(stageResult.data.current_stage || "");
+  if (!currentStage.startsWith("production_") && currentStage !== "review_accepted") throw new Error("A certificate can be prepared only from an accepted publication record.");
   const authorsResult = await admin.from("submission_authors")
     .select("position,first_name,middle_initial,surname,position_title,academic_title,institution,location")
     .eq("submission_id", submissionId).order("position");

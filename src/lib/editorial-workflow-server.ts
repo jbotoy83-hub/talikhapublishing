@@ -498,7 +498,8 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     .eq("id", parsed.submissionId)
     .maybeSingle();
   if (submissionError || !submission) throw new Error("The submission record could not be found.");
-  if (!(String(submission.current_stage) as WorkflowStage).startsWith("production_") && submission.current_stage !== "published") {
+  const currentStage = String(submission.current_stage || "") as WorkflowStage;
+  if (!currentStage.startsWith("production_") && currentStage !== "review_accepted" && currentStage !== "published") {
     throw new Error("Publication records can only be prepared after acceptance.");
   }
 
