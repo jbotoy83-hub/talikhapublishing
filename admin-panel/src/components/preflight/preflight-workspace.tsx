@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -65,40 +65,20 @@ const artifactTabs = [
 ] as const;
 
 function DocumentPane({ artifact, zoom, rotation, onLoaded }: { artifact?: Artifact; zoom: number; rotation: number; onLoaded: (id: string) => void }) {
-  const [url, setUrl] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const fileUrl = artifact ? `/api/admin/files/${artifact.id}?stream=1` : "";
   useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl = "";
-    setUrl("");
+    setLoaded(false);
     setError("");
-    if (!artifact) return () => controller.abort();
-    fetch(`/api/admin/files/${artifact.id}?stream=1`, { credentials: "same-origin", signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`File could not be loaded (${response.status}).`);
-        return response.blob();
-      })
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-        onLoaded(artifact.id);
-      })
-      .catch((reason) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError(reason instanceof Error ? reason.message : "File could not be loaded.");
-      });
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [artifact, onLoaded]);
+  }, [artifact?.id]);
 
   if (!artifact) return <div className="pf-empty"><FileSearch /><strong>No artifact attached</strong><span>Return to the production record and attach or select this file.</span></div>;
   if (error) return <div className="pf-empty pf-error"><AlertCircle /><strong>Artifact unavailable</strong><span>{error}</span></div>;
-  if (!url) return <div className="pf-empty"><Loader2 className="pf-spin" /><strong>Loading {artifact.name}</strong></div>;
   const style = { transform: `scale(${zoom}) rotate(${rotation}deg)` };
-  if (artifact.mimeType.startsWith("image/")) return <div className="pf-image-stage"><img src={url} alt={artifact.name} style={style} /></div>;
-  if (artifact.mimeType === "application/pdf") return <iframe title={artifact.name} src={`${url}#toolbar=0&navpanes=0&view=FitH`} style={style} />;
+  const markLoaded = () => { setLoaded(true); onLoaded(artifact.id); };
+  if (artifact.mimeType.startsWith("image/")) return <div className="pf-image-stage"><img src={fileUrl} alt={artifact.name} style={style} onLoad={markLoaded} onError={() => setError("File could not be loaded.")} />{!loaded && <div className="pf-view-loading"><Loader2 className="pf-spin" /><strong>Loading {artifact.name}</strong></div>}</div>;
+  if (artifact.mimeType === "application/pdf") return <div className="pf-pdf-stage"><iframe title={artifact.name} src={`${fileUrl}#toolbar=0&navpanes=0&view=FitH`} style={style} onLoad={markLoaded} onError={() => setError("File could not be loaded.")} />{!loaded && <div className="pf-view-loading"><Loader2 className="pf-spin" /><strong>Loading {artifact.name}</strong></div>}</div>;
   return <div className="pf-empty"><FileSearch /><strong>{artifact.name}</strong><span>This format opens through the secure download control.</span></div>;
 }
 
@@ -134,6 +114,12 @@ export function PreflightWorkspace({ submissionId, reference, title, onClose, on
   const [peerDate, setPeerDate] = useState("");
   const [displayedTotal, setDisplayedTotal] = useState(0);
   const rightRef = useRef<HTMLDivElement>(null);
+  const markArtifactLoaded = useCallback((id: string) => {
+    setLoadedArtifacts((current) => {
+      if (current.has(id)) return current;
+      return new Set(current).add(id);
+    });
+  }, []);
 
   const load = async (run = false) => {
     setSyncing(run);
@@ -259,9 +245,9 @@ export function PreflightWorkspace({ submissionId, reference, title, onClose, on
         </div>
         <div className={`pf-stage${compare ? " comparing" : ""}`}>
           {compare ? <>
-            <div className="pf-stage-column"><span>Author original</span><DocumentPane artifact={originalArtifact} zoom={zoom} rotation={rotation} onLoaded={(id) => setLoadedArtifacts((current) => new Set(current).add(id))} /></div>
-            <div className="pf-stage-column"><span>Final PDF</span><DocumentPane artifact={finalArtifact} zoom={zoom} rotation={rotation} onLoaded={(id) => setLoadedArtifacts((current) => new Set(current).add(id))} /></div>
-          </> : <DocumentPane artifact={activeArtifact} zoom={zoom} rotation={rotation} onLoaded={(id) => setLoadedArtifacts((current) => new Set(current).add(id))} />}
+            <div className="pf-stage-column"><span>Author original</span><DocumentPane artifact={originalArtifact} zoom={zoom} rotation={rotation} onLoaded={markArtifactLoaded} /></div>
+            <div className="pf-stage-column"><span>Final PDF</span><DocumentPane artifact={finalArtifact} zoom={zoom} rotation={rotation} onLoaded={markArtifactLoaded} /></div>
+          </> : <DocumentPane artifact={activeArtifact} zoom={zoom} rotation={rotation} onLoaded={markArtifactLoaded} />}
         </div>
         <footer className="pf-document-footer"><span>{activeArtifact ? `${activeArtifact.name} · version ${activeArtifact.versionNumber}` : "No current artifact"}</span><button type="button" onClick={() => void load(true)}><RefreshCw /> Rerun automatic checks</button></footer>
       </section>
@@ -269,7 +255,7 @@ export function PreflightWorkspace({ submissionId, reference, title, onClose, on
       <aside className="pf-review" ref={rightRef}>
         <section className={`pf-summary ${ready || submitted ? "ready" : "blocked"}`}>
           {ready || submitted ? <CheckCircle2 /> : <AlertCircle />}
-          <div><span>Publication quality control</span><h2>{submitted ? "Submitted" : ready ? "Ready" : "Blocked"}</h2><p>{submitted ? "This evidence snapshot is locked for administrator review." : ready ? "All required checks are current. Submit the locked snapshot for approval." : `${blockers} required check${blockers === 1 ? " is" : "s are"} preventing approval.`}</p></div>
+          <div><span>Publication quality control</span><h2>{submitted ? "Submitted" : ready ? "Ready" : "Blocked"}</h2>{(submitted || ready || blockers > 0) && <p>{submitted ? "This evidence snapshot is locked for administrator review." : ready ? "All required checks are current. Submit the locked snapshot for approval." : `${blockers} required check${blockers === 1 ? " is" : "s are"} preventing approval.`}</p>}</div>
         </section>
         {message && <p className="pf-message" role="status">{message}</p>}
         <section className="pf-source-card">

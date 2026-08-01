@@ -10,3 +10,17 @@
   .pf-main.show-checklist .pf-document{display:none}
   .pf-review{position:static;inset:auto;width:auto;height:100%;box-shadow:none}
 }
+
+/* Keep the document workspace dominant while leaving the checklist available. */
+.pf-main{grid-template-columns:minmax(0,1fr) minmax(420px,34vw)}
+.pf-stage{padding:16px}
+.pf-stage iframe{width:100%;max-width:none}
+.pf-pdf-stage{position:relative;min-width:0;min-height:0;width:100%;height:100%}
+.pf-pdf-stage iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.pf-stage-column .pf-pdf-stage{min-height:0}
+.pf-view-loading{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:8px;background:#2a2722;color:#aea79c;pointer-events:none}
+.pf-view-loading strong{font-size:12px;color:#eee8dc}
+.pf-image-stage{position:relative;min-width:0}
+.pf-image-stage .pf-view-loading{z-index:1}
+.pf-sticky{width:min(calc(34vw - 36px),520px)}
+@media(max-width:1050px){.pf-main{grid-template-columns:1fr}.pf-sticky{width:calc(min(480px,92vw) - 36px)}}
