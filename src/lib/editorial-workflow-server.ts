@@ -19,7 +19,7 @@ const doiField = z.preprocess(
 );
 const orcidField = z.string().trim().max(120).default("").transform(normalizeOrcid).refine((value) => !value || isValidOrcid(value), "Enter a valid ORCID identifier.");
 const publicationAuthorInput = z.object({
-  id: uuid.optional(),
+  id: z.preprocess((value) => typeof value === "string" && !uuid.safeParse(value).success ? undefined : value, uuid.optional()),
   position: z.number().int().min(1).max(12),
   name: z.string().trim().max(180).default(""),
   firstName: z.string().trim().max(80).default(""),
