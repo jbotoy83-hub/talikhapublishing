@@ -21,7 +21,7 @@ export default async function PublicationPreviewPage({ params }: { params: Promi
     .eq("submission_id", submissionId)
     .maybeSingle();
   const publication = Array.isArray(record?.publications) ? record.publications[0] : record?.publications;
-  if (!record || !publication || publication.status !== "draft") notFound();
+  if (!record || !publication) notFound();
   const journal = Array.isArray(publication.journals) ? publication.journals[0] : publication.journals;
   const authors = (publication.publication_authors || [])
     .sort((left, right) => left.position - right.position)

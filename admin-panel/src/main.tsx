@@ -3253,6 +3253,7 @@ function PublicationRecordEditor({
     if (!saved) return;
     window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
   };
+  const publicationPreviewPath = `/admin/publication-preview/${encodeURIComponent(submission.id)}`;
   const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
   const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord, onClick: onOpenQualityCheck };
   const approveAction: PubAction = { key: "approve", label: "Approve and schedule", variant: "default", disabled: false, onClick: onOpenPublish };
@@ -3291,7 +3292,7 @@ function PublicationRecordEditor({
           <div className="publication-command-actions">
             {canManagePublication && !editingRecord && <button type="button" className="publication-command-primary" onClick={() => setEditingRecord(true)}>Edit publication record</button>}
             {record.status === "For approval" && canManagePublication && <button type="button" className="publication-command-primary" onClick={onOpenPublish}><CheckCircle2 size={16} /> Review approval and schedule</button>}
-            {record.publicArticleUrl && <a className="publication-command-link" href={record.publicArticleUrl} target="_blank" rel="noreferrer"><Globe size={15} /> View public page</a>}
+            {record.status === "Published" && record.publicArticleUrl ? <a className="publication-command-link" href={record.publicArticleUrl} target="_blank" rel="noreferrer"><Globe size={15} /> View public page</a> : <a className="publication-command-link" href={publicationPreviewPath} target="_blank" rel="noreferrer"><Eye size={15} /> View publication preview</a>}
           </div>
         </div>
         <div className="publication-command-status"><span className="publication-command-label">Current state</span><strong>{record.status}</strong><small>{record.doiRegistrationStatus === "registered" ? "DOI registered" : "DOI not yet registered"}</small></div>
