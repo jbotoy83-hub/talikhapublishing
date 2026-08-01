@@ -39,14 +39,8 @@ function fullName(author: JsonRecord, fallback: string) {
 function firstRow(value: unknown): JsonRecord { return Array.isArray(value) ? object(value[0]) : object(value); }
 
 export async function listCertificateImportCandidates(admin: SupabaseClient): Promise<ImportCandidate[]> {
-  const readySubmissions = await admin.from("submissions").select("id").eq("current_stage", "production_ready_to_publish");
-  if (readySubmissions.error) throw new Error(readySubmissions.error.message);
-  const submissionIds = (readySubmissions.data || []).map((row) => row.id);
-  if (!submissionIds.length) return [];
-
   const result = await admin.from("publication_records")
     .select("submission_id,publication_id,publications(id,title,doi,publication_date,journal:journals(title),issue:issues(volume,issue_number),publication_authors(position,author:authors(id,name)))")
-    .in("submission_id", submissionIds)
     .not("publication_id", "is", null);
   if (result.error) throw new Error(result.error.message);
 
@@ -86,8 +80,6 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
   if (!submissionId) throw new Error("This publication is not connected to a manuscript.");
   const stageResult = await admin.from("submissions").select("id,current_stage,author_name,affiliation,author_details").eq("id", submissionId).single();
   if (stageResult.error || !stageResult.data) throw new Error(stageResult.error?.message || "Manuscript not found.");
-  const currentStage = String(stageResult.data.current_stage || "");
-  if (!currentStage.startsWith("production_") && currentStage !== "review_accepted") throw new Error("A certificate can be prepared only from an accepted publication record.");
   const authorsResult = await admin.from("submission_authors")
     .select("position,first_name,middle_initial,surname,position_title,academic_title,institution,location")
     .eq("submission_id", submissionId).order("position");

@@ -498,11 +498,6 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
     .eq("id", parsed.submissionId)
     .maybeSingle();
   if (submissionError || !submission) throw new Error("The submission record could not be found.");
-  const currentStage = String(submission.current_stage || "") as WorkflowStage;
-  if (!currentStage.startsWith("production_") && currentStage !== "review_accepted" && currentStage !== "published") {
-    throw new Error("Publication records can only be prepared after acceptance.");
-  }
-
   const resolvedJournalId = parsed.journalId || submission.preferred_journal_id || undefined;
   const resolvedIssueId = parsed.issueId || submission.assigned_issue_id || undefined;
   if (parsed.issueId && !resolvedJournalId) throw new Error("Choose the journal before assigning an issue.");
