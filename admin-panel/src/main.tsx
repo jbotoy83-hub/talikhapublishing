@@ -1700,6 +1700,7 @@ function ProductionWorkspaceV2({
   onOpenProductionList?: () => void;
   accessRole: "admin" | "editor" | "viewer";
 }) {
+  const [handoffId, setHandoffId] = useState<string | null>(null);
   const selected = submissions.find((submission) => submission.id === selectedId);
   const visible = submissions.filter((submission) => view === "Needs action" ? ["In progress", "Review", "Revise", "Accepted"].includes(submission.status) : view === "Approval" ? ["For approval", "Scheduled for publishing"].includes(submission.status) : view === "Published" ? submission.status === "Published" : submission.status === "Rejected");
   const sortedVisible = [...visible].sort((a, b) => {
@@ -1723,9 +1724,40 @@ function ProductionWorkspaceV2({
     Published: submissions.filter((submission) => submission.status === "Published").length,
     Closed: submissions.filter((submission) => submission.status === "Rejected").length,
   };
-  const openRecord = (id: string) => {
+  const openRecord = async (id: string) => {
+    const submission = submissions.find((item) => item.id === id);
+    const reviewHandoffStages = ["review_in_progress", "review_final", "review_accepted"];
+    if (submission && reviewHandoffStages.includes(submission.workflowStage || "")) {
+      if (handoffId) return;
+      setHandoffId(id);
+      try {
+        const response = await fetch(`/api/admin/submissions/${id}/advance`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetProgress: 2 }),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error || "The publication could not be moved into production.");
+        if (body?.data?.blocked) {
+          window.alert(`Cannot start publication production yet: ${body.data.blocked}`);
+          return;
+        }
+        const nextStage = body?.data?.stage || "production_ready";
+        onUpdate({
+          ...submission,
+          status: stageToSubmissionStatus[nextStage] || submission.status,
+          workflowStage: nextStage,
+          history: [...submission.history, `Publication production started · ${new Date().toLocaleString("en-PH")}`],
+        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The publication could not be moved into production.");
+        return;
+      } finally {
+        setHandoffId(null);
+      }
+    }
     if (!publicationRecords.some((record) => record.submissionId === id)) {
-      const submission = submissions.find((item) => item.id === id);
       const defaults = submission ? (journalIssueDefaults[submission.journal] ?? { volume: "1", issue: "1" }) : { volume: "1", issue: "1" };
       onPublicationRecordsChange([...publicationRecords, { id: `PUB-${id}`, submissionId: id, journal: submission?.journal || "InQuira", volume: defaults.volume, issue: defaults.issue, doi: "", pageStart: "", pageEnd: "", readCount: 0, downloadCount: 0, status: "Draft" }]);
     }
@@ -1738,7 +1770,7 @@ function ProductionWorkspaceV2({
         <div>
           <span>Editorial workspace</span>
           <h1>Publication production</h1>
-          <p>Follow accepted studies through preparation, scheduling, and publication from the shared editorial record.</p>
+          <p>Open a record from the editorial queue to begin production, then manage its files, metadata, approval, and publication schedule.</p>
         </div>
         <div className="hero-shapes"><i /><i /><i /></div>
       </div>
@@ -1786,9 +1818,9 @@ function ProductionWorkspaceV2({
               <span className={`production-status ${submission.status.toLowerCase().replaceAll(" ", "-")}`}>{submission.status}</span>
             </div>
             <div className="production-record-cell production-record-action-cell" data-label="Action" role="cell">
-              <button type="button" className="production-record-open" onClick={() => openRecord(submission.id)}>
+              <button type="button" className="production-record-open" disabled={handoffId !== null} onClick={() => void openRecord(submission.id)}>
                 <FileText size={16} aria-hidden="true" />
-                <span>Open publication record</span>
+                <span>{handoffId === submission.id ? "Starting publication production…" : ["review_in_progress", "review_final", "review_accepted"].includes(submission.workflowStage || "") ? "Start publication production" : "Open publication record"}</span>
               </button>
             </div>
           </div>
@@ -2455,6 +2487,7 @@ function LegacySubmissionReview({
       const r = await fetch(`/api/admin/submissions/${submission.id}/publication-actions`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) });
       if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "Could not publish."); }
       const ns = "published";
+      if (publicationRecord) updatePublicationRecord({ ...publicationRecord, status: "Published" });
       onUpdate({ ...submission, status: stageToSubmissionStatus[ns] || "Published", workflowStage: ns, history: [...submission.history, `Published · ${new Date().toLocaleString("en-PH")}`] });
     } catch (error) { window.alert(error instanceof Error ? error.message : "Could not publish."); }
   };
@@ -2466,7 +2499,7 @@ function LegacySubmissionReview({
       onClose={() => setPreflightOpen(false)}
       onSubmitted={() => {
         if (publicationRecord) updatePublicationRecord({ ...publicationRecord, status: "For approval" });
-        onUpdate({ ...submission, workflowStage: "production_ready_to_publish", status: "For approval" });
+        onUpdate({ ...submission, workflowStage: "production_ready_to_publish", status: "For approval", history: [...submission.history, `Ready to publish · ${new Date().toLocaleString("en-PH")}`] });
       }}
     />;
   }
