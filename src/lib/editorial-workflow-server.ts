@@ -13,7 +13,10 @@ import { isValidOrcid, normalizeOrcid } from "@/lib/publication-preflight-rules"
 const uuid = z.string().uuid();
 const optionalText = (maximum: number) => z.string().trim().max(maximum).optional().transform((value) => value || undefined);
 const optionalDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date (YYYY-MM-DD)").optional().transform((value) => value || undefined);
-const doiField = z.string().trim().max(255).regex(/^10\.\d{4,9}\/\S+$/, "Enter a valid DOI, e.g. 10.1000/xyz123").optional().transform((value) => value || undefined);
+const doiField = z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  z.string().trim().max(255).regex(/^10\.\d{4,9}\/\S+$/, "Enter a valid DOI, e.g. 10.1000/xyz123").optional(),
+);
 const orcidField = z.string().trim().max(120).default("").transform(normalizeOrcid).refine((value) => !value || isValidOrcid(value), "Enter a valid ORCID identifier.");
 const publicationAuthorInput = z.object({
   id: uuid.optional(),
