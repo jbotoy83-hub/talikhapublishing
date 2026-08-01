@@ -71,7 +71,7 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
   if (publicationResult.error || !publicationResult.data) throw new Error(publicationResult.error?.message || "Publication not found.");
   const publication = object(publicationResult.data);
   const publicationRecordResult = await admin.from("publication_records")
-    .select("metadata,doi,publication_date")
+    .select("metadata,doi")
     .eq("publication_id", publicationId)
     .maybeSingle();
   if (publicationRecordResult.error) throw new Error(publicationRecordResult.error.message);
