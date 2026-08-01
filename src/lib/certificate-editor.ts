@@ -110,7 +110,7 @@ export async function loadCertificateTemplate(admin: SupabaseClient, templateId:
     .flatMap((row) => row.background_path ? [[text(row.background_bucket, CERTIFICATE_ASSET_BUCKET), text(row.background_path)]] : row.asset_path ? [[text(row.asset_bucket, CERTIFICATE_ASSET_BUCKET), text(row.asset_path)]] : row.storage_path ? [[text(row.storage_bucket, CERTIFICATE_ASSET_BUCKET), text(row.storage_path)]] : []) as [string, string][];
   const signedUrls = new Map<string, string>();
   await Promise.all(assets.map(async ([bucket, path]) => {
-    const result = await admin.storage.from(bucket).createSignedUrl(path, 60 * 30);
+    const result = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
     if (result.data?.signedUrl) signedUrls.set(`${bucket}:${path}`, result.data.signedUrl);
   }));
   return mapTemplate(templateResult.data, pagesResult.data || [], fieldsResult.data || [], blocksResult.data || [], signedUrls, fontsResult.data || []);

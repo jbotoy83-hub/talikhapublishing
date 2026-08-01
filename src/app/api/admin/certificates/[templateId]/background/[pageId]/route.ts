@@ -34,3 +34,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
     const template = await loadCertificateTemplate(admin, templateId); return NextResponse.json({ template, pageId });
   } catch (error) { return apiErrorResponse(error, "Could not upload the page background."); }
 }
+
+export async function GET(_: Request, { params }: { params: Promise<{ templateId: string; pageId: string }> }) {
+  const user = await requireEditorApi(); if (isApiError(user)) return user;
+  const admin = getSupabaseAdmin(); if (!admin) return NextResponse.json({ error: "Certificate service is temporarily unavailable." }, { status: 503 });
+  try {
+    const { templateId, pageId } = await params;
+    const result = await admin.from("certificate_template_pages").select("background_bucket,background_path").eq("id", pageId).eq("template_id", templateId).maybeSingle();
+    if (result.error) throw new Error(result.error.message);
+    if (!result.data?.background_path) return NextResponse.json({ pageId, url: null }, { status: 404 });
+    const signed = await admin.storage.from(result.data.background_bucket || CERTIFICATE_ASSET_BUCKET).createSignedUrl(result.data.background_path, 60 * 60);
+    if (signed.error || !signed.data?.signedUrl) throw new Error(signed.error?.message || "Could not refresh the background URL.");
+    return NextResponse.json({ pageId, url: signed.data.signedUrl });
+  } catch (error) { return apiErrorResponse(error, "Could not refresh the page background."); }
+}
+
+export async function DELETE(_: Request, { params }: { params: Promise<{ templateId: string; pageId: string }> }) {
+  const user = await requireEditorApi(); if (isApiError(user)) return user;
+  const admin = getSupabaseAdmin(); if (!admin) return NextResponse.json({ error: "Certificate service is temporarily unavailable." }, { status: 503 });
+  try {
+    const { templateId, pageId } = await params;
+    const page = await admin.from("certificate_template_pages").select("background_bucket,background_path").eq("id", pageId).eq("template_id", templateId).maybeSingle();
+    if (page.error || !page.data) return NextResponse.json({ error: "Page not found." }, { status: 404 });
+    const cleared = await admin.from("certificate_template_pages").update({ background_bucket: null, background_path: null, background_mime_type: null, background_original_name: null }).eq("id", pageId);
+    if (cleared.error) throw new Error(cleared.error.message);
+    if (page.data.background_path) {
+      await admin.storage.from(page.data.background_bucket || CERTIFICATE_ASSET_BUCKET).remove([page.data.background_path]);
+    }
+    const template = await loadCertificateTemplate(admin, templateId);
+    return NextResponse.json({ template, pageId });
+  } catch (error) { return apiErrorResponse(error, "Could not remove the page background."); }
+}

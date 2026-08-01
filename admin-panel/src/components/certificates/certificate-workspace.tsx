@@ -20,10 +20,10 @@ interface WorkspaceProps {
 }
 
 type ImportCandidate = { publicationId: string; submissionId: string; title: string; journal: string; volume: string; issue: string; authorCount: number; ready: boolean; missing: string[] };
-type ServerRecord = { id: string; template_id: string; publication_id?: string; author_id?: string; submission_id?: string; status: CertificateRecord["status"]; field_values: Record<string, string>; field_urls?: Record<string, string>; certificate_number: string; created_at: string; updated_at: string };
+type ServerRecord = { id: string; template_id: string; publication_id?: string; author_id?: string; submission_id?: string; status: CertificateRecord["status"]; field_values: Record<string, string>; field_urls?: Record<string, string>; layout_overrides?: Record<string, unknown>; certificate_number: string; created_at: string; updated_at: string };
 
 function mapServerRecord(record: ServerRecord): CertificateRecord {
-  return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, fieldUrls: record.field_urls || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
+  return { id: record.id, templateId: record.template_id, templateVersion: 1, publicationId: record.publication_id, authorId: record.author_id, submissionId: record.submission_id, fieldValues: record.field_values || {}, fieldUrls: record.field_urls || {}, layoutOverrides: record.layout_overrides || {}, status: record.status, certificateNumber: record.certificate_number, createdAt: record.created_at, updatedAt: record.updated_at };
 }
 
 function imageBlockUrl(block: { linkedFieldKey: string | null; assetUrl?: string }, fieldUrls: Record<string, string>) {
@@ -82,6 +82,55 @@ function dataUrlBytes(dataUrl: string) {
   const payload = dataUrl.length - comma - 1;
   const padding = dataUrl.endsWith("==") ? 2 : dataUrl.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor(payload * 0.75) - padding);
+}
+
+function loadExportImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("The certificate image could not be loaded for export."));
+    image.src = url;
+  });
+}
+
+async function rasterizeImageBlock(url: string, block: CertificateBlock, scale: number) {
+  const image = await loadExportImage(url);
+  const width = Math.max(1, Math.round(block.width * scale));
+  const height = Math.max(1, Math.round(block.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context || !image.naturalWidth || !image.naturalHeight) throw new Error("The certificate image could not be prepared for export.");
+  const iw = image.naturalWidth;
+  const ih = image.naturalHeight;
+  const objectFit = block.style.objectFit || "contain";
+  const zoom = Math.max(1e-6, block.style.cropZoom || 1);
+  if (objectFit === "cover" || zoom !== 1 || (block.style.cropX || 0) !== 0 || (block.style.cropY || 0) !== 0) {
+    const logicalW = block.width;
+    const logicalH = block.height;
+    const coverScale = Math.max(logicalW / iw, logicalH / ih);
+    const offsetX = (logicalW - iw * coverScale) / 2;
+    const offsetY = (logicalH - ih * coverScale) / 2;
+    const tx = ((block.style.cropX || 0) / 100) * logicalW;
+    const ty = ((block.style.cropY || 0) / 100) * logicalH;
+    const left = ((logicalW / 2 + (0 - tx - logicalW / 2) / zoom) - offsetX) / coverScale;
+    const top = ((logicalH / 2 + (0 - ty - logicalH / 2) / zoom) - offsetY) / coverScale;
+    const sourceW = Math.min(logicalW / (zoom * coverScale), iw);
+    const sourceH = Math.min(logicalH / (zoom * coverScale), ih);
+    const sourceX = Math.min(Math.max(0, left), Math.max(0, iw - sourceW));
+    const sourceY = Math.min(Math.max(0, top), Math.max(0, ih - sourceH));
+    context.drawImage(image, sourceX, sourceY, sourceW, sourceH, 0, 0, width, height);
+  } else if (objectFit === "contain") {
+    const fit = Math.min(width / iw, height / ih);
+    const drawWidth = iw * fit;
+    const drawHeight = ih * fit;
+    context.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+  } else {
+    context.drawImage(image, 0, 0, width, height);
+  }
+  return canvas.toDataURL("image/png");
 }
 
 export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
@@ -355,7 +404,11 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
   }, [record]);
 
   const setFieldValue = useCallback((key: string, value: string) => {
-    if (record) updateRecord((r) => ({ ...r, fieldValues: { ...r.fieldValues, [key]: value } }));
+    if (record) updateRecord((r) => {
+      const previous = r.layoutOverrides || {};
+      const manualFields = Array.isArray(previous.manualFields) ? previous.manualFields.filter((item): item is string => typeof item === "string") : [];
+      return { ...r, fieldValues: { ...r.fieldValues, [key]: value }, layoutOverrides: { ...previous, manualFields: Array.from(new Set([...manualFields, key])) } };
+    });
     else setPreviewValues((values) => ({ ...values, [key]: value }));
   }, [updateRecord]);
 
@@ -393,13 +446,13 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     if (!rec || rec.id.startsWith("cb-")) return true;
     const fieldValues = { ...rec.fieldValues } as Record<string, unknown>;
     delete fieldValues._import_warnings;
-    const response = await fetch(`/api/admin/certificates/records/${rec.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldValues }) });
+    const response = await fetch(`/api/admin/certificates/records/${rec.id}`, { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fieldValues, layoutOverrides: rec.layoutOverrides || {} }) });
     if (!handleApiState(response)) return false;
     const payload = await response.json();
     const saved = mapServerRecord(payload.record);
-    lastSentFvRef.current = JSON.stringify(fieldValues);
+    lastSentFvRef.current = JSON.stringify({ values: fieldValues, layout: rec.layoutOverrides || {} });
     lastSentRecIdRef.current = rec.id;
-    setRecords((current) => current.map((item) => item.id === rec.id ? { ...item, fieldValues: saved.fieldValues, updatedAt: saved.updatedAt, status: saved.status, certificateNumber: saved.certificateNumber, issuedAt: saved.issuedAt ?? item.issuedAt } : item));
+    setRecords((current) => current.map((item) => item.id === rec.id ? { ...item, fieldValues: saved.fieldValues, layoutOverrides: saved.layoutOverrides, updatedAt: saved.updatedAt, status: saved.status, certificateNumber: saved.certificateNumber, issuedAt: saved.issuedAt ?? item.issuedAt } : item));
     return true;
   }, [activeRecordId, handleApiState]);
 
@@ -417,7 +470,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     if (!rec) return null;
     const fv = { ...rec.fieldValues } as Record<string, unknown>;
     delete fv._import_warnings;
-    return JSON.stringify(fv);
+    return JSON.stringify({ values: fv, layout: rec.layoutOverrides || {} });
   };
 
   const scheduleAutosave = useCallback(() => {
@@ -751,6 +804,31 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     } catch { setServiceState("unavailable"); }
   };
 
+  const refreshBackgroundUrl = useCallback(async () => {
+    if (!template || !currentPage?.backgroundPath) return;
+    try {
+      const response = await fetch(`/api/admin/certificates/${template.id}/background/${currentPage.id}`, { credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      if (!payload.url) return;
+      setTemplates((items) => items.map((item) => item.id !== template.id ? item : {
+        ...item,
+        pages: item.pages.map((page) => page.id === currentPage.id ? { ...page, backgroundImageUrl: payload.url } : page),
+      }));
+    } catch { setServiceState("unavailable"); }
+  }, [currentPage?.backgroundPath, currentPage?.id, handleApiState, template]);
+
+  const handleRemoveBackground = async () => {
+    if (!template || !currentPage?.backgroundPath) return;
+    try {
+      const response = await fetch(`/api/admin/certificates/${template.id}/background/${currentPage.id}`, { method: "DELETE", credentials: "same-origin" });
+      if (!handleApiState(response)) return;
+      const payload = await response.json();
+      setTemplates((items) => items.map((item) => item.id === payload.template.id ? { ...item, ...payload.template } : item));
+      setDirty(false);
+    } catch { setServiceState("unavailable"); }
+  };
+
   const uploadImageAsset = (file: File) => {
     if (!template) return Promise.reject(new Error("No template is open."));
     setUploadProgress({ name: file.name, pct: 0, status: "uploading" });
@@ -877,6 +955,16 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     await new Promise((resolve) => setTimeout(resolve, 130));
     const pageEl = document.querySelector(".cert-canvas-page") as HTMLElement | null;
     if (!pageEl) return null;
+    const sourceTemplate = templateRef.current;
+    const sourcePage = sourceTemplate?.pages[index];
+    const exportImages = new Map<string, string>();
+    if (sourceTemplate && sourcePage) {
+      await Promise.all(sourceTemplate.blocks.filter((block) => block.pageId === sourcePage.id && block.type === "image").map(async (block) => {
+        const url = imageBlockUrl(block, fieldUrls);
+        if (!url) return;
+        try { exportImages.set(block.id, await rasterizeImageBlock(url, block, scale)); } catch { /* html2canvas will retain the live image as a fallback */ }
+      }));
+    }
     const images = Array.from(pageEl.querySelectorAll("img"));
     await Promise.all(images.map((image) => image.complete
       ? Promise.resolve()
@@ -895,9 +983,17 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
           clonedPage.style.transform = "none";
           clonedPage.style.transformOrigin = "top left";
         }
+        exportImages.forEach((dataUrl, blockId) => {
+          const blockElement = clonedDocument.querySelector(`.cert-canvas-page [data-block-id="${blockId}"]`);
+          const image = blockElement?.querySelector("img:not([data-canvas-bg])") as HTMLImageElement | null;
+          if (!image) return;
+          image.src = dataUrl;
+          image.style.transform = "none";
+          image.style.objectFit = "fill";
+        });
       },
     });
-  }, []);
+  }, [fieldUrls]);
 
   const pageImage = useCallback((canvas: HTMLCanvasElement, index: number) => {
     if (!compressOn) return { data: canvas.toDataURL("image/png"), format: "PNG" as const };
@@ -1483,6 +1579,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
               onTransformStart={onTransformStart}
               onOpenImageCrop={openImageCrop}
               onZoomChange={setZoom}
+              onBackgroundError={() => { void refreshBackgroundUrl(); }}
             />
           )}
 
@@ -1550,7 +1647,7 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                   </div>
                   <div className="cert-field-section">
                     <button type="button" className="cert-data-section-toggle" onClick={() => setDataOpen((o) => ({ ...o, certificate: !o.certificate }))} aria-expanded={dataOpen.certificate}><h4 className="cert-field-section-title">Certificate Information</h4><span className="cert-data-section-chev">{dataOpen.certificate ? "–" : "+"}</span></button>
-                    {dataOpen.certificate && certFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} readOnly={Boolean(record && ["certificate_number", "date_issued", "publisher_name", "issuing_city"].includes(field.key))} /></div>)}
+                    {dataOpen.certificate && certFields.map((field) => <div key={field.key} className="cert-field-group"><label className="cert-field-label cert-field-label--loc" onClick={() => focusFieldOnCanvas(field.key)} title="Locate this field on the certificate">{field.label}{field.required && <span className="cert-req">*</span>}</label><input ref={(el) => { fieldInputRefs.current[field.key] = el; }} className="cert-input" value={fieldValues[field.key] || ""} onChange={(event) => setFieldValue(field.key, event.target.value)} onKeyDown={(event) => onFieldKeyDown(event, field.key)} placeholder={field.placeholder || ""} /></div>)}
                   </div>
                 </div>
               )}
@@ -1629,17 +1726,17 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
                     <div className="cert-bg-upload">
                       {currentPage.backgroundImageUrl ? (
                         <div className="cert-bg-preview">
-                          <img src={currentPage.backgroundImageUrl} alt="Background" />
+                           <img src={currentPage.backgroundImageUrl} alt="Background" onError={() => { void refreshBackgroundUrl(); }} />
                           <div className="cert-bg-actions">
                             <button className="cert-btn" onClick={() => bgImageInputRef.current?.click()}>Replace</button>
-                            <button className="cert-btn cert-btn--danger" onClick={() => updateTemplate((t) => ({ ...t, pages: t.pages.map((p) => p.id === currentPage.id ? { ...p, backgroundImageUrl: undefined } : p) }))}>Remove</button>
+                            <button className="cert-btn cert-btn--danger" onClick={() => void handleRemoveBackground()}>Remove</button>
                           </div>
                         </div>
                       ) : (
                         <button className="cert-bg-dropzone" onClick={() => bgImageInputRef.current?.click()}>
                           <span className="cert-bg-dropzone-icon">▣</span>
                           <span>Upload background — canvas auto-sizes to fit</span>
-                          <span className="cert-bg-dropzone-hint">PNG, JPG, WebP</span>
+                          <span className="cert-bg-dropzone-hint">PNG or JPG · up to 10 MB</span>
                         </button>
                       )}
                     </div>

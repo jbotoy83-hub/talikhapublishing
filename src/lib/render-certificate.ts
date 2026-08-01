@@ -99,7 +99,8 @@ export async function renderCertificatePdf({ admin, template, values, blocks = [
       const raw = await data.arrayBuffer();
       const meta = await sharp(Buffer.from(raw)).metadata();
       const iw = meta.width; const ih = meta.height;
-      const cropped = iw && ih && (String(style.objectFit) === "cover" || Number(style.cropZoom || 1) !== 1 || Number(style.cropX || 0) !== 0 || Number(style.cropY || 0) !== 0);
+      const objectFit = String(style.objectFit || "contain");
+      const cropped = iw && ih && (objectFit === "cover" || Number(style.cropZoom || 1) !== 1 || Number(style.cropX || 0) !== 0 || Number(style.cropY || 0) !== 0);
       if (cropped) {
         const win = visibleWindow(iw, ih, block.width, block.height, style.cropX, style.cropY, style.cropZoom);
         const L = Math.min(Math.max(Math.round(win.left), 0), iw - 1);
@@ -117,7 +118,21 @@ export async function renderCertificatePdf({ admin, template, values, blocks = [
       }
       const compressed = await compressImageForPdf(raw, isSocial);
       const image = await pdf.embedJpg(compressed);
-      page.drawImage(image, { x: block.x * scale, y: page.getHeight() - (block.y + block.height) * scale, width: block.width * scale, height: block.height * scale, rotate: degrees(-block.rotation || 0), opacity: Number(style.opacity ?? 1) });
+      if (objectFit === "contain" && iw && ih) {
+        const fit = Math.min(block.width / iw, block.height / ih);
+        const drawWidth = iw * fit;
+        const drawHeight = ih * fit;
+        page.drawImage(image, {
+          x: (block.x + (block.width - drawWidth) / 2) * scale,
+          y: page.getHeight() - (block.y + (block.height + drawHeight) / 2) * scale,
+          width: drawWidth * scale,
+          height: drawHeight * scale,
+          rotate: degrees(-block.rotation || 0),
+          opacity: Number(style.opacity ?? 1),
+        });
+      } else {
+        page.drawImage(image, { x: block.x * scale, y: page.getHeight() - (block.y + block.height) * scale, width: block.width * scale, height: block.height * scale, rotate: degrees(-block.rotation || 0), opacity: Number(style.opacity ?? 1) });
+      }
       continue;
     }
     const content = resolveCertificateContent(block.content, values).map((segment) => segment.text).join("").trim();

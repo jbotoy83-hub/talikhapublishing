@@ -91,6 +91,10 @@ export interface CertificatePage {
   width: number;
   height: number;
   backgroundImageUrl?: string;
+  backgroundBucket?: string | null;
+  backgroundPath?: string | null;
+  backgroundMimeType?: string | null;
+  backgroundOriginalName?: string | null;
   backgroundPdfPage?: number;
   safeMargin: number;
 }
@@ -122,6 +126,7 @@ export interface CertificateRecord {
   reference?: string;
   fieldValues: Record<string, string>;
   fieldUrls?: Record<string, string>;
+  layoutOverrides?: Record<string, unknown>;
   status: CertificateStatus;
   certificateNumber: string;
   issuedAt?: string;

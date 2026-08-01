@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   if (!templateId || !z.string().uuid().safeParse(templateId).success) return NextResponse.json({ error: "A valid template is required." }, { status: 400 });
   try {
     const [result, fieldsResult] = await Promise.all([
-      admin.from("certificate_records").select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id")
+      admin.from("certificate_records").select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id")
         .eq("template_id", templateId).order("created_at", { ascending: false }),
       admin.from("certificate_template_fields").select("field_key,field_type").eq("template_id", templateId),
     ]);

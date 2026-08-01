@@ -3195,12 +3195,9 @@ function PublicationRecordEditor({
   const pageEnd = Number(record.pageEnd);
   const pageProblem = Boolean(record.pageStart && record.pageEnd && (pageEnd < pageStart || sameIssue.some((item) => pageStart <= Number(item.pageEnd) && pageEnd >= Number(item.pageStart))));
   const doiExists = Boolean(record.doi && publicationRecords.some((item) => item.id !== record.id && item.doi === record.doi));
-  const openCertificateCreator = () => {
-    window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
-  };
   type PubAction = { key: string; label: string; variant: "default" | "outline" | "destructive"; tone?: "danger"; disabled: boolean; onClick: () => void };
   const editAction: PubAction = { key: "edit", label: "Edit publication record", variant: "outline", disabled: false, onClick: () => setEditingRecord(true) };
-  const saveRecord = async () => {
+  const saveRecord = async (): Promise<boolean> => {
     setSavingRecord(true);
     setRecordMessage("");
     const finalPdf = submission.files?.filter((file) => file.file_kind === "final_pdf").at(-1);
@@ -3256,11 +3253,19 @@ function PublicationRecordEditor({
     setSavingRecord(false);
     if (!response?.ok) {
       setRecordMessage(body?.error || "The publication record could not be saved.");
-      return;
+      return false;
     }
     onChange({ ...record, id: body?.record?.id || record.id, publicationId: body?.record?.publicationId || record.publicationId, publicArticleUrl: body?.record?.publicArticleUrl || record.publicArticleUrl, authorMetadata: authors.map((author, index) => ({ id: author.id, position: index + 1, firstName: author.firstName || "", middleInitial: author.middleInitial || "", surname: author.surname || "", academicTitle: author.academicTitle || "", occupation: author.occupation || "", affiliation: author.affiliation || "", orcid: author.orcid || "", photoFileId: author.photoFileId, corresponding: index === 0, photoZoom: author.photoZoom ?? 1, photoPositionX: author.photoPositionX ?? 50, photoPositionY: author.photoPositionY ?? 50 })), finalPdfFileId: record.finalPdfFileId || finalPdf?.id, certificateFileId: record.certificateFileId || certificate?.id, socialMediaFileId: record.socialMediaFileId || social?.id });
     setRecordMessage("Production record saved to the publication database.");
     setEditingRecord(false);
+    return true;
+  };
+  const openCertificateCreator = async () => {
+    if (savingRecord) return;
+    setRecordMessage("");
+    const saved = await saveRecord();
+    if (!saved) return;
+    window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
   };
   const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
   const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord, onClick: onOpenQualityCheck };

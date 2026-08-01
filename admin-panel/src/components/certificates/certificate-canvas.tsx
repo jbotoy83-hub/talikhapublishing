@@ -21,6 +21,7 @@ interface CanvasProps {
   onTransformStart?: () => void;
   onOpenImageCrop?: (id: string) => void;
   onZoomChange: (z: number) => void;
+  onBackgroundError?: () => void;
   pdfDataUrl?: string | null;
 }
 
@@ -45,7 +46,7 @@ function runCSS(s: Partial<import("./types").BlockStyle>): React.CSSProperties {
 
 export const CertificateCanvas = React.memo(function CertificateCanvas({
   page, blocks, selectedBlockId, editingBlockId, zoom, mode, fieldValues, fieldUrls, showMargins, fields,
-  onSelectBlock, onStartEdit, onEditCommit, onUpdateBlock, onTransformStart, onOpenImageCrop, onZoomChange, pdfDataUrl,
+  onSelectBlock, onStartEdit, onEditCommit, onUpdateBlock, onTransformStart, onOpenImageCrop, onZoomChange, onBackgroundError, pdfDataUrl,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ blockId: string; startX: number; startY: number; origX: number; origY: number; wasSelected: boolean } | null>(null);
@@ -401,7 +402,7 @@ export const CertificateCanvas = React.memo(function CertificateCanvas({
           {pdfDataUrl ? (
             <img src={pdfDataUrl} alt="" data-canvas-bg="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none" }} />
           ) : page.backgroundImageUrl ? (
-            <img src={page.backgroundImageUrl} alt="" data-canvas-bg="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none" }} />
+            <img src={page.backgroundImageUrl} alt="" data-canvas-bg="true" onError={onBackgroundError} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", pointerEvents: "none" }} />
           ) : (
             <div data-canvas-bg="true" style={{ position: "absolute", inset: 0, background: "#fff" }} />
           )}

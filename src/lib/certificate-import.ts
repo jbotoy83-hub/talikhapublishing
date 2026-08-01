@@ -76,6 +76,12 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
     .eq("id", publicationId).single();
   if (publicationResult.error || !publicationResult.data) throw new Error(publicationResult.error?.message || "Publication not found.");
   const publication = object(publicationResult.data);
+  const publicationRecordResult = await admin.from("publication_records")
+    .select("metadata,doi,publication_date")
+    .eq("publication_id", publicationId)
+    .maybeSingle();
+  if (publicationRecordResult.error) throw new Error(publicationRecordResult.error.message);
+  const publicationRecord = object(publicationRecordResult.data);
   const submissionId = string(publication.source_submission_id);
   if (!submissionId) throw new Error("This publication is not connected to a manuscript.");
   const stageResult = await admin.from("submissions").select("id,current_stage,author_name,affiliation,author_details").eq("id", submissionId).single();
@@ -89,30 +95,31 @@ async function sourceForPublication(admin: SupabaseClient, publicationId: string
     .select("id,original_name,storage_bucket,storage_path,mime_type")
     .eq("submission_id", submissionId).eq("file_kind", "authorPhoto");
   if (filesResult.error) throw new Error(filesResult.error.message);
-  return { publication, submission: object(stageResult.data), submissionAuthors: rows(authorsResult.data), authorPhotos: rows(filesResult.data) };
+  return { publication, publicationRecord, submission: object(stageResult.data), submissionAuthors: rows(authorsResult.data), authorPhotos: rows(filesResult.data) };
 }
 
-function valueSet(publication: JsonRecord, submission: JsonRecord, sourceAuthor: JsonRecord, profile: JsonRecord, number: string) {
+function valueSet(publication: JsonRecord, publicationRecord: JsonRecord, submission: JsonRecord, sourceAuthor: JsonRecord, profile: JsonRecord, editorialAuthor: JsonRecord, number: string) {
   const journal = firstRow(publication.journal);
   const issue = firstRow(publication.issue);
+  const recordMetadata = object(publicationRecord.metadata);
   const fallbackName = string(profile.name) || string(submission.author_name);
-  const authorName = fullName(sourceAuthor, fallbackName);
-  const issueDate = string(issue.publication_date) || string(publication.publication_date);
+  const authorName = string(editorialAuthor.name) || fullName(editorialAuthor, fullName(sourceAuthor, fallbackName));
+  const issueDate = string(recordMetadata.publicationDate) || string(issue.publication_date) || string(publication.publication_date);
   const warnings: string[] = [];
   if (!authorName) warnings.push("This author has no name in the manuscript source.");
   if (!Object.keys(sourceAuthor).length) warnings.push("This author could not be matched to the manuscript author details.");
   return {
     author_name: authorName,
-    author_academic_title: string(sourceAuthor.academic_title) || string(profile.credentials),
-    author_role: string(sourceAuthor.position_title),
-    author_affiliation: string(sourceAuthor.institution) || string(profile.affiliation) || string(submission.affiliation),
-    author_location: string(sourceAuthor.location),
+    author_academic_title: string(editorialAuthor.academicTitle) || string(sourceAuthor.academic_title) || string(profile.credentials),
+    author_role: string(editorialAuthor.occupation) || string(sourceAuthor.position_title),
+    author_affiliation: string(editorialAuthor.affiliation) || string(sourceAuthor.institution) || string(profile.affiliation) || string(submission.affiliation),
+    author_location: string(editorialAuthor.location) || string(sourceAuthor.location),
     author_photo: "",
     work_title: string(publication.title),
-    doi: string(publication.doi),
+    doi: string(publicationRecord.doi) || string(publication.doi),
     publication_name: string(journal.title),
-    volume_number: string(issue.volume),
-    issue_number: string(issue.issue_number),
+    volume_number: string(recordMetadata.volume) || string(issue.volume),
+    issue_number: string(recordMetadata.issueNumber) || string(issue.issue_number),
     issue_date: issueDate,
     issn_online: string(journal.issn_online) || string(journal.issn),
     issn_print: string(journal.issn_print),
@@ -125,9 +132,12 @@ function valueSet(publication: JsonRecord, submission: JsonRecord, sourceAuthor:
   };
 }
 
-async function copyAuthorPhoto(admin: SupabaseClient, authorPhotos: JsonRecord[], authorIndex: number, templateId: string): Promise<string> {
+async function copyAuthorPhoto(admin: SupabaseClient, authorPhotos: JsonRecord[], authorIndex: number, templateId: string, preferredFileId = ""): Promise<string> {
   const expectedName = `author-${String(authorIndex + 1).padStart(3, "0")}`;
-  const file = authorPhotos.find((f) => string(f.original_name).startsWith(expectedName)) || authorPhotos[authorIndex] || authorPhotos[0];
+  const file = authorPhotos.find((f) => preferredFileId && string(f.id) === preferredFileId)
+    || authorPhotos.find((f) => string(f.original_name).startsWith(expectedName))
+    || authorPhotos[authorIndex]
+    || authorPhotos[0];
   if (!file) return "";
   const bucket = string(file.storage_bucket);
   const path = string(file.storage_path);
@@ -143,8 +153,47 @@ async function copyAuthorPhoto(admin: SupabaseClient, authorPhotos: JsonRecord[]
   return destPath;
 }
 
+type PublicationSource = Awaited<ReturnType<typeof sourceForPublication>>;
+
+function manualFieldKeys(layoutOverrides: unknown) {
+  const layout = object(layoutOverrides);
+  return Array.isArray(layout.manualFields) ? layout.manualFields.filter((key): key is string => typeof key === "string") : [];
+}
+
+async function buildSyncedValues(
+  admin: SupabaseClient,
+  source: PublicationSource,
+  linked: JsonRecord,
+  templateId: string,
+  certificateNumber: string,
+  existingValues: JsonRecord = {},
+  existingLayout: JsonRecord = {},
+) {
+  const profile = firstRow(linked.author);
+  const position = Number(linked.position || 0);
+  const sourceAuthor = source.submissionAuthors.find((author) => Number(author.position || 0) === position) || {};
+  const metadataAuthors = rows(object(source.publicationRecord.metadata).authorMetadata);
+  const editorialAuthor = metadataAuthors.find((author) => Number(author.position || 0) === position) || {};
+  const values = valueSet(source.publication, source.publicationRecord, source.submission, sourceAuthor, profile, editorialAuthor, certificateNumber) as JsonRecord;
+  const manualFields = new Set(manualFieldKeys(existingLayout));
+  const authorIndex = source.submissionAuthors.findIndex((author) => Number(author.position || 0) === position);
+  const preferredPhotoFileId = string(editorialAuthor.photoFileId);
+  if (!manualFields.has("author_photo")) {
+    const photoPath = await copyAuthorPhoto(admin, source.authorPhotos, authorIndex >= 0 ? authorIndex : 0, templateId, preferredPhotoFileId);
+    if (photoPath) values.author_photo = photoPath;
+  }
+  for (const key of manualFields) {
+    if (typeof existingValues[key] === "string") values[key] = existingValues[key] as string;
+  }
+  return {
+    values,
+    layout: { ...existingLayout, manualFields: Array.from(manualFields), lastSyncedAt: new Date().toISOString() },
+  };
+}
+
 export async function importPublicationCertificates(admin: SupabaseClient, templateId: string, publicationId: string) {
-  const { publication, submission, submissionAuthors, authorPhotos } = await sourceForPublication(admin, publicationId);
+  const source = await sourceForPublication(admin, publicationId);
+  const { publication } = source;
   const publicationAuthors = rows(publication.publication_authors).sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
   if (!publicationAuthors.length) throw new Error("This publication has no linked authors.");
   const imported: JsonRecord[] = [];
@@ -152,26 +201,32 @@ export async function importPublicationCertificates(admin: SupabaseClient, templ
     const profile = firstRow(linked.author);
     const authorId = string(profile.id);
     if (!authorId) throw new Error("A linked author profile is missing.");
-    const existing = await admin.from("certificate_records").select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id").eq("template_id", templateId).eq("publication_id", publicationId).eq("author_id", authorId).maybeSingle();
+    const existing = await admin.from("certificate_records").select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id").eq("template_id", templateId).eq("publication_id", publicationId).eq("author_id", authorId).maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    if (existing.data) { imported.push({ ...existing.data, reused: true }); continue; }
-    const sourceAuthor = submissionAuthors.find((author) => Number(author.position || 0) === Number(linked.position || 0)) || {};
+    if (existing.data) {
+      if (existing.data.status === "issued") {
+        imported.push({ ...existing.data, reused: true });
+        continue;
+      }
+      const synced = await buildSyncedValues(admin, source, linked, templateId, string(existing.data.certificate_number), object(existing.data.field_values), object(existing.data.layout_overrides));
+      const updated = await admin.from("certificate_records").update({ field_values: synced.values, layout_overrides: synced.layout }).eq("id", existing.data.id).select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id").single();
+      if (updated.error || !updated.data) throw new Error(updated.error?.message || "Could not synchronize the certificate record.");
+      imported.push({ ...updated.data, reused: true });
+      continue;
+    }
     const year = Number(manilaDate().slice(0, 4));
     const allocation = await admin.rpc("allocate_certificate_number", { p_year: year });
     if (allocation.error || !allocation.data) throw new Error(allocation.error?.message || "Could not allocate a certificate number.");
     const number = string(allocation.data);
-    const values = valueSet(publication, submission, sourceAuthor, profile, number);
-    const authorIndex = submissionAuthors.findIndex((a) => Number(a.position || 0) === Number(linked.position || 0));
-    const photoPath = await copyAuthorPhoto(admin, authorPhotos, authorIndex >= 0 ? authorIndex : 0, templateId);
-    if (photoPath) values.author_photo = photoPath;
+    const synced = await buildSyncedValues(admin, source, linked, templateId, number);
     const inserted = await admin.from("certificate_records").insert({
-      template_id: templateId, publication_id: publicationId, author_id: authorId, submission_id: string(submission.id),
-      certificate_number: number, reference_number: number, field_values: values, status: "draft",
-    }).select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id").single();
+      template_id: templateId, publication_id: publicationId, author_id: authorId, submission_id: string(source.submission.id),
+      certificate_number: number, reference_number: number, field_values: synced.values, layout_overrides: synced.layout, status: "draft",
+    }).select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id").single();
     if (inserted.error || !inserted.data) {
       // A simultaneous import may have won the unique record race. Reuse it;
       // number gaps are acceptable and preserve the audit trail.
-      const raced = await admin.from("certificate_records").select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id").eq("template_id", templateId).eq("publication_id", publicationId).eq("author_id", authorId).maybeSingle();
+      const raced = await admin.from("certificate_records").select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id").eq("template_id", templateId).eq("publication_id", publicationId).eq("author_id", authorId).maybeSingle();
       if (raced.error || !raced.data) throw new Error(inserted.error?.message || raced.error?.message || "Could not create certificate record.");
       imported.push({ ...raced.data, reused: true });
     } else imported.push({ ...inserted.data, reused: false });
@@ -180,19 +235,15 @@ export async function importPublicationCertificates(admin: SupabaseClient, templ
 }
 
 export async function refreshCertificateRecord(admin: SupabaseClient, recordId: string) {
-  const existing = await admin.from("certificate_records").select("id,template_id,publication_id,author_id,status,certificate_number").eq("id", recordId).single();
+  const existing = await admin.from("certificate_records").select("id,template_id,publication_id,author_id,status,certificate_number,field_values,layout_overrides").eq("id", recordId).single();
   if (existing.error || !existing.data) throw new Error(existing.error?.message || "Certificate record not found.");
   if (existing.data.status === "issued") throw new Error("Issued certificates are immutable.");
-  const { publication, submission, submissionAuthors, authorPhotos } = await sourceForPublication(admin, existing.data.publication_id);
+  const source = await sourceForPublication(admin, existing.data.publication_id);
+  const { publication } = source;
   const linked = rows(publication.publication_authors).find((item) => string(firstRow(item.author).id) === existing.data.author_id);
   if (!linked) throw new Error("The certificate author is no longer linked to this publication.");
-  const profile = firstRow(linked.author);
-  const sourceAuthor = submissionAuthors.find((author) => Number(author.position || 0) === Number(linked.position || 0)) || {};
-  const values = valueSet(publication, submission, sourceAuthor, profile, existing.data.certificate_number);
-  const authorIndex = submissionAuthors.findIndex((a) => Number(a.position || 0) === Number(linked.position || 0));
-  const photoPath = await copyAuthorPhoto(admin, authorPhotos, authorIndex >= 0 ? authorIndex : 0, existing.data.template_id);
-  if (photoPath) values.author_photo = photoPath;
-  const update = await admin.from("certificate_records").update({ field_values: values }).eq("id", recordId).select("id,author_id,status,field_values,certificate_number,created_at,updated_at,template_id,publication_id,submission_id").single();
+  const synced = await buildSyncedValues(admin, source, linked, existing.data.template_id, existing.data.certificate_number, object(existing.data.field_values), object(existing.data.layout_overrides));
+  const update = await admin.from("certificate_records").update({ field_values: synced.values, layout_overrides: synced.layout }).eq("id", recordId).select("id,author_id,status,field_values,layout_overrides,certificate_number,reference_number,created_at,updated_at,template_id,publication_id,submission_id").single();
   if (update.error || !update.data) throw new Error(update.error?.message || "Could not refresh certificate record.");
   return update.data;
 }
