@@ -116,7 +116,7 @@ const feePresets = {
 
 function workflowFailure(error: unknown) {
   const message = error instanceof Error ? error.message : "The workflow could not be updated.";
-  if (/Required checklist|publication-ready manuscript|final PDF|confirmed payment|publication record|future publication date|not yet due|payment|receipt|currency|discount|fee/i.test(message)) return message;
+  if (/Required checklist|publication-ready manuscript|final PDF|confirmed payment|publication record|future publication date|not yet due|payment|receipt|currency|discount|fee|Only an authorized editor|Transition from .* not allowed|Submission not found|Cannot compute advance path/i.test(message)) return message;
   return "The workflow could not be updated. Please refresh the record and try again.";
 }
 
@@ -289,6 +289,31 @@ const STAGE_PATH: WorkflowStage[] = [
   "production_ready_to_publish", "production_scheduled", "published"
 ];
 
+async function completeReviewHandoffChecklist(
+  admin: AdminClient,
+  submissionId: string,
+  stage: WorkflowStage,
+  actorId: string,
+) {
+  if (stage !== "review_final" && stage !== "review_accepted") return;
+  const { data: items, error } = await admin
+    .from("workflow_checklist_items")
+    .select("id, completed_at")
+    .eq("submission_id", submissionId)
+    .eq("stage", stage)
+    .eq("required", true);
+  if (error) throw new Error(error.message);
+  for (const item of items || []) {
+    if (item.completed_at) continue;
+    const { error: completionError } = await admin.rpc("complete_workflow_checklist_item", {
+      p_checklist_item_id: item.id,
+      p_actor_id: actorId,
+      p_completed: true,
+    });
+    if (completionError) throw new Error(completionError.message);
+  }
+}
+
 async function emitProgressActivity(
   admin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
   submissionId: string,
@@ -339,6 +364,13 @@ export async function transitionSubmission(input: z.input<typeof transitionInput
   }
   if (before?.current_stage === "production_records" && parsed.toStage === "production_ready_to_publish") {
     throw new Error("Submit the publication through the quality-control workspace.");
+  }
+
+  if (
+    before?.current_stage === "review_final" && parsed.toStage === "review_accepted"
+    || before?.current_stage === "review_accepted" && parsed.toStage === "production_ready"
+  ) {
+    await completeReviewHandoffChecklist(admin, parsed.submissionId, before.current_stage as WorkflowStage, user.id);
   }
 
   const { data, error } = await admin.rpc("transition_submission", {
@@ -403,6 +435,7 @@ export async function advanceSubmissionProgress(input: z.input<typeof advanceInp
 
   for (let i = currentIdx + 1; i <= targetIdx; i++) {
     const nextStage = STAGE_PATH[i];
+    await completeReviewHandoffChecklist(admin, parsed.submissionId, lastStage, user.id);
     const { error } = await admin.rpc("transition_submission", {
       p_submission_id: parsed.submissionId,
       p_to_stage: nextStage,
