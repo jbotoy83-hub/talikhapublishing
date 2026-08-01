@@ -2027,37 +2027,22 @@ function StudiesView({ submissions, publicationRecords, onOpenRecord }: { submis
   );
 }
 
-function statusActions(status: SubmissionStatus) {
-  const actions: Record<
-    SubmissionStatus,
-    { label: string; status: SubmissionStatus; tone?: string }[]
-  > = {
-    New: [
-      { label: "Start review", status: "In progress" },
-      { label: "Reject", status: "Rejected", tone: "danger" },
-    ],
-    "In progress": [
-      { label: "Start review", status: "In progress" },
-      { label: "Reject", status: "Rejected", tone: "danger" },
-    ],
-    Review: [
-      { label: "Start review", status: "In progress" },
-      { label: "Reject", status: "Rejected", tone: "danger" },
-    ],
-    Revise: [
-      { label: "Return to review", status: "Review" },
-      { label: "Reject", status: "Rejected", tone: "danger" },
-    ],
-    Accepted: [{ label: "Ready to publish", status: "For approval" }],
-    "For approval": [
-      { label: "Schedule for publication", status: "Scheduled for publishing" },
-      { label: "Return to revise", status: "In progress", tone: "danger" },
-    ],
-    "Scheduled for publishing": [{ label: "Publish", status: "Published" }],
-    Published: [],
-    Rejected: [],
+type ReviewWorkflowAction = {
+  label: string;
+  toStage: "review_in_progress" | "review_final" | "review_accepted" | "production_ready" | "closed";
+  tone?: string;
+};
+
+function workflowActionsForStage(stage: EditorialSubmission["workflowStage"]): ReviewWorkflowAction[] {
+  const primary: Partial<Record<NonNullable<EditorialSubmission["workflowStage"]>, ReviewWorkflowAction>> = {
+    review_new: { label: "Start review", toStage: "review_in_progress" },
+    review_in_progress: { label: "Send to final review", toStage: "review_final" },
+    review_final: { label: "Accept to production", toStage: "review_accepted" },
+    review_accepted: { label: "Open production record", toStage: "production_ready" },
   };
-  return actions[status];
+  const action = stage ? primary[stage] : undefined;
+  if (!action) return [];
+  return [action, { label: "Reject", toStage: "closed", tone: "danger" }];
 }
 
 type SubmissionView = "New" | "Needs action" | "Published" | "Closed";
@@ -2269,7 +2254,7 @@ function LegacySubmissionReview({
   useEffect(() => { let cancelled = false; void fetch(`/api/admin/submissions/${submission.id}/review-settings`, { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (cancelled || !body?.settings) return; const saved = body.settings; if (saved.receipt) setReceipt({ ...defaultReceiptSettings, ...saved.receipt }); if (saved.instructions) setInstructions((current) => ({ ...current, ...saved.instructions })); }).catch(() => {}); return () => { cancelled = true; }; }, [submission.id]);
   const paymentConfirmed = submission.paymentConfirmed === true;
   const reviewUnlocked = true;
-  const reviewActions = submission.workflowStage?.startsWith("production_") ? [] : statusActions(submission.status);
+  const reviewActions = submission.workflowStage?.startsWith("production_") ? [] : workflowActionsForStage(submission.workflowStage);
   const author = authors[activeAuthor] ?? authors[0];
   const nameParts = author.name.trim().split(/\s+/).filter(Boolean);
   const firstName = author.firstName?.trim() || nameParts[0] || "";
@@ -2313,58 +2298,28 @@ function LegacySubmissionReview({
       history: [...submission.history, "Review record saved"],
     });
   };
-  const moveTo = async (status: SubmissionStatus) => {
-    const stage = submission.workflowStage;
-    let ok = false;
-    let newStage = stage;
+  const runWorkflowAction = async (action: ReviewWorkflowAction) => {
     try {
-      if (status === "In progress" && (stage === "review_new" || stage === "review_in_progress" || stage === "review_final")) {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 2 }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "In progress" && stage === "production_ready_to_publish") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_records", silent: true, visibility: "internal" }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        await fetch(`/api/admin/submissions/${submission.id}/priority`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ priority: "high" }) });
-        newStage = "production_records"; ok = true;
-      } else if (status === "For approval" && (stage === "review_accepted" || stage?.startsWith("production_"))) {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 3, silent: true }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "Scheduled for publishing" && stage === "production_ready_to_publish") {
-        const scheduledFor = window.prompt("Enter publication date and time (YYYY-MM-DD HH:MM):", new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16).replace("T", " "));
-        if (!scheduledFor) return;
-        const isoDate = scheduledFor.replace(" ", "T") + ":00.000Z";
-        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "production_scheduled", metadata: { scheduled_for: isoDate } }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        newStage = "production_scheduled"; ok = true;
-      } else if (status === "Published" && stage === "production_scheduled") {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/advance`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetProgress: 4 }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        const d = await r.json(); if (d.data?.blocked) { window.alert(d.data.blocked); return; } newStage = d.data?.stage || stage; ok = true;
-      } else if (status === "Rejected" && stage) {
-        const r = await fetch(`/api/admin/submissions/${submission.id}/transition`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toStage: "closed" }) });
-        if (!r.ok) { const b = await r.json().catch(() => null); throw new Error(b?.error || "The workflow could not be updated."); }
-        newStage = "closed"; ok = true;
-      }
+      const response = await fetch(`/api/admin/submissions/${submission.id}/transition`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStage: action.toStage, internalTitle: action.label, visibility: "internal" }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error || "The workflow could not be updated.");
+      const nextStage = body?.data?.current_stage || action.toStage;
+      const nextStatus = stageToSubmissionStatus[nextStage] || submission.status;
+      onUpdate({
+        ...submission,
+        status: nextStatus,
+        workflowStage: nextStage,
+        history: [...submission.history, `Moved to ${nextStatus} · ${new Date().toLocaleString("en-PH")}`],
+      });
+      if (action.toStage === "production_ready") openPublicationRecord();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "The workflow could not be updated.");
-      return;
     }
-    if (!ok && status !== "Rejected") return;
-    if (status === "In progress" && newStage?.startsWith("production_")) {
-      try {
-        window.sessionStorage.setItem("talikha-admin-workflow-notice", JSON.stringify({ message: `${submission.title} is now in production.` }));
-      } catch { /* The redirect still completes if session storage is unavailable. */ }
-      window.location.assign("/admin?view=submissions");
-      return;
-    }
-    onUpdate({
-      ...submission,
-      status: (newStage && stageToSubmissionStatus[newStage]) || status,
-      workflowStage: newStage,
-      history: [...submission.history, `Moved to ${status} · ${new Date().toLocaleString("en-PH")}`],
-    });
   };
   const confirmPayment = async () => {
     if (paymentConfirmed || !isAdmin || confirmingPayment) return;
@@ -2541,16 +2496,14 @@ function LegacySubmissionReview({
           <button type="button" className="review-delete-action" onClick={() => setDeleteOpen(true)}>
             <Trash2 /> Delete submission
           </button>
-          {!publicationOnly && reviewTab === "review" && reviewActions.length > 0 && reviewActions
-            .filter((action) => action.status !== "Revise")
-            .map((action) => (
+          {!publicationOnly && reviewTab === "review" && reviewActions.length > 0 && reviewActions.map((action) => (
               <button
                 type="button"
                 key={action.label}
                 className={action.tone === "danger" ? "danger" : "approve"}
-                onClick={() => moveTo(action.status)}
-                disabled={action.status === "In progress" && !paymentConfirmed}
-                title={action.status === "In progress" && !paymentConfirmed ? "Confirm the payment before starting review" : undefined}
+                onClick={() => { void runWorkflowAction(action); }}
+                disabled={action.toStage === "review_in_progress" && !paymentConfirmed}
+                title={action.toStage === "review_in_progress" && !paymentConfirmed ? "Confirm the payment before starting review" : undefined}
               >
                 <CheckCircle2 />
                 {action.label}
