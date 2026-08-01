@@ -22,7 +22,6 @@ import {
   getBlob,
   deleteFile,
   saveMeta,
-  getAllMeta,
   sanitizeFilename,
   validateFile,
   getFileTypeLabel,
@@ -390,7 +389,6 @@ type FileUploadSystemProps = {
 
 export function FileUploadSystem({ files, onFilesChange, uploader, locked, showZones, visiblePurposes, onContinue, onBack, confirmLabel = "I have previewed the required files and confirmed that they are correct." }: FileUploadSystemProps) {
   const [previewFile, setPreviewFile] = useState<StoredFile | null>(null);
-  const [restored, setRestored] = useState(false);
   const [draggingPurpose, setDraggingPurpose] = useState<FilePurpose | null>(null);
   const [shaking, setShaking] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -405,17 +403,6 @@ export function FileUploadSystem({ files, onFilesChange, uploader, locked, showZ
   const allScanned = requiredCount > 0 && reviewedCount === requiredCount && !uploading;
   const canContinue = allScanned && confirmed;
   const primarySig = primaryFiles.map((f) => f.id).join(",");
-
-  useEffect(() => {
-    (async () => {
-      if (files.length === 0 && !restored) {
-        const stored = await getAllMeta();
-        const active = stored.filter((f) => f.status !== "cancelled");
-        if (active.length > 0) onFilesChange(active);
-        setRestored(true);
-      }
-    })();
-  }, []);
 
   // Re-confirm after the file set changes (add / remove).
   useEffect(() => { setConfirmed(false); /* reset on file-set change */ }, [primarySig]);

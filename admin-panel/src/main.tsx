@@ -6778,6 +6778,10 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     const params = new URLSearchParams();
     params.set("view", workspaceViews[active] || "overview");
     if ((active === 1 || active === 12) && selectedSubmissionId) params.set("submission", selectedSubmissionId);
+    if (active === 10) {
+      const certificateSubmission = new URLSearchParams(window.location.search).get("certificateSubmission");
+      if (certificateSubmission) params.set("certificateSubmission", certificateSubmission);
+    }
     window.history.replaceState(null, "", `/admin?${params.toString()}`);
   }, [active, selectedSubmissionId, submissionsReady]);
   useLayoutEffect(() => {

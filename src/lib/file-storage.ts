@@ -120,6 +120,17 @@ export async function deleteFile(id: string): Promise<void> {
   await Promise.all([deleteBlob(id), deleteMeta(id)]);
 }
 
+export async function clearAllFiles(): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([BLOB_STORE, META_STORE], "readwrite");
+    tx.objectStore(BLOB_STORE).clear();
+    tx.objectStore(META_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export function sanitizeFilename(name: string): { sanitized: string; wasSanitized: boolean } {
   const cleaned = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/\s{2,}/g, " ").trim();
   return { sanitized: cleaned || "untitled", wasSanitized: cleaned !== name };

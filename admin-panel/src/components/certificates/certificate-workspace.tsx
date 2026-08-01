@@ -527,13 +527,53 @@ export function CertificateWorkspace({ submissions = [] }: WorkspaceProps) {
     runSaveRef.current();
   }, []);
 
+  const flushPendingSave = useCallback(() => {
+    const active = templateRef.current;
+    const rec = recordsRef.current.find((item) => item.id === activeRecordId) || null;
+    if (active?.pages.length) {
+      const payload = buildTemplatePayload(active);
+      const payloadStr = JSON.stringify(payload);
+      if (payloadStr !== lastSentPayloadRef.current) {
+        void fetch(`/api/admin/certificates/${active.id}`, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: payloadStr,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    }
+    if (rec && !rec.id.startsWith("cb-")) {
+      const fieldValues = { ...rec.fieldValues } as Record<string, unknown>;
+      delete fieldValues._import_warnings;
+      const recordPayload = JSON.stringify({ fieldValues, layoutOverrides: rec.layoutOverrides || {} });
+      if (recordPayload !== lastSentFvRef.current || rec.id !== lastSentRecIdRef.current) {
+        void fetch(`/api/admin/certificates/records/${rec.id}`, {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: recordPayload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    }
+  }, [activeRecordId]);
+
   useEffect(() => {
     if (!dirty || serviceState !== "ready" || saveState !== "saved") return;
     scheduleAutosave();
     return () => { if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; } };
   }, [dirty, saveRevision, serviceState, saveState, scheduleAutosave]);
 
-  useEffect(() => () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); }, []);
+  useEffect(() => {
+    const handlePageHide = () => flushPendingSave();
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      flushPendingSave();
+    };
+  }, [flushPendingSave]);
 
   const undo = useCallback(() => {
     if (!undoStack.length || !template) return;

@@ -19,7 +19,7 @@ import { FileUploadSystem, FileChecklist, PreviewModal, hasAllRequiredFiles, has
 import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cropper";
 import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
-import { validateFile, saveBlob, saveMeta, deleteFile, getBlob, formatBytes, sanitizeFilename, PURPOSE_ACCEPT, PURPOSE_MAX_SIZE } from "@/lib/file-storage";
+import { validateFile, saveBlob, saveMeta, deleteFile, getBlob, clearAllFiles, formatBytes, sanitizeFilename, PURPOSE_ACCEPT, PURPOSE_MAX_SIZE } from "@/lib/file-storage";
 import { isValidOrcid, normalizeOrcid } from "@/lib/publication-preflight-rules";
 
 const MAX_SUBMIT_ATTEMPTS = 3;
@@ -55,6 +55,42 @@ function isRetryable(err: unknown) {
 }
 
 const localSubmissionKey = "talikha-editorial-submissions-v1";
+const pendingUploadSessionKey = "talikha-pending-submission-upload-v1";
+
+type PendingUploadSession = {
+  submissionId: string;
+  idempotencyKey: string;
+  paths: string[];
+};
+
+function readPendingUploadSession(): PendingUploadSession | null {
+  try {
+    const raw = window.sessionStorage.getItem(pendingUploadSessionKey);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PendingUploadSession>;
+    if (typeof value.submissionId !== "string" || typeof value.idempotencyKey !== "string" || !Array.isArray(value.paths)) return null;
+    return { submissionId: value.submissionId, idempotencyKey: value.idempotencyKey, paths: value.paths.filter((path): path is string => typeof path === "string") };
+  } catch {
+    return null;
+  }
+}
+
+function rememberPendingUploadSession(session: PendingUploadSession) {
+  try { window.sessionStorage.setItem(pendingUploadSessionKey, JSON.stringify(session)); } catch { /* Session storage is optional. */ }
+}
+
+function forgetPendingUploadSession() {
+  try { window.sessionStorage.removeItem(pendingUploadSessionKey); } catch { /* Session storage is optional. */ }
+}
+
+function abandonPendingUpload(session: PendingUploadSession, keepalive = false) {
+  return fetch("/api/submissions/abandon", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(session),
+    keepalive,
+  });
+}
 
 const STEPS = [
   { id: "manuscript", label: "Manuscript", subtitle: "Title, journal & files", icon: "file" as const },
@@ -307,6 +343,28 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const [processingStep, setProcessingStep] = useState<ProcessingStep>("preparing");
 
   useEffect(() => {
+    const pending = readPendingUploadSession();
+    if (pending) {
+      forgetPendingUploadSession();
+      void abandonPendingUpload(pending).catch(() => {});
+    }
+    void clearAllFiles().catch(() => {});
+
+    const handlePageHide = () => {
+      const active = readPendingUploadSession();
+      if (!active) return;
+      const body = JSON.stringify(active);
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/submissions/abandon", new Blob([body], { type: "application/json" }));
+      } else {
+        void abandonPendingUpload(active, true).catch(() => {});
+      }
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, []);
+
+  useEffect(() => {
     if (!abstractOpen) return;
     const t = window.setTimeout(() => abstractRef.current?.focus(), 60);
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setAbstractOpen(false); };
@@ -533,6 +591,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const initRes = await fetchSubmission("/api/submissions/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(initBody) });
       const init = (await initRes.json().catch(() => ({}))) as { submissionId?: string; reference?: string; uploads?: { key: string; field: string; path: string; token: string }[]; error?: string };
       if (!initRes.ok || !init.submissionId || !init.uploads) throw new Error(init.error || "The submission service could not start your record. Please try again.");
+      rememberPendingUploadSession({ submissionId: init.submissionId, idempotencyKey, paths: init.uploads.map((upload) => upload.path) });
 
       onStep("uploading");
       for (const ins of init.uploads) {
@@ -552,6 +611,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const completeRes = await fetchSubmission("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
       const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; error?: string };
       if (!completeRes.ok || !complete.reference) throw new Error(complete.error || "Your files were uploaded, but the record could not be finalized. Please contact the editorial team.");
+      forgetPendingUploadSession();
 
       onStep("finalizing");
       return complete.reference;
