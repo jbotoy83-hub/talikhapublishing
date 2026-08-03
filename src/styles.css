@@ -5610,7 +5610,7 @@ body:has(.track-page) { background:#f7f7f8; }
 
 @media (max-width: 980px) {
   .faq-page-hero-grid { grid-template-columns: minmax(0, 1fr) minmax(250px, .55fr); gap: 3rem; }
-  .faq-page-body { grid-template-columns: 1fr; gap: 2rem; }
+  .faq-page-body { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
   .faq-page-rail { position: static; }
   .faq-page-rail-nav { display: flex; gap: .35rem; margin-top: .8rem; overflow-x: auto; padding-bottom: .3rem; scrollbar-width: thin; }
   .faq-page-rail-nav a { min-width: max-content; grid-template-columns: auto auto; border: 1px solid rgba(24,61,44,.16); border-radius: 999px; padding: .55rem .8rem; }
