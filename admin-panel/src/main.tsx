@@ -3388,16 +3388,16 @@ function PublicationRecordEditor({
       {recordMessage && <p className="publication-material-message" role="status">{recordMessage}</p>}
       <div className="tp-pub-actions">
           {primaryAction && (
-            <Button type="button" variant={primaryAction.variant} className={`tp-pub-action tp-pub-action--${primaryAction.key}`} disabled={primaryAction.disabled} onClick={primaryAction.onClick}>
+            <Button type="button" variant={primaryAction.variant} className={`tp-pub-action tp-pub-action--${primaryAction.key}`} disabled={primaryAction.disabled} onClick={primaryAction.onClick} title={primaryAction.label} aria-label={primaryAction.label}>
               {(primaryAction.key === "mark" || primaryAction.key === "approve") && <CheckCircle2 />}
               {primaryAction.key === "save" && <Save />}
-              {primaryAction.label}
+              {primaryAction.key !== "save" && primaryAction.label}
             </Button>
           )}
           {overflowActions.map((action) => (
-            <Button key={action.key} type="button" variant={action.variant} disabled={action.disabled} className={`tp-pub-action tp-pub-action--${action.key}${action.tone === "danger" ? " text-destructive" : ""}`} onClick={action.onClick}>
+            <Button key={action.key} type="button" variant={action.variant} disabled={action.disabled} className={`tp-pub-action tp-pub-action--${action.key}${action.tone === "danger" ? " text-destructive" : ""}`} onClick={action.onClick} title={action.key === "save" ? action.label : undefined} aria-label={action.key === "save" ? action.label : undefined}>
               {action.key === "save" && <Save />}
-              {action.label}
+              {action.key !== "save" && action.label}
             </Button>
           ))}
         </div>
