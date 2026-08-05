@@ -80,6 +80,7 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
       <div className="flex flex-col gap-3" role="radiogroup" aria-label="Journal">
         {journals.map((journal) => {
           const isSelected = selected === journal.slug;
+          const isDimmed = selected !== "" && !isSelected;
           return (
             <button
               type="button"
@@ -87,7 +88,8 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
               role="radio"
               aria-checked={isSelected}
               onClick={() => setActive(journal)}
-              className={`group flex w-full items-center gap-4 rounded-xl border bg-white p-3 text-left transition-colors ${isSelected ? "border-[#2d6045] shadow-[0_0_0_3px_rgba(31,107,70,0.12)]" : "border-[#dfe2e6] hover:border-[#7fae93]"}`}
+              className={`group flex w-full items-center gap-4 rounded-xl border bg-white p-3 text-left transition-all ${isSelected ? "border-[#2d6045] shadow-[0_0_0_3px_rgba(31,107,70,0.12)]" : isDimmed ? "border-[#e3e6ea] hover:border-[#7fae93]" : "border-[#dfe2e6] hover:border-[#7fae93]"}`}
+              style={{ opacity: isDimmed ? 0.5 : 1, filter: isDimmed ? "saturate(0.55)" : "none" }}
             >
               <span className="relative block w-14 shrink-0 overflow-hidden rounded-md border border-[#e6e9ec] bg-[#eef2ef] sm:w-16" style={{ aspectRatio: "1414 / 2000" }}>
                 <CoverImage slug={journal.slug} title={journal.title} className="h-full w-full object-cover" />
@@ -98,7 +100,7 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
                 <span className="text-xs uppercase tracking-[0.14em] text-[#5d6e64]">{journal.scope}</span>
               </span>
               <span className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${isSelected ? "bg-[#214d37] text-white" : "bg-[#eef2ef] text-[#183d2c] group-hover:bg-[#dfe9e2]"}`}>
-                {isSelected ? <Icon name="check" className="h-4 w-4" /> : <Icon name="arrow" className="h-4 w-4" />}
+                {isSelected && <Icon name="check" className="h-4 w-4" />}
                 <span className="whitespace-nowrap">Submit to {journal.title} Journal</span>
               </span>
             </button>
