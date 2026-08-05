@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { FaqAccordion, type FaqGroup } from "@/components/faq-accordion";
-import { Icon } from "@/components/icon";
+import { FaqExplorer, type FaqGroup } from "@/components/faq-explorer";
 import { JsonLd } from "@/components/json-ld";
 import { absoluteUrl, SITE_NAME, SITE_SHORT_NAME } from "@/lib/site";
 
@@ -37,41 +35,21 @@ const faqs = [
 ] as const;
 
 export default function FaqPage() {
-  return <main id="main-content" className="faq-page">
-    <JsonLd data={{ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faqs.map(({ question, answer }) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })), url: absoluteUrl("/faq") }} />
-
-    <section className="faq-page-hero">
-      <div className="section-shell faq-page-hero-grid">
-        <div className="faq-page-hero-copy">
-          <p className="eyebrow">Editorial help desk</p>
-          <h1 className="display-title">Frequently asked questions</h1>
-          <p>Clear answers about submitting, reviewing, publishing, rights, privacy, and discovery.</p>
-        </div>
-        <aside className="faq-page-register" aria-label="FAQ overview">
-          <div className="faq-page-register-head"><span>Knowledge desk</span><strong>{String(faqs.length).padStart(2, "0")}</strong></div>
-          <p>One place to understand the work before it becomes part of the record.</p>
-          <div className="faq-page-register-topics">{faqGroups.map((group, index) => <div key={group.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{group.label}</strong></div>)}</div>
-        </aside>
-      </div>
-    </section>
-
-    <section className="section-shell faq-page-body">
-      <aside className="faq-page-rail">
-        <p className="faq-page-rail-label">On this page</p>
-        <nav className="faq-page-rail-nav" aria-label="FAQ topics">{faqGroups.map((group, index) => <a href={`#${group.id}`} key={group.id}><span>{String(index + 1).padStart(2, "0")}</span>{group.label}</a>)}</nav>
-        <div className="faq-page-rail-note"><strong>{faqs.length} answers</strong><span>Written for authors, readers, and editorial partners.</span></div>
-      </aside>
-
-      <div className="faq-page-content">
-        <div className="faq-page-content-heading"><p>Questions and answers</p><span>{faqGroups.length} editorial paths</span></div>
-        <FaqAccordion faqs={faqs} groups={faqGroups} />
-
-        <aside className="faq-page-contact">
-          <span className="faq-page-contact-mark"><Icon name="mail" className="h-6 w-6" /></span>
-          <div><p className="eyebrow !text-clay-700">Need another answer?</p><h2>Give the editorial team enough context to help.</h2><p>Use a submission reference, DOI, or publication URL whenever you have one.</p></div>
-          <Link href="/submit">Submit securely <Icon name="arrow" className="h-4 w-4" /></Link>
-        </aside>
-      </div>
-    </section>
-  </main>;
+  return (
+    <main id="main-content" className="bg-parchment text-forest-900">
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: faqs.map(({ question, answer }) => ({
+            "@type": "Question",
+            name: question,
+            acceptedAnswer: { "@type": "Answer", text: answer },
+          })),
+          url: absoluteUrl("/faq"),
+        }}
+      />
+      <FaqExplorer faqs={faqs} groups={faqGroups} />
+    </main>
+  );
 }

@@ -55,6 +55,25 @@ const tailwindConfig = {
         paper: '0 18px 50px rgba(28, 40, 33, 0.10)',
         lift: '0 10px 30px rgba(28, 40, 33, 0.12)'
       },
+      keyframes: {
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' }
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' }
+        },
+        'faq-rise': {
+          from: { opacity: '0', transform: 'translateY(14px)' },
+          to: { opacity: '1', transform: 'translateY(0)' }
+        }
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.32s cubic-bezier(0.16, 1, 0.3, 1)',
+        'accordion-up': 'accordion-up 0.24s cubic-bezier(0.16, 1, 0.3, 1)',
+        'faq-rise': 'faq-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both'
+      },
       spacing: { '87.5': '21.875rem', '140': '35rem', '320': '80rem' }
     }
   },
