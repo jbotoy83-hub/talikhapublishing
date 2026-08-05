@@ -2272,6 +2272,7 @@ function LegacySubmissionReview({
     [authors, setAuthors] = useState(() => authorsFor(submission)),
     [activeAuthor, setActiveAuthor] = useState(0),
     [manuscriptTitle, setManuscriptTitle] = useState(submission.title),
+    [manuscriptAbstract, setManuscriptAbstract] = useState(submission.abstract || ""),
     [receipt, setReceipt] = useState<ReceiptSettings>(
       submission.receipt ?? defaultReceiptSettings,
     ),
@@ -2325,6 +2326,7 @@ function LegacySubmissionReview({
       email: primaryAuthor.email,
       affiliation: primaryAuthor.affiliation,
       title: manuscriptTitle,
+      abstract: manuscriptAbstract,
       authors,
       receipt,
       history: [...submission.history, "Review record saved"],
@@ -2747,6 +2749,14 @@ function LegacySubmissionReview({
                 onChange={(event) => setManuscriptTitle(event.target.value)}
               />
             </label>
+            <label className="review-textarea review-manuscript-primary">
+              Abstract / Description
+              <textarea
+                value={manuscriptAbstract}
+                onChange={(event) => setManuscriptAbstract(event.target.value)}
+                style={{ minHeight: 140, padding: "10px 12px", lineHeight: 1.55, whiteSpace: "pre-wrap" }}
+              />
+            </label>
             <ManuscriptFileList files={submission.files} fallbackName={submission.fileName} className="review-manuscript-primary" onPreview={setPreviewFile} />
               <div className="review-fields two review-reference-fields">
               <ReviewField label="Submitted date" value={submittedDateTimeLabel(submission).replace(/^Submitted\s+/, "")} />
@@ -2759,6 +2769,14 @@ function LegacySubmissionReview({
               <textarea
                 value={manuscriptTitle}
                 onChange={(event) => setManuscriptTitle(event.target.value)}
+              />
+            </label>
+            <label className="review-textarea review-manuscript-secondary">
+              Abstract / Description
+              <textarea
+                value={manuscriptAbstract}
+                onChange={(event) => setManuscriptAbstract(event.target.value)}
+                style={{ minHeight: 140, padding: "10px 12px", lineHeight: 1.55, whiteSpace: "pre-wrap" }}
               />
             </label>
             <ManuscriptFileList files={submission.files} fallbackName={submission.fileName} className="review-manuscript-secondary" onPreview={setPreviewFile} />
@@ -6861,7 +6879,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             const manuscriptFile = files.find((f) => f.file_kind === "manuscript") || null;
             const authorPhotos = files.filter((f) => f.file_kind === "authorPhoto").sort((a, b) => String(a.original_name || "").localeCompare(String(b.original_name || "")));
             const primaryPhotoId = authorPhotos.length ? String(authorPhotos[0].id) : null;
-            return { id: String(submission.id), reference: String(submission.reference || submission.tracking_number || submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), preferredJournalId: typeof submission.preferred_journal_id === "string" ? submission.preferred_journal_id : undefined, assignedIssueId: typeof submission.assigned_issue_id === "string" ? submission.assigned_issue_id : undefined, category: String(submission.publication_type || ""), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), storage_bucket: String(f.storage_bucket || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0), sha256: typeof f.sha256 === "string" ? f.sha256 : undefined, version_number: Number(f.version_number || 1), supersedes_file_id: typeof f.supersedes_file_id === "string" ? f.supersedes_file_id : null, validation_status: String(f.validation_status || "pending") })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined, priority: (["normal", "high", "urgent"].includes(String(submission.priority || "")) ? String(submission.priority) as "normal" | "high" | "urgent" : "normal") } satisfies EditorialSubmission;
+            return { id: String(submission.id), reference: String(submission.reference || submission.tracking_number || submission.id), title: String(submission.title || "Untitled submission"), author: String(submission.author_name || "Author pending"), email: String(submission.author_email || ""), affiliation: String(submission.affiliation || ""), journal: String((preferred as { title?: string } | null)?.title || "InQuira"), preferredJournalId: typeof submission.preferred_journal_id === "string" ? submission.preferred_journal_id : undefined, assignedIssueId: typeof submission.assigned_issue_id === "string" ? submission.assigned_issue_id : undefined, category: String(submission.publication_type || ""), workflowStage: String(submission.current_stage || "review_new"), status: stageToSubmissionStatus[String(submission.current_stage)] || "New", submittedAt: workspaceDate(String(submission.submitted_at || submission.created_at || "")), displayDate: workspaceDisplayDate(String(submission.submitted_at || submission.created_at || "")), image: primaryPhotoId ? `/api/admin/files/${primaryPhotoId}` : portraits[0], abstract: String(submission.abstract || submission.author_notes || ""), fileName: String(manuscriptFile?.original_name || "No manuscript selected"), paymentProof: Boolean(proofFile), paymentConfirmed: payment?.status === "confirmed", history: [], paymentPlan: String(paymentMeta.publication_plan || ""), paymentMethod: String(payment?.provider || ""), paymentReference: String(payment?.payment_reference || ""), paymentAmount: typeof payment?.amount === "number" ? payment.amount : undefined, paymentStatus: String(payment?.status || ""), proofFileName: proofFile ? String(proofFile.original_name || "") : undefined, proofFilePath: proofFile ? String(proofFile.storage_path || "") : undefined, proofBucket: proofFile ? String(proofFile.storage_bucket || "") : undefined, manuscriptFileName: manuscriptFile ? String(manuscriptFile.original_name || "") : undefined, manuscriptFilePath: manuscriptFile ? String(manuscriptFile.storage_path || "") : undefined, manuscriptBucket: manuscriptFile ? String(manuscriptFile.storage_bucket || "") : undefined, files: files.map((f) => ({ id: String(f.id), file_kind: String(f.file_kind), storage_path: String(f.storage_path || ""), storage_bucket: String(f.storage_bucket || ""), original_name: String(f.original_name || ""), mime_type: String(f.mime_type || ""), size_bytes: Number(f.size_bytes || 0), sha256: typeof f.sha256 === "string" ? f.sha256 : undefined, version_number: Number(f.version_number || 1), supersedes_file_id: typeof f.supersedes_file_id === "string" ? f.supersedes_file_id : null, validation_status: String(f.validation_status || "pending") })), authorDetails: Array.isArray(submission.author_details) ? (submission.author_details as Array<Record<string, unknown>>) as EditorialSubmission["authorDetails"] : undefined, proofFileId: proofFile ? String(proofFile.id) : undefined, manuscriptFileId: manuscriptFile ? String(manuscriptFile.id) : undefined, priority: (["normal", "high", "urgent"].includes(String(submission.priority || "")) ? String(submission.priority) as "normal" | "high" | "urgent" : "normal") } satisfies EditorialSubmission;
           });
           const serverRecords = result.data.publicationRecords.map((record: Record<string, unknown>) => {
             const journal = Array.isArray(record.journals) ? record.journals[0] : record.journals;

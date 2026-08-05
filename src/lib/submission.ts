@@ -55,6 +55,7 @@ function validateFileFields(
 export const submissionInitSchema = z.object({
   idempotencyKey: z.string().uuid(),
   workingTitle: z.string().trim().min(5).max(300),
+  abstract: z.string().trim().max(3000).optional().default(""),
   publicationType: z.string().trim().min(1).max(120),
   preferredJournal: z.string().trim().max(100).optional().default(""),
   journalId: z.uuid(),

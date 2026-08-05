@@ -587,6 +587,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const initBody = {
         idempotencyKey,
         workingTitle: form.title.trim(),
+        abstract: form.summary.trim(),
         publicationType: form.category.trim() || "Manuscript",
         preferredJournal: form.journal,
         journalId: sj.id,
