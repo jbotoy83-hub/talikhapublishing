@@ -89,7 +89,7 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
               onClick={() => setActive(journal)}
               className={`group flex w-full items-center gap-4 rounded-xl border bg-white p-3 text-left transition-colors ${isSelected ? "border-[#2d6045] shadow-[0_0_0_3px_rgba(31,107,70,0.12)]" : "border-[#dfe2e6] hover:border-[#7fae93]"}`}
             >
-              <span className="relative block h-20 w-14 shrink-0 overflow-hidden rounded-md border border-[#e6e9ec] bg-[#eef2ef] sm:h-24 sm:w-16">
+              <span className="relative block w-14 shrink-0 overflow-hidden rounded-md border border-[#e6e9ec] bg-[#eef2ef] sm:w-16" style={{ aspectRatio: "1414 / 2000" }}>
                 <CoverImage slug={journal.slug} title={journal.title} className="h-full w-full object-cover" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -139,8 +139,8 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
                     <path d="m6 6 12 12" />
                   </svg>
                 </button>
-                <div className="relative h-64 w-full shrink-0 overflow-hidden bg-[#eef2ef] md:h-auto md:min-h-[480px] md:w-[280px]">
-                  <CoverImage slug={active.slug} title={active.title} className="absolute inset-0 h-full w-full object-cover" />
+                <div className="relative w-full shrink-0 overflow-hidden bg-[#eef2ef] md:w-80 md:flex-none" style={{ aspectRatio: "1414 / 2000" }}>
+                  <CoverImage slug={active.slug} title={active.title} className="absolute inset-0 h-full w-full object-contain" />
                 </div>
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
