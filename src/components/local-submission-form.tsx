@@ -17,6 +17,7 @@ import { LoaderCircleIcon } from "@/components/icons/loader-circle";
 import { Trash2Icon } from "@/components/icons/trash-2";
 import { FileUploadSystem, FileChecklist, PreviewModal, hasAllRequiredFiles, hasActiveUploads } from "./file-upload-system";
 import { JournalPicker } from "./journal-picker";
+import { CategoryPicker } from "./category-picker";
 import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cropper";
 import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
@@ -100,7 +101,14 @@ const STEPS = [
   { id: "review", label: "Review", subtitle: "Confirm & submit", icon: "check" as const },
 ];
 
-const CATEGORIES = ["Research Article", "Essay", "Poetry", "Fiction", "Book Chapter", "Literary Review", "Commentary"];
+const CATEGORIES = [
+  { value: "Research Article", description: "A formal, peer-reviewed study that presents original findings, methodology, and analysis." },
+  { value: "Essay", description: "A reflective or argumentative prose piece developed around a focused idea." },
+  { value: "Poetry", description: "Crafted verse that explores theme, imagery, and sound with deliberate intent." },
+  { value: "Short Story", description: "A complete work of fiction told through narrative, character, and scene." },
+  { value: "Literary Review", description: "A critical appraisal of a work, an author, or a body of literature." },
+  { value: "Commentary", description: "A concise opinion or perspective piece offering analysis on a current topic." },
+];
 
 const POLICIES_URL = "/editorial-standards";
 
@@ -878,12 +886,9 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
           <JournalPicker journals={pickerJournals} selected={form.journal} onSelect={(slug) => update("journal", slug)} />
           {errors.journal && <small className="field-error">{errors.journal}</small>}
         </div>
-        <div className="floating-field">
-          <label htmlFor="category">Submission category</label>
-          <select id="category" value={form.category} onChange={(e) => update("category", e.target.value)} className={form.category ? "" : "is-placeholder"}>
-            <option value="">Select category</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+        <div className="floating-field full">
+          <label>Submission category</label>
+          <CategoryPicker categories={CATEGORIES} value={form.category} onChange={(v) => update("category", v)} />
         </div>
         <div className={`floating-field full ${errors.title ? "has-error" : ""}`}>
           {selectedServerJournal && <div className="submission-issue-assignment" role="status"><strong>{selectedServerJournal.title} · Volume {selectedServerJournal.volume}, Issue {selectedServerJournal.issue}</strong><span>{selectedServerJournal.status} · This assignment is managed by the editorial team.</span></div>}

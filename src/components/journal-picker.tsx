@@ -94,12 +94,12 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-1">
                 <strong className="font-serif text-base text-ink sm:text-lg">{journal.longTitle}</strong>
-                <span className="text-sm text-[#66756d]">{journal.blurb}</span>
-                <span className="text-xs uppercase tracking-[0.14em] text-[#8a929b]">{journal.scope}</span>
+                <span className="text-sm text-[#4a5560]">{journal.blurb}</span>
+                <span className="text-xs uppercase tracking-[0.14em] text-[#5d6e64]">{journal.scope}</span>
               </span>
               <span className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${isSelected ? "bg-[#214d37] text-white" : "bg-[#eef2ef] text-[#183d2c] group-hover:bg-[#dfe9e2]"}`}>
                 {isSelected ? <Icon name="check" className="h-4 w-4" /> : <Icon name="arrow" className="h-4 w-4" />}
-                <span className="hidden sm:inline">{isSelected ? "Selected" : "Preview"}</span>
+                <span className="whitespace-nowrap">Submit to {journal.title} Journal</span>
               </span>
             </button>
           );
