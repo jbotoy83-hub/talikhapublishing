@@ -16,6 +16,7 @@ import { InfoIcon } from "@/components/icons/info";
 import { LoaderCircleIcon } from "@/components/icons/loader-circle";
 import { Trash2Icon } from "@/components/icons/trash-2";
 import { FileUploadSystem, FileChecklist, PreviewModal, hasAllRequiredFiles, hasActiveUploads } from "./file-upload-system";
+import { JournalPicker } from "./journal-picker";
 import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cropper";
 import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
@@ -758,6 +759,10 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
   const selectedJournal = JOURNAL_OPTIONS.find((j) => j.slug === form.journal);
   const selectedServerJournal = serverJournals.find((journal) => journal.slug === form.journal);
+  const pickerJournals = JOURNAL_OPTIONS.map((j) => {
+    const sj = serverJournals.find((s) => s.slug === j.slug);
+    return { ...j, description: sj?.description || "", detail: sj?.scope || "", status: sj?.status, volume: sj?.volume, issue: sj?.issue };
+  });
   const selectedPlan = PUBLICATION_PLANS.find((p) => p.id === plan);
   const selectedMethod = PAYMENT_METHODS.find((m) => m.id === paymentMethod);
   const subtotal = selectedPlan ? selectedPlan.price : 0;
@@ -868,12 +873,9 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       </div>
 
       <div className="floating-grid">
-        <div className={`floating-field ${errors.journal ? "has-error" : ""}`}>
-          <label htmlFor="journal">Journal</label>
-          <select id="journal" value={form.journal} onChange={(e) => update("journal", e.target.value)} className={form.journal ? "" : "is-placeholder"} required>
-            <option value="">Select journal</option>
-            {JOURNAL_OPTIONS.map((j) => <option key={j.slug} value={j.slug}>{j.title}</option>)}
-          </select>
+        <div className={`floating-field full ${errors.journal ? "has-error" : ""}`}>
+          <label>Journal</label>
+          <JournalPicker journals={pickerJournals} selected={form.journal} onSelect={(slug) => update("journal", slug)} />
           {errors.journal && <small className="field-error">{errors.journal}</small>}
         </div>
         <div className="floating-field">

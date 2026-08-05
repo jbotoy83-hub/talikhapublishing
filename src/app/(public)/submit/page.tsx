@@ -45,6 +45,8 @@ export default async function SubmitPage() {
 
   return (
     <main id="main-content" className="submit-workspace">
+      <link rel="preload" as="image" href="/assets/journal-inquira-cover.png" />
+      <link rel="preload" as="image" href="/assets/journal-lumera-cover.png" />
       <div className="submit-inner">
         <div className="submit-heading">
           <div>
