@@ -1599,6 +1599,6 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 }
 
 const TEMP_JOURNALS: JournalOption[] = [
-  { slug: "inquira", title: "InQuira", longTitle: "InQuira Research Journal", scope: "Research & scholarship", blurb: "Peer-reviewed research articles across all disciplines.", icon: "book", summaryField: "Abstract", summaryHint: "Summarize the study — its purpose, method, and key findings." },
-  { slug: "lumera", title: "Lumera", longTitle: "Lumera Literary Journal", scope: "Essays, poetry & fiction", blurb: "Creative works, essays, and literary studies.", icon: "feather", summaryField: "Description", summaryHint: "Describe what your piece is about — its theme, voice, and intent." },
+  { slug: "inquira", title: "InQuira", longTitle: "InQuira: A Multidisciplinary Journal of Research and Innovation", scope: "Research & scholarship", blurb: "Peer-reviewed research articles across all disciplines.", icon: "book", summaryField: "Abstract", summaryHint: "Summarize the study — its purpose, method, and key findings." },
+  { slug: "lumera", title: "Lumera", longTitle: "Lumera: A Journal of Literature and Creative Expression", scope: "Essays, poetry & fiction", blurb: "Creative works, essays, and literary studies.", icon: "feather", summaryField: "Description", summaryHint: "Describe what your piece is about — its theme, voice, and intent." },
 ];
