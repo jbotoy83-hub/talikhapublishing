@@ -28,6 +28,32 @@ function archivePart(value: string | undefined, prefix: "Volume" | "Issue") {
   return value && value !== "Unassigned" ? `${prefix} ${value}` : `${prefix} metadata pending`;
 }
 
+function invertName(name: string) {
+  if (name.includes(",")) return name;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(" ")}`;
+}
+
+function authorLinks(authors: Publication["authors"]) {
+  if (authors.length <= 3) {
+    return authors.map((author, index) => (
+      <span key={author.id}>{index > 0 && ", "}<Link href={`/authors/${author.slug}`}>{invertName(author.name)}</Link></span>
+    ));
+  }
+  const first = authors[0];
+  const lastTwo = authors.slice(-2);
+  return (
+    <>
+      <span key={first.id}><Link href={`/authors/${first.slug}`}>{invertName(first.name)}</Link></span>
+      <span aria-hidden="true">{", … "}</span>
+      {lastTwo.map((author, index) => (
+        <span key={author.id}>{index > 0 && ", "}<Link href={`/authors/${author.slug}`}>{invertName(author.name)}</Link></span>
+      ))}
+    </>
+  );
+}
+
 export function JournalArchive({ journal, publications, declaredIssues = [], initialSearch, initialVolume, initialIssue, initialPage }: JournalArchiveProps) {
   const [search, setSearch] = useState(initialSearch);
   const [volume, setVolume] = useState(initialVolume);
@@ -89,7 +115,7 @@ export function JournalArchive({ journal, publications, declaredIssues = [], ini
     </form>
     <p className="journal-filter-status" role="status">{filtered.length.toLocaleString("en-US")} publication{filtered.length === 1 ? "" : "s"}{search || volume || issue ? " match the selected filters" : " in this archive"}.</p>
     <div className="journal-latest-list" id="journalLatestGrid">
-      {visiblePublications.map((publication) => <article className="journal-latest-record no-thumb" key={publication.id}><div className="journal-latest-content"><div className="journal-latest-badges"><span>{publication.contentType}</span><span className="journal-open-access"><Icon name="unlock" className="h-3.5 w-3.5" />Open access</span><span className="journal-latest-views"><Icon name="eye" className="h-3.5 w-3.5" />{publication.views.toLocaleString("en-US")}</span></div><h3><Link href={`/publications/${publication.slug}`}>{publication.title}</Link></h3><p className="journal-latest-authors">{publication.authors.length ? publication.authors.map((author, index) => <span key={author.id}>{index > 0 && ", "}<Link href={`/authors/${author.slug}`}>{author.name}</Link></span>) : publication.authorDisplay}</p><div className="journal-latest-meta"><time dateTime={publication.publicationDate}>{formatPublicationDate(publication)}</time>{publication.volume && <span><strong>Vol. {publication.volume}</strong>{publication.issue ? `, No. ${publication.issue}` : ""}</span>}{publication.doi && <span>DOI {publication.doi}</span>}</div></div></article>)}
+      {visiblePublications.map((publication) => <article className="journal-latest-record no-thumb" key={publication.id}><div className="journal-latest-content"><div className="journal-latest-badges"><span>{publication.contentType}</span><span className="journal-open-access"><Icon name="unlock" className="h-3.5 w-3.5" />Open access</span><span className="journal-latest-views"><Icon name="eye" className="h-3.5 w-3.5" />{publication.views.toLocaleString("en-US")}</span></div><h3><Link href={`/publications/${publication.slug}`}>{publication.title}</Link></h3><p className="journal-latest-authors">{publication.authors.length ? authorLinks(publication.authors) : publication.authorDisplay}</p>{publication.abstract && <p className="journal-latest-abstract">{publication.abstract}</p>}<div className="journal-latest-meta"><time dateTime={publication.publicationDate}>{formatPublicationDate(publication)}</time>{publication.volume && <span><strong>Vol. {publication.volume}</strong>{publication.issue ? `, No. ${publication.issue}` : ""}</span>}{publication.doi && <span>DOI {publication.doi}</span>}</div></div></article>)}
       {!visiblePublications.length && (publications.length === 0
         ? <div className="journal-empty-archive"><span className="journal-empty-archive-mark"><Icon name="search" className="h-5 w-5" /></span><h3>No publications in this archive yet.</h3><p>{journal.title} is preparing its first verified records. You can still submit a manuscript for an upcoming issue.</p><Link href={`/submit?journal=${journal.slug}`} className="journal-empty-archive-action">Submit your work <Icon name="arrow" className="h-4 w-4" /></Link></div>
         : <p className="journal-empty-state">No verified publications match these filters.</p>)}
