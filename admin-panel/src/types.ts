@@ -59,6 +59,7 @@ export type EditorialSubmission = {
   email: string;
   affiliation: string;
   journal: string;
+  category?: string;
   status: SubmissionStatus;
   workflowStage?: string;
   submittedAt: string;
@@ -98,6 +99,7 @@ export type PublicationRecord = {
   id: string;
   submissionId: string;
   journal: string;
+  category?: string;
   journalId?: string;
   issueId?: string;
   publicationId?: string;

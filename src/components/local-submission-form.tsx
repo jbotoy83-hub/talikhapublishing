@@ -17,6 +17,7 @@ import { LoaderCircleIcon } from "@/components/icons/loader-circle";
 import { Trash2Icon } from "@/components/icons/trash-2";
 import { FileUploadSystem, FileChecklist, PreviewModal, hasAllRequiredFiles, hasActiveUploads } from "./file-upload-system";
 import { JournalPicker } from "./journal-picker";
+import { CategoryPicker } from "./category-picker";
 import { AuthorPhotoCropper, PhotoSlot, authorInitials } from "./author-photo-cropper";
 import { SubmissionProcessing, type ProcessingPhase, type ProcessingStep } from "./processing-overlay";
 import type { StoredFile } from "@/lib/file-storage";
@@ -100,7 +101,25 @@ const STEPS = [
   { id: "review", label: "Review", subtitle: "Confirm & submit", icon: "check" as const },
 ];
 
-const CATEGORIES = ["Research Article", "Essay", "Poetry", "Fiction", "Book Chapter", "Literary Review", "Commentary"];
+const JOURNAL_CATEGORIES: Record<string, { value: string; description: string; custom?: boolean }[]> = {
+  inquira: [
+    { value: "Research Article", description: "A formal, peer-reviewed study presenting original findings, methodology, and analysis." },
+    { value: "Action Research", description: "Practitioner-led inquiry that investigates and improves a real situation in context." },
+    { value: "Case Studies", description: "An in-depth examination of a particular case, program, or event." },
+    { value: "Systematic Reviews", description: "A methodical, reproducible synthesis of studies on a focused question." },
+    { value: "Scoping Reviews", description: "A broad map of the evidence and concepts across an emerging field." },
+    { value: "Literature Reviews", description: "A critical survey of published scholarship on a topic." },
+    { value: "Meta-analyses", description: "A quantitative synthesis combining results from multiple studies." },
+    { value: "Other Scholarly Work", description: "A scholarly piece not covered above. Type the specific kind of work you are submitting.", custom: true },
+  ],
+  lumera: [
+    { value: "Essay", description: "A reflective or argumentative prose piece developed around a focused idea." },
+    { value: "Poetry", description: "Crafted verse that explores theme, imagery, and sound with deliberate intent." },
+    { value: "Short Story", description: "A complete work of fiction told through narrative, character, and scene." },
+    { value: "Literary Review", description: "A critical appraisal of a work, an author, or a body of literature." },
+    { value: "Other Literary Work", description: "A creative piece not covered above. Type the specific kind of work you are submitting.", custom: true },
+  ],
+};
 
 const POLICIES_URL = "/editorial-standards";
 
@@ -568,6 +587,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       const initBody = {
         idempotencyKey,
         workingTitle: form.title.trim(),
+        abstract: form.summary.trim(),
         publicationType: form.category.trim() || "Manuscript",
         preferredJournal: form.journal,
         journalId: sj.id,
@@ -759,6 +779,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
   const selectedJournal = JOURNAL_OPTIONS.find((j) => j.slug === form.journal);
   const selectedServerJournal = serverJournals.find((journal) => journal.slug === form.journal);
+  const journalCategories = JOURNAL_CATEGORIES[form.journal] || [];
   const pickerJournals = JOURNAL_OPTIONS.map((j) => {
     const sj = serverJournals.find((s) => s.slug === j.slug);
     return { ...j, description: sj?.description || "", detail: sj?.scope || "", status: sj?.status, volume: sj?.volume, issue: sj?.issue };
@@ -775,7 +796,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const billingSubtitle = paymentPhase === "payment" ? "Select your payment method, complete the payment, and upload proof to continue." : "Choose the journal and publication plan to see your order summary.";
   const otherMethods = PAYMENT_METHODS.filter((m) => m.id !== paymentMethod);
 
-  function selectJournal(slug: string) { update("journal", slug); setJournalOpen(false); }
+  function selectJournal(slug: string) { update("journal", slug); update("category", ""); setJournalOpen(false); }
   function applyPromo() {
     const code = promoInput.trim().toUpperCase();
     if (!code) { setPromoError("Enter a promo code."); return; }
@@ -875,15 +896,12 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       <div className="floating-grid">
         <div className={`floating-field full ${errors.journal ? "has-error" : ""}`}>
           <label>Journal</label>
-          <JournalPicker journals={pickerJournals} selected={form.journal} onSelect={(slug) => update("journal", slug)} />
+          <JournalPicker journals={pickerJournals} selected={form.journal} onSelect={(slug) => { update("journal", slug); update("category", ""); }} />
           {errors.journal && <small className="field-error">{errors.journal}</small>}
         </div>
-        <div className="floating-field">
-          <label htmlFor="category">Submission category</label>
-          <select id="category" value={form.category} onChange={(e) => update("category", e.target.value)} className={form.category ? "" : "is-placeholder"}>
-            <option value="">Select category</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+        <div className="floating-field full">
+          <label>Submission category</label>
+          <CategoryPicker categories={journalCategories} value={form.category} locked={!form.journal} onChange={(v) => update("category", v)} />
         </div>
         <div className={`floating-field full ${errors.title ? "has-error" : ""}`}>
           {selectedServerJournal && <div className="submission-issue-assignment" role="status"><strong>{selectedServerJournal.title} · Volume {selectedServerJournal.volume}, Issue {selectedServerJournal.issue}</strong><span>{selectedServerJournal.status} · This assignment is managed by the editorial team.</span></div>}
