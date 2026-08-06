@@ -320,6 +320,42 @@ function reportReadFailure(
   });
 }
 
+const devLumeraStudy: Publication = {
+  id: "dev-lumera-4author-study",
+  slug: "dev-lumera-4author-study",
+  title: "Voices of the Archipelago: A Collaborative Literary Study (Dev Sample)",
+  abstract: "This development-only sample demonstrates the author-list truncation and abstract preview on the journal archive. It brings together four contributors to examine how shared authorship shapes voice, theme, and intent in contemporary creative scholarship from the Philippines, and is never shown outside local development.",
+  keywords: ["dev-sample", "collaboration", "literary studies"],
+  journal: {
+    id: "22222222-2222-4222-8222-222222222222",
+    slug: "lumera",
+    title: "Lumera",
+    description: "A literary journal for poetry, fiction, creative nonfiction, essays, and reflective writing.",
+    scope: "Poetry, fiction, creative nonfiction, essays, literary reflection, and creative expression.",
+    issn: "3000-0011",
+    heroImage: "/assets/journal-echoes-expression-hero.jpg",
+    accent: "clay"
+  },
+  authors: [
+    { id: "dev-author-1", slug: "dev-francis-botoy", name: "Francis Jeo Mar L. Botoy", bio: "" },
+    { id: "dev-author-2", slug: "dev-jerome-milana", name: "Jerome A. Milana", bio: "" },
+    { id: "dev-author-3", slug: "dev-rafael-patin", name: "Rafael C. Patin", bio: "" },
+    { id: "dev-author-4", slug: "dev-john-baluma", name: "John Paul Baluma", bio: "" }
+  ],
+  authorDisplay: "Francis Jeo Mar L. Botoy; Jerome A. Milana; Rafael C. Patin; John Paul Baluma",
+  publicationDate: "2026-08-01",
+  publicationDatePrecision: "day",
+  modifiedDate: "2026-08-01",
+  recommendedCitation: "",
+  licenseName: "All rights reserved",
+  licenseUrl: "",
+  copyrightHolder: "The authors",
+  featured: false,
+  contentType: "creative",
+  views: 0,
+  downloads: 0
+};
+
 export const getPublications = cache(async (): Promise<Publication[]> => {
   const supabase = getPublicSupabase();
   if (!supabase) return fallbackPublications();
@@ -342,7 +378,8 @@ export const getPublications = cache(async (): Promise<Publication[]> => {
   const mapped = rows
     .map(mapPublication)
     .filter((item): item is Publication => Boolean(item));
-  return mapped.length ? mapped : fallbackPublications();
+  const result = mapped.length ? mapped : fallbackPublications();
+  return process.env.NODE_ENV === "development" ? [...result, devLumeraStudy] : result;
 });
 
 export const getHomePublications = cache(async (limit = 24): Promise<Publication[]> => {
