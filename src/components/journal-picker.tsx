@@ -156,10 +156,6 @@ export function JournalPicker({ journals, selected, onSelect }: { journals: Jour
                     <h3 className="mt-2 font-serif text-2xl text-ink md:text-3xl">{active.longTitle}</h3>
                   </div>
                   <p className="text-sm leading-relaxed text-[#4a5560] md:text-base">{active.description || active.blurb}</p>
-                  <div className="rounded-xl border border-[#e6e9ec] bg-parchment p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#66756d]">Focus &amp; scope</p>
-                    <p className="mt-1.5 text-sm leading-relaxed text-[#4a5560]">{active.detail || active.blurb}</p>
-                  </div>
                   {active.volume && (
                     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                       <span className="rounded-full bg-[#dfe9e2] px-3 py-1.5 text-[#183d2c]">{active.status ?? "Accepting submissions"}</span>
