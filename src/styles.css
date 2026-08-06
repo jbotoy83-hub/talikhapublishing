@@ -3433,7 +3433,7 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
 .ad-card2-latest-title:hover { color:var(--authors-green); text-decoration:underline; text-underline-offset:2px; }
 .ad-card2-latest small { color:#8a958c; font-size:.74rem; }
 .ad-card2-meta { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:auto; padding-top:1rem; border-top:1px solid #eef1ec; }
-.ad-card2-meta > div { display:flex; flex-direction:column; gap:.25rem; }
+.ad-card2-meta > div { display:flex; flex-direction:column; align-items:center; text-align:center; gap:.25rem; }
 .ad-card2-meta-k { color:#9aa39b; font-size:.62rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .ad-card2-meta b { color:var(--authors-deep); font-family:Literata,Georgia,serif; font-size:1.1rem; font-weight:800; line-height:1; }
 @media (max-width:1020px) { .ad-grid2 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
