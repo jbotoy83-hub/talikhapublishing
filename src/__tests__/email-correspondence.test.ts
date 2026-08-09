@@ -27,6 +27,8 @@ describe("submission correspondence", () => {
     expect(result.text).toContain("/track?reference=TAL-2026-ABC123");
     expect(result.html).not.toContain("A <b>Study</b>");
     expect(result.html).toContain("A &lt;b&gt;Study&lt;/b&gt;");
+    expect(result.text).toContain("Dear Ana <script>,");
+    expect(result.html).toContain("Dear Ana &lt;script&gt;,");
     expect(escapeEmailHtml("<>&\"")).toBe("&lt;&gt;&amp;&quot;");
   });
 

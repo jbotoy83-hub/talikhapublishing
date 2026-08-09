@@ -10,8 +10,8 @@ export function escapeEmailHtml(value: string) {
   })[character] || character);
 }
 
-export function firstName(recipient: EmailRecipient) {
-  return recipient.name.trim().split(/\s+/)[0] || "Author";
+export function recipientName(recipient: EmailRecipient) {
+  return recipient.name.trim().replace(/\s+/g, " ") || "Author";
 }
 
 export function formatManilaDate(value: string) {
@@ -23,12 +23,12 @@ export function formatManilaDate(value: string) {
 }
 
 export function renderSubmissionReceivedEmail(context: SubmissionEmailContext, recipient: EmailRecipient): RenderedEmail {
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://talikhapublishing.com").replace(/\/$/, "");
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://talikhapublishing.vercel.app").replace(/\/$/, "");
   const trackingUrl = `${siteUrl}/track?reference=${encodeURIComponent(context.reference)}`;
   const subject = `Submission received: ${context.reference} — ${context.title}`;
   const submitted = formatManilaDate(context.submittedAt);
   const journalLine = `${context.journal}, Volume ${context.volume}, Issue ${context.issue}`;
-  const greeting = firstName(recipient);
+  const greeting = recipientName(recipient);
   const text = [
     `Dear ${greeting},`,
     "",

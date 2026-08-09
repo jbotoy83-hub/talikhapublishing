@@ -77,7 +77,7 @@ function buildMime(to: string, message: RenderedEmail, messageId: string, inRepl
 
 export async function sendGmailMessage(input: { to: string; message: RenderedEmail; threadId?: string | null; inReplyTo?: string }) {
   const token = await getGmailAccessToken();
-  const rfcMessageId = `<${crypto.randomUUID()}@talikhapublishing.com>`;
+  const rfcMessageId = `<${crypto.randomUUID()}@talikhapublishing.vercel.app>`;
   const response = await fetch(`${GMAIL_API}/messages/send`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },

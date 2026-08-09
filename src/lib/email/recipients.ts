@@ -12,14 +12,14 @@ export function resolveSubmissionRecipients(submission: { author_name: string; a
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) || recipients.has(normalized)) return;
     recipients.set(normalized, { email: normalized, name: typeof name === "string" && name.trim() ? name.trim() : "Author" });
   };
-  add(submission.author_email, submission.author_name);
   if (Array.isArray(submission.author_details)) {
     for (const author of submission.author_details) {
       if (!author || typeof author !== "object") continue;
       const item = author as Record<string, unknown>;
-      const name = [item.firstName, item.middleInitial, item.surname].filter((part): part is string => typeof part === "string" && Boolean(part.trim())).join(" ");
+      const name = [item.firstName, item.surname].filter((part): part is string => typeof part === "string" && Boolean(part.trim())).map((part) => part.trim()).join(" ");
       add(item.email, name);
     }
   }
+  add(submission.author_email, submission.author_name);
   return [...recipients.values()];
 }
