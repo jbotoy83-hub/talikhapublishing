@@ -1,11 +1,21 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isSubmissionsEnabled } from "@/lib/launch";
 import { submissionCompleteSchema, submissionFileRules, type SubmissionFileField } from "@/lib/submission";
 import { allowRequest, getRequestRateLimitKey } from "@/lib/rate-limit";
 import { PROGRESS_OPENING } from "@/lib/editorial-workflow";
+import { deliverQueuedMessages, ensureSubmissionConfirmations } from "@/lib/email/correspondence";
 
 const MAX_COMPLETE_BODY_BYTES = 8 * 1024;
+
+function confirmationStatus(statuses: string[]) {
+  if (!statuses.length) return "not_queued";
+  if (statuses.every((status) => status === "sent")) return "sent";
+  if (statuses.includes("unknown")) return "unknown";
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("sending")) return "sending";
+  return "queued";
+}
 
 function matchesFileSignature(field: SubmissionFileField, mimetype: string, bytes: Uint8Array) {
   const startsWith = (...signature: number[]) => signature.every((value, index) => bytes[index] === value);
@@ -45,7 +55,11 @@ export async function POST(request: Request) {
     .eq("id", submissionId)
     .maybeSingle();
   if (pendingError || !pendingSubmission) return NextResponse.json({ error: "Submission not found." }, { status: 404 });
-  if (pendingSubmission.status === "submitted") return NextResponse.json({ reference: pendingSubmission.reference });
+  if (pendingSubmission.status === "submitted") {
+    const { data: messages } = await admin.from("email_messages").select("status").eq("submission_id", submissionId).eq("source", "automated");
+    const statuses = (messages || []).map((message) => message.status);
+    return NextResponse.json({ reference: pendingSubmission.reference, confirmation: { status: confirmationStatus(statuses), recipientCount: statuses.length } });
+  }
   if (pendingSubmission.status !== "uploading") return NextResponse.json({ error: "This submission can no longer be completed." }, { status: 409 });
 
   const fileRows = [];
@@ -95,5 +109,14 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ reference: submission.reference });
+  let confirmation: { status: "queued" | "failed"; recipientCount: number } = { status: "failed", recipientCount: 0 };
+  try {
+    const queued = await ensureSubmissionConfirmations(admin, submissionId);
+    confirmation = { status: queued.status, recipientCount: queued.recipientCount };
+    after(async () => { await deliverQueuedMessages(admin, queued.messageIds); });
+  } catch (emailError) {
+    await admin.from("audit_events").insert({ action: "submission_confirmation_queue_failed", entity_type: "submission", entity_id: submissionId, details: { error: emailError instanceof Error ? emailError.message : "Unknown email queue error" } });
+  }
+
+  return NextResponse.json({ reference: submission.reference, confirmation });
 }

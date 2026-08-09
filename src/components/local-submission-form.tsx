@@ -330,6 +330,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [reference, setReference] = useState("");
+  const [confirmationRecipientCount, setConfirmationRecipientCount] = useState(0);
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadedFiles, setUploadedFiles] = useState<StoredFile[]>([]);
@@ -541,7 +542,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
     onStep: (step: ProcessingStep) => void,
     idempotencyKey: string
-  ): Promise<string> {
+  ): Promise<{ reference: string; recipientCount: number; confirmationStatus: string }> {
       const completed = uploadedFiles.filter((f) => f.status === "completed");
       const manuscript = completed.find((f) => f.purpose === "manuscript");
       const proof = completed.find((f) => f.purpose === "payment-proof");
@@ -630,15 +631,15 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
 
       onStep("verifying");
       const completeRes = await fetchSubmission("/api/submissions/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ submissionId: init.submissionId, uploads: init.uploads.map((u) => ({ field: u.field, path: u.path })) }) });
-      const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; error?: string };
+      const complete = (await completeRes.json().catch(() => ({}))) as { reference?: string; confirmation?: { status?: string; recipientCount?: number }; error?: string };
       if (!completeRes.ok || !complete.reference) throw new Error(complete.error || "Your files were uploaded, but the record could not be finalized. Please contact the editorial team.");
       forgetPendingUploadSession();
 
       onStep("finalizing");
-      return complete.reference;
+      return { reference: complete.reference, recipientCount: complete.confirmation?.recipientCount || 0, confirmationStatus: complete.confirmation?.status || "failed" };
   }
 
-  async function runLocalSubmission(onStep: (step: ProcessingStep) => void): Promise<string> {
+  async function runLocalSubmission(onStep: (step: ProcessingStep) => void): Promise<{ reference: string; recipientCount: number; confirmationStatus: string }> {
     await wait(700);
     onStep("uploading");
     await wait(700);
@@ -686,7 +687,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       locked: true
     });
     localStorage.setItem(localSubmissionKey, JSON.stringify(records));
-    return nextReference;
+    return { reference: nextReference, recipientCount: 0, confirmationStatus: "not_available" };
   }
 
   function resetFormState() {
@@ -725,13 +726,14 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
     for (let current = 1; current <= MAX_SUBMIT_ATTEMPTS; current++) {
       try {
         const startedAt = Date.now();
-        const ref = isServer
+        const result = isServer
           ? await runServerSubmission(sj!, supabase!, setProcessingStep, idempotencyKey)
           : await runLocalSubmission(setProcessingStep);
         const elapsed = Date.now() - startedAt;
         if (elapsed < MIN_PROCESS_MS) await wait(MIN_PROCESS_MS - elapsed);
         setServerSubmitted(isServer);
-        setReference(ref);
+        setReference(result.reference);
+        setConfirmationRecipientCount(result.recipientCount);
         if (!isServer) setMessage("Saved only in this browser. Files are stored locally in your browser's database.");
         setProcessingPhase("succeeded");
         await wait(1500);
@@ -867,9 +869,9 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
         <div className="submission-success-seal" aria-hidden="true"><Icon name="check" className="h-10 w-10" /></div>
         <p className="eyebrow">{serverSubmitted ? "Submission received" : "Submission saved"}</p>
         <h2>{serverSubmitted ? "Your work is now in editorial hands." : "Your local editorial record is ready."}</h2>
-        <p className="submission-success-lead">{serverSubmitted ? "Your manuscript and payment proof have been delivered to the protected editorial desk. We will review them and be in touch by email." : message}</p>
+        <p className="submission-success-lead">{serverSubmitted ? `Your manuscript and payment proof have been delivered to the protected editorial desk. ${confirmationRecipientCount > 0 ? `${confirmationRecipientCount} private confirmation email${confirmationRecipientCount === 1 ? " is" : "s are"} being sent to the listed author${confirmationRecipientCount === 1 ? "" : "s"}.` : "Your reference below remains the authoritative receipt while email delivery is checked."}` : message}</p>
         <aside className="submission-receipt"><p>Submission reference</p><strong><Link href={`/track?reference=${encodeURIComponent(reference)}`}>{reference}</Link></strong><span>{serverSubmitted ? "Use this reference as your tracking ticket. Select it to open your progress at any time." : "Copy or screenshot this reference. Use it in Track Submission to follow progress on this device."}</span>{serverSubmitted ? null : <small>Email receipts will be available once an email service is connected.</small>}</aside>
-        <div className="submission-success-actions"><button type="button" className="submission-primary" onClick={() => router.push(`/track?reference=${encodeURIComponent(reference)}`)}>Track Submission <Icon name="arrow" className="h-4 w-4" /></button><button type="button" className="submission-secondary" onClick={() => { setReference(""); setServerSubmitted(false); setSubmitError(""); setStep(0); setForm(emptyForm); setErrors({}); }}>Submit another work</button></div>
+        <div className="submission-success-actions"><button type="button" className="submission-primary" onClick={() => router.push(`/track?reference=${encodeURIComponent(reference)}`)}>Track Submission <Icon name="arrow" className="h-4 w-4" /></button><button type="button" className="submission-secondary" onClick={() => { setReference(""); setConfirmationRecipientCount(0); setServerSubmitted(false); setSubmitError(""); setStep(0); setForm(emptyForm); setErrors({}); }}>Submit another work</button></div>
       </motion.section>
     ) : (
       <div className="submission-panel">
@@ -1525,7 +1527,7 @@ export function LocalSubmissionForm({ serverJournals = [] }: { serverJournals?: 
       <div className="footer-note">
         <span><Icon name="lock" className="h-4 w-4" /></span>
         {step === lastStep ? (
-          <p>Your data and files are securely processed and stored.<br />We never share your information with third parties.</p>
+          <p>Your data and files are securely processed by Talikha&apos;s service providers.<br />Submission correspondence may be stored in Supabase and delivered through Google Gmail.</p>
         ) : (
           <p>No files, email addresses, or submission details leave this browser.<br />Open the Talikha admin panel on this device to review saved entries.</p>
         )}

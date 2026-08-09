@@ -1,190 +1,71 @@
-import { useEffect, useMemo, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useCallback, useEffect, useState } from "react";
+import { X } from "@/components/icons";
 import { ChannelSidebar } from "./channel-sidebar";
 import { ConversationList } from "./conversation-list";
 import { ConversationThread } from "./conversation-thread";
-import {
-  DISCONNECTED_CHANNELS,
-  SEED_CHANNELS,
-  loadInbox,
-  saveInbox,
-} from "./mock-data";
-import type { Conversation, PrimaryFilter, SortKey } from "./types";
+import type { InboxConnection, InboxFilter, InboxThreadDetail, InboxThreadSummary, LinkedSubmission } from "./types";
 import "./inbox.css";
 
-const FILTER_LABEL: Record<PrimaryFilter, string> = {
-  email: "Email",
-  chats: "Chats",
-  scheduled: "Scheduled",
-  assigned: "Assigned",
-  closed: "Closed",
-  starred: "Starred",
-  archived: "Archived",
-};
+const PAGE_SIZE = 25;
 
-function matchesFilter(c: Conversation, filter: PrimaryFilter): boolean {
-  switch (filter) {
-    case "email":
-      return c.channelKind === "gmail";
-    case "chats":
-      return c.channelKind === "messenger";
-    case "scheduled":
-      return c.status === "scheduled";
-    case "assigned":
-      return c.status === "assigned";
-    case "closed":
-      return c.status === "closed";
-    case "starred":
-      return c.starred;
-    case "archived":
-      return c.status === "archived";
-  }
-}
-
-function sortConversations(list: Conversation[], sort: SortKey): Conversation[] {
-  const copy = [...list];
-  if (sort === "unread") {
-    copy.sort((a, b) => (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0) || +new Date(b.lastMessageAt) - +new Date(a.lastMessageAt));
-  } else if (sort === "oldest") {
-    copy.sort((a, b) => +new Date(a.lastMessageAt) - +new Date(b.lastMessageAt));
-  } else {
-    copy.sort((a, b) => +new Date(b.lastMessageAt) - +new Date(a.lastMessageAt));
-  }
-  return copy;
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, { ...init, credentials: "same-origin", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
+  const payload = await response.json().catch(() => ({})) as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error || "The Inbox request failed.");
+  return payload;
 }
 
 export function InboxWorkspace() {
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadInbox());
-  const [activeFilter, setActiveFilter] = useState<PrimaryFilter | null>(null);
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>("c-matthew");
+  const [filter, setFilter] = useState<InboxFilter>("inbox");
+  const [threads, setThreads] = useState<InboxThreadSummary[]>([]);
+  const [connection, setConnection] = useState<InboxConnection | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<InboxThreadDetail | null>(null);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortKey>("newest");
-  const [railOpen, setRailOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
 
-  useEffect(() => {
-    saveInbox(conversations);
-  }, [conversations]);
+  const loadThreads = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    try {
+      const params = new URLSearchParams({ filter, page: String(page), pageSize: String(PAGE_SIZE), q: query });
+      const payload = await api<{ threads: InboxThreadSummary[]; total: number; connection: InboxConnection }>(`/api/admin/inbox?${params}`);
+      setThreads(Array.isArray(payload.threads) ? payload.threads : []); setTotal(Number(payload.total || 0)); setConnection(payload.connection || null); setError("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load the Inbox."); }
+    finally { setLoading(false); }
+  }, [filter, page, query]);
 
-  const counts = useMemo(() => {
-    const result = {} as Record<PrimaryFilter, number>;
-    (Object.keys(FILTER_LABEL) as PrimaryFilter[]).forEach((key) => {
-      result[key] = conversations.filter((c) => matchesFilter(c, key)).length;
-    });
-    return result;
-  }, [conversations]);
+  useEffect(() => { const timer = window.setTimeout(() => setQuery(search.trim()), 300); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { setPage(1); }, [filter, query]);
+  useEffect(() => { void loadThreads(); }, [loadThreads]);
+  useEffect(() => { const refresh = () => void loadThreads(true); window.addEventListener("focus", refresh); const timer = window.setInterval(refresh, 45_000); return () => { window.removeEventListener("focus", refresh); window.clearInterval(timer); }; }, [loadThreads]);
 
-  const channelCounts = useMemo(() => {
-    const result: Record<string, number> = {};
-    for (const c of conversations) result[c.channelId] = (result[c.channelId] ?? 0) + 1;
-    return result;
-  }, [conversations]);
+  async function openThread(id: string) { setSelectedId(id); setDetailLoading(true); try { setDetail(await api<InboxThreadDetail>(`/api/admin/inbox/${id}`)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open the conversation."); } finally { setDetailLoading(false); } }
+  async function send(input: { threadId?: string; submissionId?: string; recipientEmail?: string; subject: string; body: string }) { setSending(true); try { const result = await api<{ message: { thread_id: string } }>("/api/admin/inbox", { method: "POST", body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }) }); setComposeOpen(false); await loadThreads(true); await openThread(result.message.thread_id); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not send the email."); throw cause; } finally { setSending(false); } }
+  async function retry(messageId: string) { try { await api(`/api/admin/inbox/messages/${messageId}/retry`, { method: "POST" }); if (selectedId) await openThread(selectedId); await loadThreads(true); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not retry the email."); } }
 
-  const visible = useMemo(() => {
-    let list = conversations;
-    if (activeChannelId) list = list.filter((c) => c.channelId === activeChannelId);
-    else if (activeFilter) list = list.filter((c) => matchesFilter(c, activeFilter));
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter((c) =>
-        [c.participant.name, c.preview, c.participant.handle ?? ""].join(" ").toLowerCase().includes(q),
-      );
-    }
-    return sortConversations(list, sort);
-  }, [conversations, activeChannelId, activeFilter, search, sort]);
+  return <div className="mail-workspace">
+    <ChannelSidebar connection={connection} active={filter} onChange={(value) => { setFilter(value); setSelectedId(null); setDetail(null); }} />
+    <ConversationList threads={threads} selectedId={selectedId} search={search} loading={loading} total={total} page={page} pageSize={PAGE_SIZE} filter={filter} onFilter={(value) => { setFilter(value); setSelectedId(null); setDetail(null); }} onSearch={setSearch} onSelect={(id) => void openThread(id)} onCompose={() => setComposeOpen(true)} onPage={setPage} />
+    <ConversationThread detail={detail} loading={detailLoading} sending={sending} onBack={() => { setSelectedId(null); setDetail(null); }} onReply={(body) => send({ threadId: detail?.thread.id, subject: detail?.thread.subject || "Talikha Publishing", body })} onRetry={retry} />
+    {error && <div className="mail-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div>}
+    {composeOpen && <ComposeDialog sending={sending} onClose={() => setComposeOpen(false)} onSend={send} />}
+  </div>;
+}
 
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
-
-  const title = activeFilter
-    ? FILTER_LABEL[activeFilter]
-    : activeChannelId
-      ? SEED_CHANNELS.find((c) => c.id === activeChannelId)?.label ?? "Messages"
-      : "Messages";
-
-  function handleFilter(filter: PrimaryFilter | null) {
-    setActiveFilter(filter);
-    setActiveChannelId(null);
-  }
-
-  function handleChannel(id: string | null) {
-    setActiveChannelId(id);
-    setActiveFilter(null);
-  }
-
-  function handleSelect(id: string) {
-    setSelectedId(id);
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
-  }
-
-  function handleToggleStar(id: string) {
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, starred: !c.starred } : c)));
-  }
-
-  function handleSend(text: string) {
-    if (!selectedId) return;
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== selectedId) return c;
-        const message = {
-          id: `m-${Date.now()}`,
-          direction: "out" as const,
-          author: "Nathan Scott",
-          body: text,
-          sentAt: new Date().toISOString(),
-          status: "sent" as const,
-        };
-        return {
-          ...c,
-          messages: [...c.messages, message],
-          preview: text,
-          lastMessageAt: message.sentAt,
-          unread: 0,
-        };
-      }),
-    );
-  }
-
-  const rail = (
-    <ChannelSidebar
-      account={SEED_CHANNELS[0].account}
-      counts={counts}
-      channelCounts={channelCounts}
-      activeFilter={activeFilter}
-      activeChannelId={activeChannelId}
-      onFilter={handleFilter}
-      onChannel={handleChannel}
-      channels={SEED_CHANNELS}
-      disconnected={DISCONNECTED_CHANNELS}
-    />
-  );
-
-  return (
-    <div className="ibx" data-view={selectedId ? "thread" : "list"}>
-      {rail}
-
-      <ConversationList
-        title={title}
-        conversations={visible}
-        selectedId={selectedId}
-        search={search}
-        sort={sort}
-        onSelect={handleSelect}
-        onSearch={setSearch}
-        onSort={setSort}
-        onToggleStar={handleToggleStar}
-        onOpenChannels={() => setRailOpen(true)}
-      />
-
-      <ConversationThread conversation={selected} onBack={() => setSelectedId(null)} onSend={handleSend} />
-
-      <Sheet open={railOpen} onOpenChange={setRailOpen}>
-        <SheetContent side="left" className="w-[280px] p-0">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Channels and filters</SheetTitle>
-          </SheetHeader>
-          {rail}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
+function ComposeDialog({ sending, onClose, onSend }: { sending: boolean; onClose: () => void; onSend: (input: { submissionId: string; recipientEmail: string; subject: string; body: string }) => Promise<void> }) {
+  const [submissions, setSubmissions] = useState<LinkedSubmission[]>([]);
+  const [submissionId, setSubmissionId] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  useEffect(() => { void api<{ submissions: LinkedSubmission[] }>("/api/admin/inbox?kind=submissions").then((result) => setSubmissions(Array.isArray(result.submissions) ? result.submissions : [])).catch(() => setSubmissions([])); }, []);
+  const selected = submissions.find((submission) => submission.id === submissionId);
+  return <div className="mail-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="mail-modal" role="dialog" aria-modal="true" aria-labelledby="composeTitle"><header><div><small>Protected admin action</small><h2 id="composeTitle">New author email</h2></div><button type="button" onClick={onClose} aria-label="Close"><X size={18} /></button></header><p>A new conversation must stay linked to a submission and one of its listed authors.</p><label>Submission<select value={submissionId} onChange={(event) => { setSubmissionId(event.target.value); setRecipientEmail(""); }}><option value="">Choose a submitted work</option>{submissions.map((submission) => <option key={submission.id} value={submission.id}>{submission.reference} — {submission.title}</option>)}</select></label><label>Author<select value={recipientEmail} disabled={!selected} onChange={(event) => setRecipientEmail(event.target.value)}><option value="">Choose a linked author</option>{selected?.recipients?.map((recipient) => <option key={recipient.email} value={recipient.email}>{recipient.name} — {recipient.email}</option>)}</select></label><label>Subject<input value={subject} maxLength={200} onChange={(event) => setSubject(event.target.value.replace(/[\r\n]/g, ""))} /></label><label>Message<textarea value={body} maxLength={20000} rows={9} onChange={(event) => setBody(event.target.value)} placeholder="Write plain text. Talikha branding is applied when the email is sent." /></label><footer><button type="button" onClick={onClose}>Cancel</button><button type="button" disabled={!submissionId || !recipientEmail || !subject.trim() || !body.trim() || sending} onClick={() => { void onSend({ submissionId, recipientEmail, subject: subject.trim(), body: body.trim() }).catch(() => undefined); }}>{sending ? "Queueing…" : "Queue email"}</button></footer></section></div>;
 }

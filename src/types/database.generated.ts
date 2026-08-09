@@ -677,6 +677,250 @@ export type Database = {
         }
         Relationships: []
       }
+      email_attachments: {
+        Row: {
+          created_at: string
+          filename: string
+          gmail_message_id: string
+          id: string
+          message_id: string
+          mime_type: string
+          provider_attachment_id: string
+          size_bytes: number
+        }
+        Insert: {
+          created_at?: string
+          filename: string
+          gmail_message_id: string
+          id?: string
+          message_id: string
+          mime_type: string
+          provider_attachment_id: string
+          size_bytes?: number
+        }
+        Update: {
+          created_at?: string
+          filename?: string
+          gmail_message_id?: string
+          id?: string
+          message_id?: string
+          mime_type?: string
+          provider_attachment_id?: string
+          size_bytes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_attachments_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "email_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_messages: {
+        Row: {
+          actor_id: string | null
+          attempt_count: number
+          body_html: string
+          body_text: string
+          created_at: string
+          direction: string
+          gmail_history_id: string | null
+          gmail_message_id: string | null
+          gmail_thread_id: string | null
+          id: string
+          idempotency_key: string
+          last_attempt_at: string | null
+          provider_error: string | null
+          received_at: string | null
+          recipients: Json
+          retryable: boolean
+          rfc_message_id: string | null
+          sender_email: string
+          sender_name: string | null
+          sent_at: string | null
+          source: string
+          status: string
+          subject: string
+          submission_id: string | null
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          actor_id?: string | null
+          attempt_count?: number
+          body_html?: string
+          body_text?: string
+          created_at?: string
+          direction: string
+          gmail_history_id?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          idempotency_key: string
+          last_attempt_at?: string | null
+          provider_error?: string | null
+          received_at?: string | null
+          recipients?: Json
+          retryable?: boolean
+          rfc_message_id?: string | null
+          sender_email: string
+          sender_name?: string | null
+          sent_at?: string | null
+          source: string
+          status: string
+          subject: string
+          submission_id?: string | null
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string | null
+          attempt_count?: number
+          body_html?: string
+          body_text?: string
+          created_at?: string
+          direction?: string
+          gmail_history_id?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          idempotency_key?: string
+          last_attempt_at?: string | null
+          provider_error?: string | null
+          received_at?: string | null
+          recipients?: Json
+          retryable?: boolean
+          rfc_message_id?: string | null
+          sender_email?: string
+          sender_name?: string | null
+          sent_at?: string | null
+          source?: string
+          status?: string
+          subject?: string
+          submission_id?: string | null
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "email_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_threads: {
+        Row: {
+          created_at: string
+          gmail_thread_id: string | null
+          id: string
+          last_message_at: string
+          needs_attention: boolean
+          participant_email: string | null
+          participant_name: string | null
+          snippet: string
+          source: string
+          starred: boolean
+          subject: string
+          submission_id: string | null
+          unread: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          gmail_thread_id?: string | null
+          id?: string
+          last_message_at?: string
+          needs_attention?: boolean
+          participant_email?: string | null
+          participant_name?: string | null
+          snippet?: string
+          source?: string
+          starred?: boolean
+          subject: string
+          submission_id?: string | null
+          unread?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          gmail_thread_id?: string | null
+          id?: string
+          last_message_at?: string
+          needs_attention?: boolean
+          participant_email?: string | null
+          participant_name?: string | null
+          snippet?: string
+          source?: string
+          starred?: boolean
+          subject?: string
+          submission_id?: string | null
+          unread?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_threads_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gmail_sync_state: {
+        Row: {
+          account_email: string
+          backfill_complete: boolean
+          backfill_page_token: string | null
+          created_at: string
+          history_id: string | null
+          imported_threads: number
+          last_error: string | null
+          last_synced_at: string | null
+          phase: string
+          updated_at: string
+          watch_expiration: string | null
+        }
+        Insert: {
+          account_email: string
+          backfill_complete?: boolean
+          backfill_page_token?: string | null
+          created_at?: string
+          history_id?: string | null
+          imported_threads?: number
+          last_error?: string | null
+          last_synced_at?: string | null
+          phase?: string
+          updated_at?: string
+          watch_expiration?: string | null
+        }
+        Update: {
+          account_email?: string
+          backfill_complete?: boolean
+          backfill_page_token?: string | null
+          created_at?: string
+          history_id?: string | null
+          imported_threads?: number
+          last_error?: string | null
+          last_synced_at?: string | null
+          phase?: string
+          updated_at?: string
+          watch_expiration?: string | null
+        }
+        Relationships: []
+      }
       issues: {
         Row: {
           cover_image_url: string | null
@@ -1865,6 +2109,7 @@ export type Database = {
           created_at: string
           current_stage: Database["public"]["Enums"]["workflow_stage"]
           id: string
+          idempotency_key: string | null
           issue_snapshot: string
           journal_title_snapshot: string
           phone: string | null
@@ -1894,6 +2139,7 @@ export type Database = {
           created_at?: string
           current_stage?: Database["public"]["Enums"]["workflow_stage"]
           id?: string
+          idempotency_key?: string | null
           issue_snapshot?: string
           journal_title_snapshot?: string
           phone?: string | null
@@ -1923,6 +2169,7 @@ export type Database = {
           created_at?: string
           current_stage?: Database["public"]["Enums"]["workflow_stage"]
           id?: string
+          idempotency_key?: string | null
           issue_snapshot?: string
           journal_title_snapshot?: string
           phone?: string | null
@@ -2089,6 +2336,7 @@ export type Database = {
           created_at: string
           current_stage: Database["public"]["Enums"]["workflow_stage"]
           id: string
+          idempotency_key: string | null
           issue_snapshot: string
           journal_title_snapshot: string
           phone: string | null
@@ -2253,6 +2501,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      delete_submission_cascade: {
+        Args: { p_submission_id: string }
+        Returns: Json
+      }
       increment_publication_metric: {
         Args: { p_field: string; p_publication_id: string }
         Returns: undefined
@@ -2312,6 +2564,7 @@ export type Database = {
           created_at: string
           current_stage: Database["public"]["Enums"]["workflow_stage"]
           id: string
+          idempotency_key: string | null
           issue_snapshot: string
           journal_title_snapshot: string
           phone: string | null

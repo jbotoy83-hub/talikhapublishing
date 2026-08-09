@@ -1,83 +1,49 @@
-export type ChannelKind = "gmail" | "messenger";
+export type InboxFilter = "inbox" | "submission" | "automated" | "admin" | "starred" | "attention";
+export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "unknown" | "received";
 
-export type Presence = "online" | "recent" | "offline";
+export interface LinkedRecipient { email: string; name: string }
+export interface LinkedSubmission { id: string; reference: string; title: string; journal: string; recipients?: LinkedRecipient[] }
 
-export type MessageDirection = "in" | "out";
-
-export type ConversationStatus =
-  | "open"
-  | "scheduled"
-  | "assigned"
-  | "closed"
-  | "archived";
-
-export type PrimaryFilter =
-  | "email"
-  | "chats"
-  | "scheduled"
-  | "assigned"
-  | "closed"
-  | "starred"
-  | "archived";
-
-export type SortKey = "newest" | "oldest" | "unread";
-
-export interface Channel {
+export interface InboxThreadSummary {
   id: string;
-  kind: ChannelKind;
-  label: string;
-  account: string;
-  connected: boolean;
+  submission_id: string | null;
+  gmail_thread_id: string | null;
+  subject: string;
+  participant_name: string | null;
+  participant_email: string | null;
+  snippet: string;
+  source: "automated" | "admin" | "gmail";
+  starred: boolean;
+  unread: boolean;
+  needs_attention: boolean;
+  last_message_at: string;
+  submission: LinkedSubmission | null;
 }
 
-export interface MessageReaction {
-  emoji: string;
-  byMe?: boolean;
-}
-
+export interface InboxAttachment { id: string; filename: string; mime_type: string; size_bytes: number }
 export interface InboxMessage {
   id: string;
-  direction: MessageDirection;
-  author: string;
-  body: string;
-  sentAt: string;
-  reactions?: MessageReaction[];
-  status?: "sending" | "sent" | "delivered" | "read";
+  direction: "inbound" | "outbound";
+  source: "automated" | "admin" | "gmail";
+  sender_name: string | null;
+  sender_email: string;
+  recipients: LinkedRecipient[];
+  subject: string;
+  body_text: string;
+  body_html: string;
+  status: DeliveryStatus;
+  provider_error: string | null;
+  attempt_count: number;
+  sent_at: string | null;
+  received_at: string | null;
+  created_at: string;
+  email_attachments: InboxAttachment[];
 }
 
-export interface Participant {
-  name: string;
-  initials: string;
-  accent: string;
-  presence: Presence;
-  handle?: string;
+export interface InboxThreadDetail { thread: InboxThreadSummary; messages: InboxMessage[]; submission: LinkedSubmission | null }
+export interface InboxConnection {
+  account: string;
+  outboundEnabled: boolean;
+  syncEnabled: boolean;
+  sync: null | { phase: string; backfill_complete: boolean; imported_threads: number; watch_expiration: string | null; last_synced_at: string | null; last_error: string | null };
 }
-
-export interface Conversation {
-  id: string;
-  channelId: string;
-  channelKind: ChannelKind;
-  participant: Participant;
-  preview: string;
-  lastMessageAt: string;
-  unread: number;
-  starred: boolean;
-  status: ConversationStatus;
-  hasAttachment?: boolean;
-  messengerWindowExpiresAt?: string;
-  messages: InboxMessage[];
-}
-
-export interface DisconnectedChannel {
-  id: string;
-  kind: "telegram" | "whatsapp";
-  label: string;
-}
-
-export const CHANNEL_META: Record<
-  ChannelKind,
-  { label: string; dot: string; chip: string }
-> = {
-  gmail: { label: "Gmail", dot: "#ea4335", chip: "#fdeceb" },
-  messenger: { label: "Messenger", dot: "#0084ff", chip: "#e8f1ff" },
-};

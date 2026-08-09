@@ -89,11 +89,11 @@ describe("submissionInitSchema", () => {
     expect(submissionInitSchema.safeParse(makeValidInit({ workingTitle: "x".repeat(300) })).success).toBe(true);
   });
 
-  it("enforces the publicationType enum (case-sensitive)", () => {
+  it("accepts journal-defined publication types within the server limits", () => {
     expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "Research article" })).success).toBe(true);
-    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "Research Article" })).success).toBe(true);
-    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "research article" })).success).toBe(false);
-    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "Blog post" })).success).toBe(false);
+    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "Blog post" })).success).toBe(true);
+    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "   " })).success).toBe(false);
+    expect(submissionInitSchema.safeParse(makeValidInit({ publicationType: "x".repeat(121) })).success).toBe(false);
   });
 
   it("requires UUID journalId and issueId", () => {

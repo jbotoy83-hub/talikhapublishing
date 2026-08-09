@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/cron/journal-lifecycle", "schedule": "0 0 * * *" }
+    { "path": "/api/cron/journal-lifecycle", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/email-maintenance", "schedule": "15 0 * * *" }
   ],
   "headers": [
     {
