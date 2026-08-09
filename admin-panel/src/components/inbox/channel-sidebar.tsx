@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock3, FolderOpen, Inbox, Send, Star } from "@/components/icons";
+import { AlertTriangle, CheckCircle2, Clock3, FolderOpen, Inbox, RefreshCw, Send, Star } from "@/components/icons";
 import type { InboxConnection, InboxFilter } from "./types";
 
 const filters: Array<{ id: InboxFilter; label: string; Icon: typeof Inbox }> = [
@@ -10,7 +10,7 @@ const filters: Array<{ id: InboxFilter; label: string; Icon: typeof Inbox }> = [
   { id: "attention", label: "Needs attention", Icon: AlertTriangle }
 ];
 
-export function ChannelSidebar({ connection, active, onChange }: { connection: InboxConnection | null; active: InboxFilter; onChange: (value: InboxFilter) => void }) {
+export function ChannelSidebar({ connection, active, syncStarting, onSync, onChange }: { connection: InboxConnection | null; active: InboxFilter; syncStarting: boolean; onSync: () => void; onChange: (value: InboxFilter) => void }) {
   const connected = Boolean(connection?.outboundEnabled);
   const syncing = Boolean(connection?.syncEnabled);
   return <aside className="mail-rail">
@@ -20,6 +20,6 @@ export function ChannelSidebar({ connection, active, onChange }: { connection: I
       <div><strong>{connected ? "Gmail sending ready" : "Gmail setup required"}</strong><span>{connection?.account || "talikhapublishing@gmail.com"}</span></div>
     </div>
     <nav aria-label="Inbox folders">{filters.map(({ id, label, Icon }) => <button key={id} type="button" data-active={active === id} onClick={() => onChange(id)}><Icon size={17} /><span>{label}</span></button>)}</nav>
-    <div className="mail-sync-card"><small>Mailbox synchronization</small><strong>{syncing ? connection?.sync?.phase || "Ready" : "Awaiting Google approval"}</strong><p>{syncing ? `${connection?.sync?.imported_threads || 0} Gmail threads imported.` : "Sending works independently. Full Inbox history remains safely disabled until read access is approved."}</p>{connection?.sync?.last_error && <em>{connection.sync.last_error}</em>}</div>
+    <div className="mail-sync-card"><small>Mailbox synchronization</small><strong>{syncing ? connection?.sync?.phase || "Ready" : "Awaiting Google approval"}</strong><p>{syncing ? `${connection?.sync?.imported_threads || 0} Gmail threads imported.` : "Sending works independently. Full Inbox history remains safely disabled until read access is approved."}</p>{connection?.sync?.last_error && <em>{connection.sync.last_error}</em>}{syncing && <button type="button" onClick={onSync} disabled={syncStarting}><RefreshCw size={13} />{syncStarting ? "Starting…" : connection?.sync?.backfill_complete ? "Sync now" : "Start Inbox import"}</button>}</div>
   </aside>;
 }

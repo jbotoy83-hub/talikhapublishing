@@ -28,6 +28,7 @@ export function InboxWorkspace() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [syncStarting, setSyncStarting] = useState(false);
   const [error, setError] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
 
@@ -49,9 +50,10 @@ export function InboxWorkspace() {
   async function openThread(id: string) { setSelectedId(id); setDetailLoading(true); try { setDetail(await api<InboxThreadDetail>(`/api/admin/inbox/${id}`)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open the conversation."); } finally { setDetailLoading(false); } }
   async function send(input: { threadId?: string; submissionId?: string; recipientEmail?: string; subject: string; body: string }) { setSending(true); try { const result = await api<{ message: { thread_id: string } }>("/api/admin/inbox", { method: "POST", body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }) }); setComposeOpen(false); await loadThreads(true); await openThread(result.message.thread_id); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not send the email."); throw cause; } finally { setSending(false); } }
   async function retry(messageId: string) { try { await api(`/api/admin/inbox/messages/${messageId}/retry`, { method: "POST" }); if (selectedId) await openThread(selectedId); await loadThreads(true); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not retry the email."); } }
+  async function startSync() { setSyncStarting(true); try { await api("/api/admin/inbox/sync", { method: "POST" }); await loadThreads(true); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not start Gmail synchronization."); } finally { setSyncStarting(false); } }
 
   return <div className="mail-workspace">
-    <ChannelSidebar connection={connection} active={filter} onChange={(value) => { setFilter(value); setSelectedId(null); setDetail(null); }} />
+    <ChannelSidebar connection={connection} active={filter} syncStarting={syncStarting} onSync={() => void startSync()} onChange={(value) => { setFilter(value); setSelectedId(null); setDetail(null); }} />
     <ConversationList threads={threads} selectedId={selectedId} search={search} loading={loading} total={total} page={page} pageSize={PAGE_SIZE} filter={filter} onFilter={(value) => { setFilter(value); setSelectedId(null); setDetail(null); }} onSearch={setSearch} onSelect={(id) => void openThread(id)} onCompose={() => setComposeOpen(true)} onPage={setPage} />
     <ConversationThread detail={detail} loading={detailLoading} sending={sending} onBack={() => { setSelectedId(null); setDetail(null); }} onReply={(body) => send({ threadId: detail?.thread.id, subject: detail?.thread.subject || "Talikha Publishing", body })} onRetry={retry} />
     {error && <div className="mail-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div>}
