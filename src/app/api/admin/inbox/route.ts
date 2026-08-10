@@ -12,7 +12,8 @@ const sendSchema = z.object({
   submissionId: z.uuid().optional(),
   recipientEmail: z.email().max(254).optional(),
   subject: z.string().trim().min(1).max(200).refine((value) => !/[\r\n]/.test(value), "Subject contains invalid characters."),
-  body: z.string().trim().min(1).max(20_000).refine((value) => !/<\/?[a-z][\s\S]*>/i.test(value), "Write plain text only.")
+  body: z.string().trim().min(1).max(20_000).refine((value) => !/<\/?[a-z][\s\S]*>/i.test(value), "The plain-text copy contains raw HTML."),
+  bodyHtml: z.string().trim().min(1).max(100_000).optional()
 });
 
 export async function GET(request: Request) {

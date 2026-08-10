@@ -134,7 +134,7 @@ export async function deliverQueuedMessages(admin: AdminClient, messageIds?: str
   return results;
 }
 
-export async function createAdminMessage(admin: AdminClient, input: { actorId: string; idempotencyKey: string; submissionId?: string; threadId?: string; recipientEmail?: string; subject: string; body: string }) {
+export async function createAdminMessage(admin: AdminClient, input: { actorId: string; idempotencyKey: string; submissionId?: string; threadId?: string; recipientEmail?: string; subject: string; body: string; bodyHtml?: string }) {
   const { data: existing } = await admin.from("email_messages").select("id, thread_id, status").eq("idempotency_key", input.idempotencyKey).maybeSingle();
   if (existing) return existing;
   let recipientEmail = normalizeEmail(input.recipientEmail || "");
@@ -159,7 +159,7 @@ export async function createAdminMessage(admin: AdminClient, input: { actorId: s
     if (error || !created) throw new Error("Could not create the email thread.");
     threadId = created.id;
   }
-  const rendered = renderAdminEmail(input.subject, input.body);
+  const rendered = renderAdminEmail(input.subject, input.body, input.bodyHtml);
   const { data: message, error } = await admin.from("email_messages").insert({
     thread_id: threadId,
     submission_id: submissionId,

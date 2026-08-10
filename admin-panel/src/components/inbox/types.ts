@@ -20,7 +20,7 @@ export interface InboxThreadSummary {
   submission: LinkedSubmission | null;
 }
 
-export interface InboxAttachment { id: string; filename: string; mime_type: string; size_bytes: number }
+export interface InboxAttachment { id: string; filename: string; mime_type: string; size_bytes: number; content_id: string | null; is_inline: boolean }
 export interface InboxMessage {
   id: string;
   direction: "inbound" | "outbound";

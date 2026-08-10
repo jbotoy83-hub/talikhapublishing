@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveSubmissionRecipients } from "@/lib/email/recipients";
 import { escapeEmailHtml, renderSubmissionReceivedEmail } from "@/lib/email/templates";
-import { sanitizeImportedEmailHtml } from "@/lib/email/sanitize";
+import { sanitizeAdminEmailHtml, sanitizeImportedEmailHtml } from "@/lib/email/sanitize";
 
 describe("submission correspondence", () => {
   it("normalizes and deduplicates every listed author while retaining the primary author", () => {
@@ -32,13 +32,24 @@ describe("submission correspondence", () => {
     expect(escapeEmailHtml("<>&\"")).toBe("&lt;&gt;&amp;&quot;");
   });
 
-  it("removes active content and blocks automatic remote images from imported Gmail HTML", () => {
-    const safe = sanitizeImportedEmailHtml('<script>alert(1)</script><form action="https://bad.test"><input></form><p>Hello</p><img src="https://tracker.test/pixel.gif"><a href="javascript:alert(2)">bad</a>');
+  it("preserves safe email layout while removing active content and deferring remote images", () => {
+    const safe = sanitizeImportedEmailHtml('<script>alert(1)</script><form action="https://bad.test"><input></form><table width="100%" style="max-width:620px;text-align:center;position:fixed;background-image:url(https://bad.test/x)"><tr><td align="center">Hello</td></tr></table><img src="https://tracker.test/pixel.gif"><a href="javascript:alert(2)">bad</a>');
     expect(safe).not.toContain("script");
     expect(safe).not.toContain("form");
-    expect(safe).not.toContain("tracker.test");
     expect(safe).not.toContain("javascript:");
-    expect(safe).toContain("Remote image blocked");
+    expect(safe).not.toContain("position");
+    expect(safe).not.toContain("background-image");
+    expect(safe).toContain('width="100%"');
+    expect(safe).toContain("max-width:620px");
+    expect(safe).toContain('data-remote-src="https://tracker.test/pixel.gif"');
+    expect(safe).not.toMatch(/<img[^>]+\ssrc="https:\/\/tracker\.test/);
     expect(safe).toContain("Hello");
+  });
+
+  it("retains embedded CID images and only permits HTTPS images in admin-authored HTML", () => {
+    expect(sanitizeImportedEmailHtml('<img src="cid:logo@example" alt="Logo">')).toContain('src="cid:logo@example"');
+    expect(sanitizeAdminEmailHtml('<p style="text-align:center"><img src="https://cdn.example/logo.png" onerror="alert(1)"></p>')).toContain('src="https://cdn.example/logo.png"');
+    expect(sanitizeAdminEmailHtml('<img src="http://cdn.example/logo.png">')).not.toContain("http://cdn.example");
+    expect(sanitizeAdminEmailHtml('<img src="data:image/png;base64,AAAA">')).not.toContain("data:image");
   });
 });

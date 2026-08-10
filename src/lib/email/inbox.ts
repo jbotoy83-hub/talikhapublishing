@@ -12,6 +12,7 @@ type GmailSyncResult = { enabled: boolean; imported: number; complete?: boolean 
 type GmailHeader = { name?: string; value?: string };
 type GmailPart = { mimeType?: string; filename?: string; headers?: GmailHeader[]; body?: { data?: string; attachmentId?: string; size?: number }; parts?: GmailPart[] };
 type GmailMessage = { id: string; threadId: string; historyId?: string; internalDate?: string; labelIds?: string[]; snippet?: string; payload?: GmailPart };
+type CollectedAttachment = { id: string; filename: string; mimeType: string; size: number; contentId: string | null; isInline: boolean };
 
 function decodeBase64Url(value?: string) {
   if (!value) return "";
@@ -27,9 +28,15 @@ function parseAddress(value: string) {
   return { name: (match?.[1] || value.split("@")[0] || "Correspondent").replace(/^"|"$/g, "").trim(), email: (match?.[2] || value).trim().toLowerCase() };
 }
 
-function collectParts(part: GmailPart | undefined, output: { text: string[]; html: string[]; attachments: Array<{ id: string; filename: string; mimeType: string; size: number }> }) {
+function normalizeContentId(value: string) {
+  return value.trim().replace(/^<|>$/g, "").toLowerCase();
+}
+
+function collectParts(part: GmailPart | undefined, output: { text: string[]; html: string[]; attachments: CollectedAttachment[] }) {
   if (!part) return;
-  if (part.filename && part.body?.attachmentId) output.attachments.push({ id: part.body.attachmentId, filename: part.filename, mimeType: part.mimeType || "application/octet-stream", size: Number(part.body.size || 0) });
+  const contentId = normalizeContentId(header(part, "Content-ID"));
+  const disposition = header(part, "Content-Disposition").toLowerCase();
+  if (part.body?.attachmentId && (part.filename || contentId)) output.attachments.push({ id: part.body.attachmentId, filename: part.filename || "inline-image", mimeType: part.mimeType || "application/octet-stream", size: Number(part.body.size || 0), contentId: contentId || null, isInline: Boolean(contentId) || disposition.startsWith("inline") });
   else if (part.mimeType === "text/plain" && part.body?.data) output.text.push(decodeBase64Url(part.body.data));
   else if (part.mimeType === "text/html" && part.body?.data) output.html.push(decodeBase64Url(part.body.data));
   for (const child of part.parts || []) collectParts(child, output);
@@ -44,7 +51,7 @@ async function upsertGmailMessage(admin: AdminClient, message: GmailMessage) {
   const to = parseAddress(header(message.payload, "To"));
   const subject = header(message.payload, "Subject") || "(No subject)";
   const rfcMessageId = header(message.payload, "Message-ID") || null;
-  const parts = { text: [] as string[], html: [] as string[], attachments: [] as Array<{ id: string; filename: string; mimeType: string; size: number }> };
+  const parts = { text: [] as string[], html: [] as string[], attachments: [] as CollectedAttachment[] };
   collectParts(message.payload, parts);
   const bodyHtml = sanitizeImportedEmailHtml(parts.html.join("\n"));
   const bodyText = parts.text.join("\n").trim() || plainFromHtml(bodyHtml);
@@ -62,7 +69,7 @@ async function upsertGmailMessage(admin: AdminClient, message: GmailMessage) {
   }
   const { data: existingMessage } = await admin.from("email_messages").select("id, source").eq("gmail_message_id", message.id).maybeSingle();
   if (existingMessage) {
-    await admin.from("email_messages").update({ gmail_history_id: message.historyId || null, gmail_thread_id: message.threadId, rfc_message_id: rfcMessageId, status: outbound ? "sent" : "received", sent_at: outbound ? timestamp : null, received_at: outbound ? null : timestamp }).eq("id", existingMessage.id);
+    await admin.from("email_messages").update({ gmail_history_id: message.historyId || null, gmail_thread_id: message.threadId, rfc_message_id: rfcMessageId, sender_name: from.name, sender_email: from.email, recipients: [to], subject, body_text: bodyText, body_html: bodyHtml, status: outbound ? "sent" : "received", sent_at: outbound ? timestamp : null, received_at: outbound ? null : timestamp }).eq("id", existingMessage.id);
   }
   const idempotencyKey = createHash("sha256").update(`gmail:${message.id}`).digest("hex");
   const result = existingMessage
@@ -70,7 +77,7 @@ async function upsertGmailMessage(admin: AdminClient, message: GmailMessage) {
     : await admin.from("email_messages").insert({ thread_id: threadId, submission_id: existingThread?.submission_id || null, gmail_message_id: message.id, gmail_thread_id: message.threadId, gmail_history_id: message.historyId || null, rfc_message_id: rfcMessageId, idempotency_key: idempotencyKey, direction: outbound ? "outbound" : "inbound", source: "gmail", sender_name: from.name, sender_email: from.email, recipients: [to], subject, body_text: bodyText, body_html: bodyHtml, status: outbound ? "sent" : "received", sent_at: outbound ? timestamp : null, received_at: outbound ? null : timestamp, created_at: timestamp }).select("id").single();
   const { data: stored, error } = result;
   if (error || !stored) throw new Error("Could not store an imported Gmail message.");
-  if (parts.attachments.length) await admin.from("email_attachments").upsert(parts.attachments.map((attachment) => ({ message_id: stored.id, gmail_message_id: message.id, provider_attachment_id: attachment.id, filename: attachment.filename, mime_type: attachment.mimeType, size_bytes: attachment.size })), { onConflict: "gmail_message_id,provider_attachment_id" });
+  if (parts.attachments.length) await admin.from("email_attachments").upsert(parts.attachments.map((attachment) => ({ message_id: stored.id, gmail_message_id: message.id, provider_attachment_id: attachment.id, filename: attachment.filename, mime_type: attachment.mimeType, size_bytes: attachment.size, content_id: attachment.contentId, is_inline: attachment.isInline })), { onConflict: "gmail_message_id,provider_attachment_id" });
   return message.historyId || null;
 }
 
@@ -79,6 +86,15 @@ async function importGmailThread(admin: AdminClient, threadId: string) {
   let historyId: string | null = null;
   for (const message of thread.messages || []) historyId = await upsertGmailMessage(admin, message) || historyId;
   return historyId;
+}
+
+export async function refreshGmailInboxThread(admin: AdminClient, localThreadId: string, actorId: string) {
+  if (!gmailSyncEnabled()) throw new Error("Gmail synchronization is not enabled.");
+  const { data: thread } = await admin.from("email_threads").select("gmail_thread_id").eq("id", localThreadId).single();
+  if (!thread?.gmail_thread_id) throw new Error("This conversation is not linked to Gmail yet.");
+  await importGmailThread(admin, thread.gmail_thread_id);
+  await admin.from("audit_events").insert({ actor_id: actorId, action: "gmail_thread_refreshed", entity_type: "email_thread", entity_id: localThreadId, details: { gmailThreadId: thread.gmail_thread_id } });
+  return getInboxThread(admin, localThreadId);
 }
 
 export async function renewGmailWatch(admin: AdminClient) {
@@ -190,14 +206,14 @@ export async function getInboxThread(admin: AdminClient, threadId: string) {
   const { data: thread, error } = await admin.from("email_threads").select("*").eq("id", threadId).single();
   if (error || !thread) throw new Error("Correspondence thread was not found.");
   const [{ data: messages }, { data: submission }] = await Promise.all([
-    admin.from("email_messages").select("id, direction, source, sender_name, sender_email, recipients, subject, body_text, body_html, status, provider_error, attempt_count, sent_at, received_at, created_at, email_attachments(id, filename, mime_type, size_bytes)").eq("thread_id", threadId).order("created_at"),
+    admin.from("email_messages").select("id, direction, source, sender_name, sender_email, recipients, subject, body_text, body_html, status, provider_error, attempt_count, sent_at, received_at, created_at, email_attachments(id, filename, mime_type, size_bytes, content_id, is_inline)").eq("thread_id", threadId).order("created_at"),
     thread.submission_id ? admin.from("submissions").select("id, reference, title, journal_title_snapshot, author_details, author_email, author_name").eq("id", thread.submission_id).maybeSingle() : Promise.resolve({ data: null })
   ]);
   return { thread, messages: messages || [], submission };
 }
 
 export async function getGmailAttachment(admin: AdminClient, attachmentId: string, actorId: string) {
-  const { data: attachment } = await admin.from("email_attachments").select("id, gmail_message_id, provider_attachment_id, filename, mime_type, size_bytes").eq("id", attachmentId).single();
+  const { data: attachment } = await admin.from("email_attachments").select("id, gmail_message_id, provider_attachment_id, filename, mime_type, size_bytes, content_id, is_inline").eq("id", attachmentId).single();
   if (!attachment) throw new Error("Attachment was not found.");
   const payload = await gmailJson<{ data?: string; size?: number }>(`/messages/${encodeURIComponent(attachment.gmail_message_id)}/attachments/${encodeURIComponent(attachment.provider_attachment_id)}`);
   if (!payload.data) throw new Error("Gmail did not return the attachment.");

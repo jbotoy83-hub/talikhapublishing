@@ -679,30 +679,36 @@ export type Database = {
       }
       email_attachments: {
         Row: {
+          content_id: string | null
           created_at: string
           filename: string
           gmail_message_id: string
           id: string
+          is_inline: boolean
           message_id: string
           mime_type: string
           provider_attachment_id: string
           size_bytes: number
         }
         Insert: {
+          content_id?: string | null
           created_at?: string
           filename: string
           gmail_message_id: string
           id?: string
+          is_inline?: boolean
           message_id: string
           mime_type: string
           provider_attachment_id: string
           size_bytes?: number
         }
         Update: {
+          content_id?: string | null
           created_at?: string
           filename?: string
           gmail_message_id?: string
           id?: string
+          is_inline?: boolean
           message_id?: string
           mime_type?: string
           provider_attachment_id?: string

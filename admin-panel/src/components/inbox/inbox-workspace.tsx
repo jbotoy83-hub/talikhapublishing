@@ -3,6 +3,7 @@ import { X } from "@/components/icons";
 import { ChannelSidebar } from "./channel-sidebar";
 import { ConversationList } from "./conversation-list";
 import { ConversationThread } from "./conversation-thread";
+import { RichEmailEditor, type RichEmailValue } from "./rich-email-editor";
 import type { InboxConnection, InboxFilter, InboxThreadDetail, InboxThreadSummary, LinkedSubmission } from "./types";
 import "./inbox.css";
 
@@ -29,6 +30,7 @@ export function InboxWorkspace() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [syncStarting, setSyncStarting] = useState(false);
+  const [threadRefreshing, setThreadRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
 
@@ -66,7 +68,7 @@ export function InboxWorkspace() {
     }
   }
 
-  async function send(input: { threadId?: string; submissionId?: string; recipientEmail?: string; subject: string; body: string }) {
+  async function send(input: { threadId?: string; submissionId?: string; recipientEmail?: string; subject: string; body: string; bodyHtml?: string }) {
     setSending(true);
     try {
       const result = await api<{ message: { thread_id: string } }>("/api/admin/inbox", { method: "POST", body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }) });
@@ -78,6 +80,20 @@ export function InboxWorkspace() {
       throw cause;
     } finally {
       setSending(false);
+    }
+  }
+
+  async function refreshThread() {
+    if (!selectedId) return;
+    setThreadRefreshing(true);
+    try {
+      setDetail(await api<InboxThreadDetail>(`/api/admin/inbox/${selectedId}`, { method: "POST" }));
+      await loadThreads(true);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not refresh the Gmail conversation.");
+    } finally {
+      setThreadRefreshing(false);
     }
   }
 
@@ -113,18 +129,18 @@ export function InboxWorkspace() {
   return <div className="mail-workspace" data-thread-open={Boolean(selectedId || detailLoading)}>
     <ChannelSidebar connection={connection} active={filter} syncStarting={syncStarting} onSync={() => void startSync()} onChange={changeFilter} />
     <ConversationList threads={threads} selectedId={selectedId} search={search} loading={loading} total={total} page={page} pageSize={PAGE_SIZE} filter={filter} onFilter={changeFilter} onSearch={setSearch} onSelect={(id) => void openThread(id)} onCompose={() => setComposeOpen(true)} onPage={setPage} />
-    <ConversationThread detail={detail} loading={detailLoading} sending={sending} onBack={() => { setSelectedId(null); setDetail(null); }} onReply={(body) => send({ threadId: detail?.thread.id, subject: detail?.thread.subject || "Talikha Publishing", body })} onRetry={retry} />
+    <ConversationThread detail={detail} loading={detailLoading} sending={sending} refreshing={threadRefreshing} onBack={() => { setSelectedId(null); setDetail(null); }} onReply={(value) => send({ threadId: detail?.thread.id, subject: detail?.thread.subject || "Talikha Publishing", body: value.text, bodyHtml: value.html })} onRetry={retry} onRefresh={refreshThread} />
     {error && <div className="mail-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss"><X size={15} /></button></div>}
     {composeOpen && <ComposeDialog sending={sending} onClose={() => setComposeOpen(false)} onSend={send} />}
   </div>;
 }
 
-function ComposeDialog({ sending, onClose, onSend }: { sending: boolean; onClose: () => void; onSend: (input: { submissionId: string; recipientEmail: string; subject: string; body: string }) => Promise<void> }) {
+function ComposeDialog({ sending, onClose, onSend }: { sending: boolean; onClose: () => void; onSend: (input: { submissionId: string; recipientEmail: string; subject: string; body: string; bodyHtml: string }) => Promise<void> }) {
   const [submissions, setSubmissions] = useState<LinkedSubmission[]>([]);
   const [submissionId, setSubmissionId] = useState("");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState<RichEmailValue>({ text: "", html: "" });
 
   useEffect(() => { void api<{ submissions: LinkedSubmission[] }>("/api/admin/inbox?kind=submissions").then((result) => setSubmissions(Array.isArray(result.submissions) ? result.submissions : [])).catch(() => setSubmissions([])); }, []);
   const selected = submissions.find((submission) => submission.id === submissionId);
@@ -135,7 +151,7 @@ function ComposeDialog({ sending, onClose, onSend }: { sending: boolean; onClose
     <label>Submission<select value={submissionId} onChange={(event) => { setSubmissionId(event.target.value); setRecipientEmail(""); }}><option value="">Choose a submitted work</option>{submissions.map((submission) => <option key={submission.id} value={submission.id}>{submission.reference} — {submission.title}</option>)}</select></label>
     <label>Author<select value={recipientEmail} disabled={!selected} onChange={(event) => setRecipientEmail(event.target.value)}><option value="">Choose a linked author</option>{selected?.recipients?.map((recipient) => <option key={recipient.email} value={recipient.email}>{recipient.name} — {recipient.email}</option>)}</select></label>
     <label>Subject<input value={subject} maxLength={200} onChange={(event) => setSubject(event.target.value.replace(/[\r\n]/g, ""))} /></label>
-    <label>Message<textarea value={body} maxLength={20000} rows={9} onChange={(event) => setBody(event.target.value)} placeholder="Write plain text. Talikha branding is applied when the email is sent." /></label>
-    <footer><button type="button" onClick={onClose}>Cancel</button><button type="button" disabled={!submissionId || !recipientEmail || !subject.trim() || !body.trim() || sending} onClick={() => { void onSend({ submissionId, recipientEmail, subject: subject.trim(), body: body.trim() }).catch(() => undefined); }}>{sending ? "Queueing…" : "Queue email"}</button></footer>
+    <label>Message<RichEmailEditor disabled={sending} placeholder="Write your message. Add formatting, links, or an image." minHeight={180} onChange={setBody} /></label>
+    <footer><button type="button" onClick={onClose}>Cancel</button><button type="button" disabled={!submissionId || !recipientEmail || !subject.trim() || !body.text || sending} onClick={() => { void onSend({ submissionId, recipientEmail, subject: subject.trim(), body: body.text, bodyHtml: body.html }).catch(() => undefined); }}>{sending ? "Queueing…" : "Queue email"}</button></footer>
   </section></div>;
 }

@@ -1,4 +1,5 @@
 import type { EmailRecipient, RenderedEmail, SubmissionEmailContext } from "./types";
+import { sanitizeAdminEmailHtml } from "./sanitize";
 
 export function escapeEmailHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({
@@ -54,11 +55,11 @@ export function renderSubmissionReceivedEmail(context: SubmissionEmailContext, r
   return { subject, text, html };
 }
 
-export function renderAdminEmail(subject: string, body: string): RenderedEmail {
-  const safeBody = escapeEmailHtml(body).replace(/\n/g, "<br>");
+export function renderAdminEmail(subject: string, body: string, bodyHtml?: string): RenderedEmail {
+  const safeBody = bodyHtml ? sanitizeAdminEmailHtml(bodyHtml) : escapeEmailHtml(body).replace(/\n/g, "<br>");
   return {
     subject,
     text: body,
-    html: `<!doctype html><html><body style="margin:0;background:#f3eddf;color:#20362c;font-family:Arial,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:28px 14px"><table role="presentation" width="100%" style="max-width:620px;background:#fffdf8;border:1px solid #d8cfbd;border-radius:24px"><tr><td style="padding:28px 32px;border-bottom:4px solid #b8664b"><strong style="font:24px Georgia,serif;color:#173f32">Talikha Publishing</strong></td></tr><tr><td style="padding:30px 32px;line-height:1.7">${safeBody}<p style="margin:28px 0 0">Sincerely,<br><strong>Talikha Publishing Editorial Office</strong></p></td></tr></table></td></tr></table></body></html>`
+    html: `<!doctype html><html><body style="margin:0;background:#f3eddf;color:#20362c;font-family:Arial,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3eddf"><tr><td align="center" style="padding:28px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#fffdf8;border:1px solid #d8cfbd;border-radius:24px;overflow:hidden"><tr><td style="padding:28px 32px;border-bottom:4px solid #b8664b"><strong style="font:24px Georgia,serif;color:#173f32">Talikha Publishing</strong></td></tr><tr><td style="padding:30px 32px;line-height:1.7"><div style="overflow-wrap:anywhere">${safeBody}</div><p style="margin:28px 0 0">Sincerely,<br><strong>Talikha Publishing Editorial Office</strong></p></td></tr></table></td></tr></table></body></html>`
   };
 }
