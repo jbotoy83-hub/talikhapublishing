@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, ImageOff } from "lucide-react";
+import { FileText } from "lucide-react";
 import { AlertTriangle, ArrowUpRight, ChevronLeft, Download, RefreshCw } from "@/components/icons";
 import { EmailHtmlFrame } from "./email-html-frame";
 import { MessageComposer } from "./message-composer";
@@ -19,16 +19,13 @@ function senderInitials(message: InboxMessage) {
 
 function EmailMessage({ message, onRetry }: { message: InboxMessage; onRetry: (messageId: string) => Promise<void> }) {
   const [plainText, setPlainText] = useState(false);
-  const [remoteImages, setRemoteImages] = useState(false);
   const hasHtml = Boolean(message.body_html?.trim());
-  const hasRemoteImages = message.body_html.includes("data-remote-src");
   const downloads = message.email_attachments?.filter((attachment) => !attachment.is_inline) || [];
   const sender = message.direction === "outbound" ? "Talikha Publishing" : message.sender_name || message.sender_email;
 
   return <article className="mail-message" data-direction={message.direction}>
     <header className="mail-message-header"><span className="mail-sender-avatar" aria-hidden="true">{senderInitials(message)}</span><div className="mail-message-meta"><strong>{sender}</strong><span>{message.direction === "outbound" ? `To ${message.recipients.map((item) => item.email).join(", ")}` : `<${message.sender_email}> · to Talikha Publishing`}</span></div><time title={new Date(message.created_at).toLocaleString()}>{dayLabel(message.created_at)} · {clockTime(message.created_at)}</time></header>
-    {hasRemoteImages && !remoteImages && !plainText && <div className="mail-image-notice"><ImageOff size={14} /><span>Remote images are hidden to protect privacy.</span><button type="button" onClick={() => setRemoteImages(true)}>Load images</button></div>}
-    <div className="mail-message-body">{hasHtml && !plainText ? <EmailHtmlFrame html={message.body_html} attachments={message.email_attachments || []} loadRemoteImages={remoteImages} title={`Email from ${sender}`} /> : message.body_text}</div>
+    <div className="mail-message-body">{hasHtml && !plainText ? <EmailHtmlFrame html={message.body_html} attachments={message.email_attachments || []} title={`Email from ${sender}`} /> : message.body_text}</div>
     <footer className="mail-message-actions"><span className="mail-delivery" data-status={message.status}>{message.status === "failed" || message.status === "unknown" ? <AlertTriangle size={12} /> : null}{statusLabel(message.status)}</span>{message.attempt_count > 0 && <span>{message.attempt_count} delivery attempt{message.attempt_count === 1 ? "" : "s"}</span>}{hasHtml && <button type="button" onClick={() => setPlainText((current) => !current)}><FileText size={12} />{plainText ? "View formatted" : "Plain text"}</button>}{(message.status === "failed" || message.status === "queued") && <button type="button" onClick={() => void onRetry(message.id)}><RefreshCw size={12} /> Retry</button>}</footer>
     {message.provider_error && <p className="mail-provider-error">{message.provider_error}</p>}
     {downloads.length > 0 && <div className="mail-attachments">{downloads.map((attachment) => <a key={attachment.id} href={`/api/admin/inbox/attachments/${attachment.id}`}><Download size={14} /><span><strong>{attachment.filename}</strong><small>{attachment.mime_type} · {Math.max(1, Math.round(attachment.size_bytes / 1024))} KB</small></span></a>)}</div>}

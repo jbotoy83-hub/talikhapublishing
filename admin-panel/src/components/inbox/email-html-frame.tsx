@@ -7,7 +7,7 @@ function normalizeContentId(value: string) {
   return decoded.trim().replace(/^<|>$/g, "").toLowerCase();
 }
 
-function buildEmailDocument(html: string, attachments: InboxAttachment[], loadRemoteImages: boolean) {
+function buildEmailDocument(html: string, attachments: InboxAttachment[]) {
   const document = new DOMParser().parseFromString(html, "text/html");
   const inlineByContentId = new Map(attachments.filter((attachment) => attachment.content_id).map((attachment) => [normalizeContentId(attachment.content_id || ""), attachment]));
   document.querySelectorAll("img").forEach((image) => {
@@ -18,7 +18,7 @@ function buildEmailDocument(html: string, attachments: InboxAttachment[], loadRe
       else image.replaceWith(document.createTextNode(image.alt ? `[Image: ${image.alt}]` : "[Embedded image unavailable]"));
     }
     const remoteSource = image.getAttribute("data-remote-src");
-    if (remoteSource && loadRemoteImages) image.setAttribute("src", remoteSource);
+    if (remoteSource) image.setAttribute("src", `/api/admin/inbox/remote-image?url=${encodeURIComponent(remoteSource)}`);
   });
   document.querySelectorAll("a").forEach((link) => {
     link.setAttribute("target", "_blank");
@@ -26,7 +26,7 @@ function buildEmailDocument(html: string, attachments: InboxAttachment[], loadRe
   });
   const csp = document.createElement("meta");
   csp.httpEquiv = "Content-Security-Policy";
-  csp.content = `default-src 'none'; img-src 'self' data: blob:${loadRemoteImages ? " https:" : ""}; style-src 'unsafe-inline'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'`;
+  csp.content = "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
   document.head.prepend(csp);
   const styles = document.createElement("style");
   styles.textContent = "html{background:transparent}body{min-width:0;overflow-wrap:anywhere}img{max-width:100%;height:auto}img[data-remote-image]:not([src]){display:none}table{max-width:100%}pre{max-width:100%;overflow:auto;white-space:pre-wrap}a{cursor:pointer}";
@@ -34,10 +34,10 @@ function buildEmailDocument(html: string, attachments: InboxAttachment[], loadRe
   return `<!doctype html>${document.documentElement.outerHTML}`;
 }
 
-export function EmailHtmlFrame({ html, attachments, loadRemoteImages, title }: { html: string; attachments: InboxAttachment[]; loadRemoteImages: boolean; title: string }) {
+export function EmailHtmlFrame({ html, attachments, title }: { html: string; attachments: InboxAttachment[]; title: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(120);
-  const source = useMemo(() => buildEmailDocument(html, attachments, loadRemoteImages), [attachments, html, loadRemoteImages]);
+  const source = useMemo(() => buildEmailDocument(html, attachments), [attachments, html]);
   const measure = useCallback(() => {
     const document = frameRef.current?.contentDocument;
     if (!document) return;

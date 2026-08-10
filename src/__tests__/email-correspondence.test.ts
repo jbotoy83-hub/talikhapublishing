@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveSubmissionRecipients } from "@/lib/email/recipients";
 import { escapeEmailHtml, renderSubmissionReceivedEmail } from "@/lib/email/templates";
 import { sanitizeAdminEmailHtml, sanitizeImportedEmailHtml } from "@/lib/email/sanitize";
+import { isPublicIpAddress, parseRemoteImageUrl } from "@/lib/email/remote-image";
 
 describe("submission correspondence", () => {
   it("normalizes and deduplicates every listed author while retaining the primary author", () => {
@@ -51,5 +52,15 @@ describe("submission correspondence", () => {
     expect(sanitizeAdminEmailHtml('<p style="text-align:center"><img src="https://cdn.example/logo.png" onerror="alert(1)"></p>')).toContain('src="https://cdn.example/logo.png"');
     expect(sanitizeAdminEmailHtml('<img src="http://cdn.example/logo.png">')).not.toContain("http://cdn.example");
     expect(sanitizeAdminEmailHtml('<img src="data:image/png;base64,AAAA">')).not.toContain("data:image");
+  });
+
+  it("allows public HTTPS email images and rejects private or unsafe image hosts", () => {
+    expect(parseRemoteImageUrl("https://persistent.oaistatic.com/chatgpt/icons/chatgpt_logo.png").hostname).toBe("persistent.oaistatic.com");
+    expect(parseRemoteImageUrl("http://images.example.com/logo.png").protocol).toBe("https:");
+    expect(() => parseRemoteImageUrl("https://127.0.0.1/logo.png")).toThrow();
+    expect(() => parseRemoteImageUrl("https://metadata.internal/logo.png")).toThrow();
+    expect(isPublicIpAddress("8.8.8.8")).toBe(true);
+    expect(isPublicIpAddress("10.0.0.1")).toBe(false);
+    expect(isPublicIpAddress("::1")).toBe(false);
   });
 });

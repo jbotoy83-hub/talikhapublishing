@@ -7051,7 +7051,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
         productionNeedsActionCount={productionNeedsActionCount}
       />
       <SidebarInset
-        className={`tp-main ${active === 10 ? "tp-main--certificate" : ""}${wallpaper.mode !== "none" ? " tp-main--wallpaper" : ""}`}
+        className={`tp-main ${active === 10 ? "tp-main--certificate" : ""}${active === 15 ? "tp-main--inbox" : ""}${wallpaper.mode !== "none" ? " tp-main--wallpaper" : ""}`}
         style={wallpaperSrc ? ({ "--tp-wallpaper": `url("${wallpaperSrc}")` } as React.CSSProperties) : undefined}
       >
         <header className={`tp-top ${active === 10 ? "tp-top--certificate" : ""}`}>
@@ -7282,7 +7282,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
         />
 
         {/* Dock — quick actions */}
-        <FloatingDock
+        {active === 0 && <FloatingDock
           label="Quick actions"
           active={active}
           items={[
@@ -7292,7 +7292,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             { index: 12, title: "Production", icon: Send, onClick: () => setActive(12) },
             { index: 4, title: "Publications", icon: BookOpen, onClick: () => setActive(4) },
           ]}
-        />
+        />}
         {process.env.NODE_ENV !== "production" && <button
           type="button"
           className="tp-roletoggle"
