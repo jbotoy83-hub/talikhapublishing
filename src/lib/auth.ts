@@ -11,6 +11,15 @@ export type AdminUser = {
   username?: string | null;
   accessViews?: string[];
   requiresAccountSetup?: boolean;
+  headline?: string;
+  bio?: string;
+  location?: string;
+  website?: string;
+  pronouns?: string;
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
+  createdAt?: string;
+  lastSignedInAt?: string | null;
 };
 
 /**
@@ -54,7 +63,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, role, username, access_views, requires_account_setup")
+    .select("display_name, role, username, access_views, requires_account_setup, headline, bio, location, website, pronouns, avatar_url, cover_url, created_at, last_signed_in_at")
     .eq("id", userId)
     .maybeSingle();
 
@@ -80,7 +89,16 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     role: effectiveRole,
     username: profile?.username,
     accessViews: Array.isArray(profile?.access_views) ? profile.access_views.filter((view): view is string => typeof view === "string") : [],
-    requiresAccountSetup: Boolean(profile?.requires_account_setup)
+    requiresAccountSetup: Boolean(profile?.requires_account_setup),
+    headline: profile?.headline || "",
+    bio: profile?.bio || "",
+    location: profile?.location || "",
+    website: profile?.website || "",
+    pronouns: profile?.pronouns || "",
+    avatarUrl: profile?.avatar_url || null,
+    coverUrl: profile?.cover_url || null,
+    createdAt: profile?.created_at,
+    lastSignedInAt: profile?.last_signed_in_at || null
   };
 }
 

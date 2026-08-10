@@ -27,10 +27,11 @@ async function updateSession(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   const { response, user } = await updateSession(request);
+  const localAdminBypass = process.env.NODE_ENV !== "production" && process.env.LOCAL_ADMIN_BYPASS === "true";
 
   if (request.nextUrl.pathname.startsWith("/admin")) {
     const isLoginRoute = request.nextUrl.pathname === "/admin/login" || request.nextUrl.pathname === "/admin/welcome";
-    if (!isLoginRoute && !user) {
+    if (!isLoginRoute && !user && !localAdminBypass) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);

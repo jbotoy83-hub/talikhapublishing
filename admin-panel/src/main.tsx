@@ -10,6 +10,7 @@ import { TeamAccounts } from "./components/team-accounts";
 import { CertificateWorkspace } from "./components/certificates/certificate-workspace";
 import { InboxWorkspace } from "./components/inbox/inbox-workspace";
 import { PreflightWorkspace } from "./components/preflight/preflight-workspace";
+import { AccountProfile, type StaffProfile } from "./components/account-profile";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -5832,6 +5833,7 @@ type OverviewRealData = {
   journals: { id: string; title: string; slug: string }[];
 };
 type OverviewDashboardProps = {
+  displayName: string;
   submissions: EditorialSubmission[];
   publicationRecords: PublicationRecord[];
   isConnected: boolean;
@@ -5934,6 +5936,7 @@ function BannerArt() {
   );
 }
 function OverviewDashboard({
+  displayName,
   submissions,
   publicationRecords,
   isConnected,
@@ -6116,7 +6119,7 @@ function OverviewDashboard({
     <div className="tp-page">
       <header className="tp-welcome" style={{ "--i": 0 } as React.CSSProperties}>
         <div>
-          <h1 className="tp-welcome__title">Welcome to <span>Talikha Publishing</span></h1>
+          <h1 className="tp-welcome__title">Welcome{displayName ? ", " : " to "}<span>{displayName || "Talikha Publishing"}</span></h1>
           <p className="tp-welcome__sub">Here's what's happening across your publishing workspace today.</p>
         </div>
         <div className="tp-welcome__actions">
@@ -6719,9 +6722,18 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
   const [viewSwitching, setViewSwitching] = useState(false);
   const viewSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [previewRole, setPreviewRole] = useState<"admin" | "editor">(accessRole === "admin" ? "admin" : "editor");
-  const [accountIdentity, setAccountIdentity] = useState({
-    displayName: "jbotoy83",
-    email: "jbotoy83@gmail.com",
+  const [accountIdentity, setAccountIdentity] = useState<StaffProfile>({
+    displayName: "",
+    email: "",
+    role: accessRole,
+    username: "",
+    headline: "",
+    bio: "",
+    location: "",
+    website: "",
+    pronouns: "",
+    avatarUrl: null,
+    coverUrl: null,
   });
   const [assignedViews, setAssignedViews] = useState<string[] | null>(null);
   const [wallpaper, setWallpaper] = useState<WallpaperChoice>(() => loadWallpaper());
@@ -6761,6 +6773,8 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     if (index === 12 && !detail?.submission) setSelectedSubmissionId(null);
     const changed = index !== active;
     setActiveState(index);
+    setProfileOpen(false);
+    setNotice(false);
     if (changed && submissionsReady && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setViewSwitching(true);
       if (viewSwitchTimer.current) clearTimeout(viewSwitchTimer.current);
@@ -6897,8 +6911,19 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
            setIsConnected(true);
            setPreviewRole(result.data.user?.role === "admin" ? "admin" : "editor");
            setAccountIdentity({
-             displayName: String(result.data.user?.displayName || "jbotoy83"),
-             email: String(result.data.user?.email || "jbotoy83@gmail.com"),
+             displayName: String(result.data.user?.displayName || ""),
+             email: String(result.data.user?.email || ""),
+             role: result.data.user?.role === "admin" ? "admin" : result.data.user?.role === "viewer" ? "viewer" : "editor",
+             username: String(result.data.user?.username || ""),
+             headline: String(result.data.user?.headline || ""),
+             bio: String(result.data.user?.bio || ""),
+             location: String(result.data.user?.location || ""),
+             website: String(result.data.user?.website || ""),
+             pronouns: String(result.data.user?.pronouns || ""),
+             avatarUrl: typeof result.data.user?.avatarUrl === "string" ? result.data.user.avatarUrl : null,
+             coverUrl: typeof result.data.user?.coverUrl === "string" ? result.data.user.coverUrl : null,
+             createdAt: typeof result.data.user?.createdAt === "string" ? result.data.user.createdAt : undefined,
+             lastSignedInAt: typeof result.data.user?.lastSignedInAt === "string" ? result.data.user.lastSignedInAt : null,
            });
            setAssignedViews(Array.isArray(result.data.user?.accessViews) ? result.data.user.accessViews : null);
           const stageCounts: Record<string, number> = {};
@@ -7092,19 +7117,13 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
               <Bell size={16} strokeWidth={1.75} />
               {awaitingScreening > 0 && <i aria-hidden="true" />}
             </button>
-            <button
-              type="button"
-              className="tp-profile"
-              onClick={() => {
-                setProfileOpen(!profileOpen);
-                setNotice(false);
-              }}
-              aria-label="Open account menu"
-              aria-expanded={profileOpen}
-            >
-              <Avatar src={portraits[0]} size="sm" />
-              <ChevronDown size={13} strokeWidth={1.75} />
-            </button>
+            <AccountProfile
+              profile={accountIdentity}
+              open={profileOpen}
+              onOpenChange={(open) => { setProfileOpen(open); if (open) setNotice(false); }}
+              onProfileChange={setAccountIdentity}
+              onOpenSettings={() => { setActive(8); setProfileOpen(false); }}
+            />
             {notice && (
               <div className="tp-popover">
                 <strong>Notifications</strong>
@@ -7121,29 +7140,6 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
                 >
                   Open submissions
                 </button>
-              </div>
-            )}
-            {profileOpen && (
-              <div className="tp-popover">
-                <strong>{accountIdentity.displayName}</strong>
-                <span>{accountIdentity.email} · Administrator</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActive(8);
-                    setProfileOpen(false);
-                  }}
-                >
-                  <Settings size={14} strokeWidth={1.75} />
-                  Settings
-                </button>
-                <button type="button" disabled>
-                  <ShieldCheck size={14} strokeWidth={1.75} />
-                  Account security
-                </button>
-                <form action="/api/admin/logout" method="post">
-                  <button type="submit">Sign out</button>
-                </form>
               </div>
             )}
           </div>
@@ -7247,6 +7243,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           </div>
         ) : (
           <OverviewDashboard
+            displayName={accountIdentity.displayName}
             submissions={editorialSubmissions}
             publicationRecords={publicationRecords}
             isConnected={isConnected}
