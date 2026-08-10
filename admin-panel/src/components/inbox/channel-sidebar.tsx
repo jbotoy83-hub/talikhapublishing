@@ -13,13 +13,17 @@ const filters: Array<{ id: InboxFilter; label: string; Icon: typeof Inbox }> = [
 export function ChannelSidebar({ connection, active, syncStarting, onSync, onChange }: { connection: InboxConnection | null; active: InboxFilter; syncStarting: boolean; onSync: () => void; onChange: (value: InboxFilter) => void }) {
   const connected = Boolean(connection?.outboundEnabled);
   const syncing = Boolean(connection?.syncEnabled);
+
   return <aside className="mail-rail">
-    <div className="mail-brand"><span><Inbox size={19} /></span><div><small>Editorial correspondence</small><strong>Talikha Inbox</strong></div></div>
+    <header className="mail-brand"><span><Inbox size={18} /></span><div><strong>Inbox</strong><small>Editorial correspondence</small></div></header>
     <div className="mail-connection" data-ready={connected}>
-      {connected ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-      <div><strong>{connected ? "Gmail sending ready" : "Gmail setup required"}</strong><span>{connection?.account || "talikhapublishing@gmail.com"}</span></div>
+      {connected ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+      <div><strong>{connected ? "Gmail connected" : "Gmail setup required"}</strong><span>{connection?.account || "talikhapublishing@gmail.com"}</span></div>
     </div>
-    <nav aria-label="Inbox folders">{filters.map(({ id, label, Icon }) => <button key={id} type="button" data-active={active === id} onClick={() => onChange(id)}><Icon size={17} /><span>{label}</span></button>)}</nav>
-    <div className="mail-sync-card"><small>Mailbox synchronization</small><strong>{syncing ? connection?.sync?.phase || "Ready" : "Awaiting Google approval"}</strong><p>{syncing ? `${connection?.sync?.imported_threads || 0} Gmail threads imported.` : "Sending works independently. Full Inbox history remains safely disabled until read access is approved."}</p>{connection?.sync?.last_error && <em>{connection.sync.last_error}</em>}{syncing && <button type="button" onClick={onSync} disabled={syncStarting}><RefreshCw size={13} />{syncStarting ? "Starting…" : connection?.sync?.backfill_complete ? "Sync now" : "Start Inbox import"}</button>}</div>
+    <div className="mail-rail-section">
+      <span className="mail-rail-label">Mailboxes</span>
+      <nav aria-label="Inbox folders">{filters.map(({ id, label, Icon }) => <button key={id} type="button" data-active={active === id} aria-current={active === id ? "page" : undefined} onClick={() => onChange(id)}><Icon size={16} /><span>{label}</span></button>)}</nav>
+    </div>
+    <div className="mail-sync-card"><small>Mailbox sync</small><strong>{syncing ? connection?.sync?.phase || "Ready" : "Read access pending"}</strong><p>{syncing ? `${connection?.sync?.imported_threads || 0} Gmail threads imported.` : "Sending remains available while Inbox reading is disabled."}</p>{connection?.sync?.last_error && <em>{connection.sync.last_error}</em>}{syncing && <button type="button" onClick={onSync} disabled={syncStarting}><RefreshCw size={13} />{syncStarting ? "Starting…" : connection?.sync?.backfill_complete ? "Sync now" : "Start Inbox import"}</button>}</div>
   </aside>;
 }
