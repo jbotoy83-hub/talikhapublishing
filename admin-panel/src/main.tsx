@@ -134,6 +134,7 @@ const sidebarSections = [
   {
     label: "Operations",
     items: [
+      { label: "Inbox", icon: Inbox, index: 15 },
       { label: "Announcements", icon: Bell, index: 14 },
       { label: "Media", icon: ImageIcon, index: 13 },
       { label: "Reports", icon: FileCheck2, index: 7 },
