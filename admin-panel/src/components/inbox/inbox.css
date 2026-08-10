@@ -929,7 +929,7 @@
 
 .mail-reply {
   flex: 0 0 auto;
-  padding: 12px 20px 16px;
+  padding: 12px 20px 70px;
   border-top: 1px solid var(--mail-line);
   background: #fafafa;
 }
@@ -1481,7 +1481,7 @@
   }
 
   .mail-reply {
-    padding: 10px 12px 12px;
+    padding: 10px 12px 68px;
   }
 
   .mail-reply-box footer > span {
