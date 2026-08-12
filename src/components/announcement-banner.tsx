@@ -67,6 +67,7 @@ export function AnnouncementBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [popupOpen, setPopupOpen] = useState(false);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const [imageState, setImageState] = useState<"empty" | "loading" | "ready" | "error">("empty");
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +78,7 @@ export function AnnouncementBanner() {
         if (body?.announcement) {
           setSettings({ ...defaults, ...body.announcement });
           setDismissed(false);
+          setFailedImageUrl(null);
         }
       })
       .catch(() => {});
@@ -84,6 +86,25 @@ export function AnnouncementBanner() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const url = settings.imageUrl;
+    if (!url) {
+      setImageState("empty");
+      return;
+    }
+    let cancelled = false;
+    setImageState("loading");
+    const probe = new window.Image();
+    probe.onload = () => { if (!cancelled) setImageState("ready"); };
+    probe.onerror = () => { if (!cancelled) setImageState("error"); };
+    probe.src = url;
+    return () => {
+      cancelled = true;
+      probe.onload = null;
+      probe.onerror = null;
+    };
+  }, [settings.imageUrl]);
 
   const visible =
     settings.enabled &&
@@ -141,7 +162,7 @@ export function AnnouncementBanner() {
     setDismissed(true);
     setPopupOpen(false);
   };
-  const hasImage = Boolean(settings.imageUrl && settings.imageUrl !== failedImageUrl);
+  const hasImage = Boolean(settings.imageUrl && imageState === "ready" && settings.imageUrl !== failedImageUrl);
   const popupClassName = [
     "announcement-popup",
     hasImage ? "announcement-popup--image" : "announcement-popup--text-only",
@@ -194,7 +215,10 @@ export function AnnouncementBanner() {
                   loading="eager"
                   decoding="async"
                   referrerPolicy="no-referrer"
-                  onError={() => setFailedImageUrl(settings.imageUrl)}
+                  onError={() => {
+                    setImageState("error");
+                    setFailedImageUrl(settings.imageUrl);
+                  }}
                 />
               </figure>
             )}

@@ -26,19 +26,36 @@ export async function POST(request: Request) {
       .webp({ quality: 88 })
       .toBuffer();
     const path = `announcement-assets/${new Date().getUTCFullYear()}/${crypto.randomUUID()}.webp`;
-    const { error: uploadError } = await admin.storage.from("editorial-media").upload(path, image, {
+    const uploadBody = new Blob([new Uint8Array(image)], { type: "image/webp" });
+    const { error: uploadError } = await admin.storage.from("editorial-media").upload(path, uploadBody, {
       contentType: "image/webp",
       cacheControl: "31536000",
       upsert: false,
     });
     if (uploadError) throw new Error("The announcement image could not be uploaded.");
+    const { data: storedFile, error: storedFileError } = await admin.storage.from("editorial-media").download(path);
+    if (storedFileError || !storedFile) {
+      await admin.storage.from("editorial-media").remove([path]);
+      throw new Error("The announcement image could not be verified after upload.");
+    }
+    const storedBytes = Buffer.from(await storedFile.arrayBuffer());
+    if (!storedBytes.equals(image)) {
+      await admin.storage.from("editorial-media").remove([path]);
+      throw new Error("The uploaded announcement image changed during storage. Please try again.");
+    }
+    try {
+      await sharp(storedBytes, { limitInputPixels: 40_000_000 }).metadata();
+    } catch {
+      await admin.storage.from("editorial-media").remove([path]);
+      throw new Error("The uploaded announcement image was not readable. Please try another image.");
+    }
     const { data } = admin.storage.from("editorial-media").getPublicUrl(path);
     await admin.from("audit_events").insert({
       actor_id: user.id,
       action: "announcement_image_uploaded",
       entity_type: "storage_object",
       entity_id: path,
-      details: { originalName: file.name, sourceBytes: file.size, storedBytes: image.length, width: metadata.width, height: metadata.height },
+      details: { originalName: file.name, sourceBytes: file.size, storedBytes: storedBytes.length, width: metadata.width, height: metadata.height },
     });
     return NextResponse.json({ url: data.publicUrl, width: 1600, height: 1000 });
   } catch (error) {

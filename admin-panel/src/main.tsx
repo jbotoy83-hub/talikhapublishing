@@ -5593,8 +5593,27 @@ function AnnouncementWorkspace() {
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "phone">("desktop");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageError, setImageError] = useState("");
+  const [imagePreviewState, setImagePreviewState] = useState<"empty" | "loading" | "ready" | "error">("empty");
   const imageInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { let cancelled = false; void fetch("/api/admin/announcements", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (!cancelled && body?.announcement) setSettings({ ...defaultAnnouncementSettings, ...body.announcement }); }).catch(() => {}); return () => { cancelled = true; }; }, []);
+  useEffect(() => {
+    const url = settings.imageUrl;
+    if (!url) {
+      setImagePreviewState("empty");
+      return;
+    }
+    let cancelled = false;
+    setImagePreviewState("loading");
+    const probe = new window.Image();
+    probe.onload = () => { if (!cancelled) setImagePreviewState("ready"); };
+    probe.onerror = () => { if (!cancelled) setImagePreviewState("error"); };
+    probe.src = url;
+    return () => {
+      cancelled = true;
+      probe.onload = null;
+      probe.onerror = null;
+    };
+  }, [settings.imageUrl]);
   const update = <K extends keyof AnnouncementSettings>(key: K, value: AnnouncementSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const save = async () => { try { const response = await fetch("/api/admin/announcements", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }); if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The announcement could not be saved."); } setSaved(true); window.setTimeout(() => setSaved(false), 2200); } catch (error) { window.alert(error instanceof Error ? error.message : "The announcement could not be saved."); } };
   const uploadImage = async (file: File) => {
@@ -5615,6 +5634,7 @@ function AnnouncementWorkspace() {
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || "The announcement image could not be uploaded.");
       update("imageUrl", String(result?.url || ""));
+      setImagePreviewState("loading");
     } catch (error) {
       setImageError(error instanceof Error ? error.message : "The announcement image could not be uploaded.");
     } finally {
@@ -5640,13 +5660,17 @@ function AnnouncementWorkspace() {
   const messageLeft = 240 - settings.message.length;
   const signature = [settings.category, settings.message, settings.actionLabel, settings.presentation, settings.imageUrl || "", settings.imageAlt, settings.layout, String(settings.dismissible)].join("·");
   const previewImageAlt = settings.imageAlt.trim() || `${settings.category || "Announcement"} image`;
+  const hasPreviewImage = Boolean(settings.imageUrl && imagePreviewState === "ready");
   const popupCopy = (
-    <div className="space-y-3.5 p-5 sm:space-y-4 sm:p-7">
+    <div className="relative space-y-4 bg-white p-5 sm:space-y-5 sm:p-7">
       {settings.dismissible ? <span className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-white/70 text-[var(--ui-muted)] shadow-sm ring-1 ring-[#1c2821]/10"><X className="size-3.5" /></span> : null}
-      <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-[#a65335]">{settings.category || "Announcement"}</span>
+      <div className="flex items-start justify-between gap-3 pr-8">
+        <span className="inline-flex rounded-full border border-[#183d2c]/15 bg-[#f5f7f3] px-2.5 py-1 text-[10px] font-semibold text-[#53635a]">{settings.category || "Announcement"}</span>
+        <span className="pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#8b948d]">Talikha</span>
+      </div>
       <p className="max-w-[34rem] font-serif text-[21px] font-medium leading-[1.14] tracking-[-0.015em] text-[#17382b] sm:text-[28px]">{settings.message || "Your announcement message appears here."}</p>
       <div className="flex flex-wrap items-center gap-3 pt-1">
-        {settings.actionLabel ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#183d2c] px-4 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_15px_-8px_rgba(24,61,44,0.8)]">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
+        {settings.actionLabel ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#151a17] px-4 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_15px_-8px_rgba(24,61,44,0.8)]">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
         {settings.dismissible ? <span className="text-[12px] font-medium text-[#64736a]">Maybe later</span> : null}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#1c2821]/10 pt-3 text-[10.5px] text-[#64736a]">
@@ -5734,8 +5758,8 @@ function AnnouncementWorkspace() {
 
               {showPopup && activePreview === "popup" ? (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#1c2821]/45 p-4 backdrop-blur-[1px] animate-in fade-in duration-300 sm:p-8">
-                  <div key={`${signature}p`} className={cn("relative w-full overflow-hidden rounded-[1.5rem] bg-[#f7f3ea] shadow-[0_30px_60px_-20px_rgba(28,40,33,0.5)] ring-1 ring-[#1c2821]/10 animate-in zoom-in-95 fade-in duration-300", previewDevice === "phone" ? "max-w-[318px]" : "max-w-[560px]", settings.imageUrl && settings.layout === "split" ? "sm:grid sm:grid-cols-[0.88fr_1.12fr]" : "") }>
-                    {settings.imageUrl ? <img src={settings.imageUrl} alt={previewImageAlt} className={cn("block w-full object-cover", settings.layout === "split" ? "h-28 sm:h-full sm:min-h-[260px]" : "h-32 sm:h-48")} /> : null}
+                  <div key={`${signature}p`} className={cn("relative w-full overflow-hidden rounded-[1.5rem] bg-white shadow-[0_30px_60px_-20px_rgba(28,40,33,0.5)] ring-1 ring-[#1c2821]/10 animate-in zoom-in-95 fade-in duration-300", previewDevice === "phone" ? "max-w-[318px]" : "max-w-[560px]", hasPreviewImage && settings.layout === "split" ? "sm:grid sm:grid-cols-[0.88fr_1.12fr]" : "") }>
+                    {settings.imageUrl ? hasPreviewImage ? <img src={settings.imageUrl} alt={previewImageAlt} className={cn("block w-full object-cover", settings.layout === "split" ? "h-28 sm:h-full sm:min-h-[260px]" : "h-32 sm:h-48")} onError={() => setImagePreviewState("error")} /> : <div className="flex h-32 items-center justify-center gap-2 bg-[#eef2ed] px-5 text-center text-[11px] font-medium text-[#65736a] sm:h-48"><ImageIcon className="size-4" /> {imagePreviewState === "loading" ? "Loading image…" : "Image unavailable — replace the image"}</div> : null}
                     {popupCopy}
                   </div>
                 </div>
@@ -5758,7 +5782,7 @@ function AnnouncementWorkspace() {
           </div>
         </AnxCard>
 
-        <AnxCard icon={ImageIcon} title="Announcement artwork" desc="Add a lightweight image and choose how it sits inside the popup. The image is uploaded securely and shown in the live preview.">
+        <AnxCard icon={ImageIcon} title="Announcement card template" desc="Use the reference card as your starting point: replace the image, change the words, or remove the artwork entirely.">
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
               <button
@@ -5769,11 +5793,17 @@ function AnnouncementWorkspace() {
                 className="group relative flex min-h-[156px] items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#b9c6bb] bg-[linear-gradient(135deg,#fbfbf8,#f1f6f1)] text-left transition hover:border-[#183d2c] hover:bg-[#edf5f0]"
                 aria-label={settings.imageUrl ? "Replace announcement image" : "Upload announcement image"}
               >
-                {settings.imageUrl ? (
+                {hasPreviewImage ? (
                   <>
-                    <img src={settings.imageUrl} alt={previewImageAlt} className="absolute inset-0 size-full object-cover" />
+                    <img src={settings.imageUrl || ""} alt={previewImageAlt} className="absolute inset-0 size-full object-cover" onError={() => setImagePreviewState("error")} />
                     <span className="absolute inset-x-3 bottom-3 rounded-lg bg-[#183d2c]/85 px-3 py-2 text-center text-[11.5px] font-semibold text-white opacity-0 transition group-hover:opacity-100">Replace image</span>
                   </>
+                ) : settings.imageUrl ? (
+                  <span className="flex flex-col items-center gap-2 px-5 text-center text-[#a65335]">
+                    <ImageIcon className="size-6" />
+                    <span className="text-[13px] font-semibold text-[var(--ui-strong)]">{imagePreviewState === "loading" ? "Loading image…" : "Image unavailable"}</span>
+                    <span className="text-[11px] leading-relaxed text-[var(--ui-muted)]">{imagePreviewState === "loading" ? "Checking the stored image before showing it." : "Click to replace this image with a valid JPG, PNG, WebP, or GIF."}</span>
+                  </span>
                 ) : (
                   <span className="flex flex-col items-center gap-2 px-5 text-center">
                     <span className="grid size-10 place-items-center rounded-full bg-[#e2eee5] text-[#183d2c]"><Upload className="size-[18px]" /></span>
@@ -5787,7 +5817,7 @@ function AnnouncementWorkspace() {
                 <AnxField label="Image placement">
                   <AnxSegmented ariaLabel="Image placement" value={settings.layout} onChange={(value) => update("layout", value)} options={[{ value: "image-led", label: "Top" }, { value: "split", label: "Split" }]} />
                 </AnxField>
-                {settings.imageUrl ? <button type="button" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#a65335] hover:underline" onClick={() => { update("imageUrl", null); update("imageAlt", ""); setImageError(""); }}><Trash2 className="size-3.5" /> Remove image</button> : <p className="text-[11px] leading-relaxed text-[var(--ui-muted)]">Top keeps the image above the message. Split places it beside the copy on desktop and above it on phones.</p>}
+                {settings.imageUrl ? <button type="button" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#a65335] hover:underline" onClick={() => { update("imageUrl", null); update("imageAlt", ""); setImageError(""); setImagePreviewState("empty"); }}><Trash2 className="size-3.5" /> Remove image</button> : <p className="text-[11px] leading-relaxed text-[var(--ui-muted)]">Top keeps the image above the message. Split places it beside the copy on desktop and above it on phones.</p>}
               </div>
             </div>
             {settings.imageUrl ? <AnxField label="Image description" hint="for accessibility"><Input value={settings.imageAlt} maxLength={160} placeholder="Describe the announcement image" onChange={(event) => update("imageAlt", event.target.value)} /></AnxField> : null}
