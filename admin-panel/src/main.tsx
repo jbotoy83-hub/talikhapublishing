@@ -5416,9 +5416,9 @@ function CertificatesWorkspace({ submissions }: { submissions: EditorialSubmissi
   </section>;
 }
 type AnnouncementSettings = {
-  enabled: boolean; presentation: "banner" | "popup" | "both"; category: string; message: string; actionLabel: string; actionHref: string; target: "all" | "home" | "journals" | "submit"; trigger: "load" | "scroll"; delaySeconds: number; dismissible: boolean; frequency: "visit" | "session"; startsAt: string; endsAt: string;
+  enabled: boolean; presentation: "banner" | "popup" | "both"; category: string; message: string; actionLabel: string; actionHref: string; imageUrl: string | null; imageAlt: string; layout: "image-led" | "split"; target: "all" | "home" | "journals" | "submit"; trigger: "load" | "scroll"; delaySeconds: number; dismissible: boolean; frequency: "visit" | "session"; startsAt: string; endsAt: string;
 };
-const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", actionLabel: "Submit your work", actionHref: "/submit", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
+const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", actionLabel: "Submit your work", actionHref: "/submit", imageUrl: null, imageAlt: "", layout: "image-led", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
 
 function AnxCard({ icon: Icon, title, desc, children }: { icon: ComponentType<{ className?: string }>; title: string; desc: string; children: ReactNode }) {
   return (
@@ -5590,9 +5590,47 @@ function AnnouncementWorkspace() {
   const [settings, setSettings] = useState<AnnouncementSettings>(defaultAnnouncementSettings);
   const [saved, setSaved] = useState(false);
   const [previewTab, setPreviewTab] = useState<"bar" | "popup">("bar");
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "phone">("desktop");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState("");
+  const imageInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { let cancelled = false; void fetch("/api/admin/announcements", { credentials: "same-origin" }).then((response) => (response.ok ? response.json() : null)).then((body) => { if (!cancelled && body?.announcement) setSettings({ ...defaultAnnouncementSettings, ...body.announcement }); }).catch(() => {}); return () => { cancelled = true; }; }, []);
   const update = <K extends keyof AnnouncementSettings>(key: K, value: AnnouncementSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
   const save = async () => { try { const response = await fetch("/api/admin/announcements", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }); if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error || "The announcement could not be saved."); } setSaved(true); window.setTimeout(() => setSaved(false), 2200); } catch (error) { window.alert(error instanceof Error ? error.message : "The announcement could not be saved."); } };
+  const uploadImage = async (file: File) => {
+    if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+      setImageError("Choose a JPG, PNG, WebP, or GIF image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Images must be smaller than 5 MB.");
+      return;
+    }
+    setUploadingImage(true);
+    setImageError("");
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const response = await fetch("/api/admin/announcements/image", { method: "POST", credentials: "same-origin", body });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || "The announcement image could not be uploaded.");
+      update("imageUrl", String(result?.url || ""));
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "The announcement image could not be uploaded.");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+  const handleImageInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) void uploadImage(file);
+    event.target.value = "";
+  };
+  const handleImageDrop = (event: React.DragEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (file) void uploadImage(file);
+  };
 
   const showBar = settings.presentation !== "popup";
   const showPopup = settings.presentation !== "banner";
@@ -5600,7 +5638,23 @@ function AnnouncementWorkspace() {
   const activePreview = (previewTabs.includes(previewTab) ? previewTab : previewTabs[0]) || "bar";
   const targetLabel: Record<AnnouncementSettings["target"], string> = { all: "all public pages", home: "the home page", journals: "journal pages", submit: "the submissions page" };
   const messageLeft = 240 - settings.message.length;
-  const signature = [settings.category, settings.message, settings.actionLabel, settings.presentation, String(settings.dismissible)].join("·");
+  const signature = [settings.category, settings.message, settings.actionLabel, settings.presentation, settings.imageUrl || "", settings.imageAlt, settings.layout, String(settings.dismissible)].join("·");
+  const previewImageAlt = settings.imageAlt.trim() || `${settings.category || "Announcement"} image`;
+  const popupCopy = (
+    <div className="space-y-3.5 p-5 sm:space-y-4 sm:p-7">
+      {settings.dismissible ? <span className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-white/70 text-[var(--ui-muted)] shadow-sm ring-1 ring-[#1c2821]/10"><X className="size-3.5" /></span> : null}
+      <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-[#a65335]">{settings.category || "Announcement"}</span>
+      <p className="max-w-[34rem] font-serif text-[21px] font-medium leading-[1.14] tracking-[-0.015em] text-[#17382b] sm:text-[28px]">{settings.message || "Your announcement message appears here."}</p>
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        {settings.actionLabel ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#183d2c] px-4 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_15px_-8px_rgba(24,61,44,0.8)]">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
+        {settings.dismissible ? <span className="text-[12px] font-medium text-[#64736a]">Maybe later</span> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[#1c2821]/10 pt-3 text-[10.5px] text-[#64736a]">
+        <span className="inline-flex items-center gap-1"><Clock3 className="size-3.5" />{settings.trigger === "load" ? "After page load" : "After scrolling"}{settings.delaySeconds > 0 ? ` + ${settings.delaySeconds}s` : ""}</span>
+        <span className="inline-flex items-center gap-1"><CalendarDays className="size-3.5" />{settings.frequency === "visit" ? "Every visit" : "Once per session"}</span>
+      </div>
+    </div>
+  );
 
   return (
     <section className="utility-page">
@@ -5624,9 +5678,9 @@ function AnnouncementWorkspace() {
       </div>
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--ui-line)] bg-white">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-soft)]/70 px-4 py-2.5">
-          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#a65335]"><Eye className="size-3.5" /> Live preview</div>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-soft)]/70 px-4 py-3">
+          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#a65335]"><Eye className="size-3.5" /> Live preview <span className="font-medium normal-case tracking-normal text-[var(--ui-muted)]">— see the full announcement at each breakpoint</span></div>
+          <div className="flex flex-wrap items-center gap-2">
             {previewTabs.length > 1 ? (
               <div className="inline-flex rounded-lg border border-[var(--ui-line)] bg-white p-0.5">
                 {previewTabs.map((tab) => (
@@ -5634,20 +5688,25 @@ function AnnouncementWorkspace() {
                 ))}
               </div>
             ) : null}
-            <Badge variant="outline">Preview</Badge>
+            <div className="inline-flex rounded-lg border border-[var(--ui-line)] bg-white p-0.5" role="group" aria-label="Preview device">
+              <button type="button" aria-pressed={previewDevice === "desktop"} onClick={() => setPreviewDevice("desktop")} style={{ color: previewDevice === "desktop" ? "#fff" : "var(--ui-muted)" }} className={cn("rounded-md px-2.5 py-1 text-[11.5px] font-medium transition active:scale-[0.98]", previewDevice === "desktop" ? "bg-[#183d2c]" : "hover:opacity-80")}>Desktop</button>
+              <button type="button" aria-pressed={previewDevice === "phone"} onClick={() => setPreviewDevice("phone")} style={{ color: previewDevice === "phone" ? "#fff" : "var(--ui-muted)" }} className={cn("rounded-md px-2.5 py-1 text-[11.5px] font-medium transition active:scale-[0.98]", previewDevice === "phone" ? "bg-[#183d2c]" : "hover:opacity-80")}>Phone</button>
+            </div>
+            <Badge variant="outline">{previewDevice === "phone" ? "Mobile" : "Desktop"}</Badge>
           </div>
         </div>
 
-        <div className="relative bg-[#f3f4f1] p-5 sm:p-8" style={{ backgroundImage: "radial-gradient(circle, rgba(28,40,33,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
-          <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-[var(--ui-line)] bg-white shadow-[0_24px_55px_-24px_rgba(28,40,33,0.4)]">
+        <div className="relative flex min-h-[500px] items-center justify-center overflow-hidden bg-[#f3f4f1] p-4 sm:min-h-[560px] sm:p-10" style={{ backgroundImage: "radial-gradient(circle, rgba(28,40,33,0.06) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
+          <div className={cn("relative w-full overflow-hidden bg-white shadow-[0_24px_55px_-24px_rgba(28,40,33,0.4)]", previewDevice === "phone" ? "max-w-[360px] rounded-[2rem] border-[7px] border-[#202b26] shadow-[0_28px_70px_-24px_rgba(28,40,33,0.65)]" : "max-w-5xl rounded-xl border border-[var(--ui-line)]")}>
+            {previewDevice === "phone" ? <div className="absolute inset-x-1/2 top-0 z-30 h-5 w-24 -translate-x-1/2 rounded-b-xl bg-[#202b26]" aria-hidden="true" /> : null}
             <div className="flex items-center gap-2 border-b border-[var(--ui-line)] bg-[#fafaf8] px-3 py-2">
               <span className="flex gap-1.5"><span className="size-2.5 rounded-full bg-[#e3c4bd]" /><span className="size-2.5 rounded-full bg-[#e8dcb6]" /><span className="size-2.5 rounded-full bg-[#c6d8c9]" /></span>
               <span className="ml-2 flex-1 truncate rounded-md bg-white px-3 py-1 text-center text-[11px] text-[var(--ui-muted)] ring-1 ring-[var(--ui-line)]">talikhapublishing.vercel.app</span>
             </div>
 
-            <div className="relative">
+            <div className={cn("relative overflow-hidden", previewDevice === "phone" ? "min-h-[585px]" : "min-h-[450px]")}>
               {!settings.enabled ? (
-                <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-center gap-1.5 bg-[#b54747] py-1 text-[11px] font-semibold text-white">
+                <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-center gap-1.5 bg-[#b54747] py-1.5 text-[11px] font-semibold text-white">
                   <span className="size-1.5 rounded-full bg-white" /> Announcement hidden — not shown to visitors
                 </div>
               ) : null}
@@ -5674,19 +5733,10 @@ function AnnouncementWorkspace() {
               </div>
 
               {showPopup && activePreview === "popup" ? (
-                <div className="absolute inset-0 z-10 grid place-items-center bg-[#1c2821]/45 p-4 backdrop-blur-[1px] animate-in fade-in duration-300">
-                  <div key={`${signature}p`} className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_30px_60px_-20px_rgba(28,40,33,0.5)] ring-1 ring-[#1c2821]/5 animate-in zoom-in-95 fade-in duration-300">
-                    {settings.dismissible ? <span className="absolute right-3 top-3 grid size-6 place-items-center rounded-full text-[var(--ui-muted)]"><X className="size-3.5" /></span> : null}
-                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#a65335]">{settings.category || "Announcement"}</span>
-                    <p className="mt-2 text-[14px] font-medium leading-relaxed text-[var(--ui-strong)]">{settings.message || "Your announcement message appears here."}</p>
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      {settings.actionLabel ? <span className="inline-flex items-center gap-1 rounded-full bg-[#183d2c] px-3.5 py-1.5 text-[12.5px] font-semibold text-white">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
-                      {settings.dismissible ? <span className="text-[12px] font-medium text-[var(--ui-muted)]">Maybe later</span> : null}
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--ui-line)] pt-3 text-[11px] text-[var(--ui-muted)]">
-                      <span className="inline-flex items-center gap-1"><Clock3 className="size-3.5" />{settings.trigger === "load" ? "After page load" : "After scrolling"}{settings.delaySeconds > 0 ? ` + ${settings.delaySeconds}s` : ""}</span>
-                      <span className="inline-flex items-center gap-1"><CalendarDays className="size-3.5" />{settings.frequency === "visit" ? "Every visit" : "Once per session"}</span>
-                    </div>
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#1c2821]/45 p-4 backdrop-blur-[1px] animate-in fade-in duration-300 sm:p-8">
+                  <div key={`${signature}p`} className={cn("relative w-full overflow-hidden rounded-[1.5rem] bg-[#f7f3ea] shadow-[0_30px_60px_-20px_rgba(28,40,33,0.5)] ring-1 ring-[#1c2821]/10 animate-in zoom-in-95 fade-in duration-300", previewDevice === "phone" ? "max-w-[318px]" : "max-w-[560px]", settings.imageUrl && settings.layout === "split" ? "sm:grid sm:grid-cols-[0.88fr_1.12fr]" : "") }>
+                    {settings.imageUrl ? <img src={settings.imageUrl} alt={previewImageAlt} className={cn("block w-full object-cover", settings.layout === "split" ? "h-28 sm:h-full sm:min-h-[260px]" : "h-32 sm:h-48")} /> : null}
+                    {popupCopy}
                   </div>
                 </div>
               ) : null}
@@ -5705,6 +5755,44 @@ function AnnouncementWorkspace() {
             </AnxField>
             <AnxField label="Action label"><Input value={settings.actionLabel} maxLength={80} placeholder="Submit your work" onChange={(event) => update("actionLabel", event.target.value)} /></AnxField>
             <AnxField label="Action link"><Input value={settings.actionHref} maxLength={500} placeholder="/submit or https://…" onChange={(event) => update("actionHref", event.target.value)} /></AnxField>
+          </div>
+        </AnxCard>
+
+        <AnxCard icon={ImageIcon} title="Announcement artwork" desc="Add a lightweight image and choose how it sits inside the popup. The image is uploaded securely and shown in the live preview.">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={handleImageDrop}
+                className="group relative flex min-h-[156px] items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#b9c6bb] bg-[linear-gradient(135deg,#fbfbf8,#f1f6f1)] text-left transition hover:border-[#183d2c] hover:bg-[#edf5f0]"
+                aria-label={settings.imageUrl ? "Replace announcement image" : "Upload announcement image"}
+              >
+                {settings.imageUrl ? (
+                  <>
+                    <img src={settings.imageUrl} alt={previewImageAlt} className="absolute inset-0 size-full object-cover" />
+                    <span className="absolute inset-x-3 bottom-3 rounded-lg bg-[#183d2c]/85 px-3 py-2 text-center text-[11.5px] font-semibold text-white opacity-0 transition group-hover:opacity-100">Replace image</span>
+                  </>
+                ) : (
+                  <span className="flex flex-col items-center gap-2 px-5 text-center">
+                    <span className="grid size-10 place-items-center rounded-full bg-[#e2eee5] text-[#183d2c]"><Upload className="size-[18px]" /></span>
+                    <span className="text-[13px] font-semibold text-[var(--ui-strong)]">Add announcement image</span>
+                    <span className="text-[11px] leading-relaxed text-[var(--ui-muted)]">Drop an image here or browse · JPG, PNG, WebP, GIF · up to 5 MB</span>
+                  </span>
+                )}
+                <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={handleImageInput} />
+              </button>
+              <div className="space-y-3">
+                <AnxField label="Image placement">
+                  <AnxSegmented ariaLabel="Image placement" value={settings.layout} onChange={(value) => update("layout", value)} options={[{ value: "image-led", label: "Top" }, { value: "split", label: "Split" }]} />
+                </AnxField>
+                {settings.imageUrl ? <button type="button" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#a65335] hover:underline" onClick={() => { update("imageUrl", null); update("imageAlt", ""); setImageError(""); }}><Trash2 className="size-3.5" /> Remove image</button> : <p className="text-[11px] leading-relaxed text-[var(--ui-muted)]">Top keeps the image above the message. Split places it beside the copy on desktop and above it on phones.</p>}
+              </div>
+            </div>
+            {settings.imageUrl ? <AnxField label="Image description" hint="for accessibility"><Input value={settings.imageAlt} maxLength={160} placeholder="Describe the announcement image" onChange={(event) => update("imageAlt", event.target.value)} /></AnxField> : null}
+            {uploadingImage ? <p className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[#183d2c]"><RefreshCw className="size-3.5 animate-spin" /> Uploading image…</p> : null}
+            {imageError ? <p className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[#b54747]"><CircleX className="size-3.5" /> {imageError}</p> : null}
           </div>
         </AnxCard>
 

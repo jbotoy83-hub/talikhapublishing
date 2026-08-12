@@ -41,6 +41,13 @@ export async function PUT(request: Request) {
       const { error } = await admin.from("announcements").insert(payload);
       if (error) throw new Error(error.message);
     }
+    await admin.from("audit_events").insert({
+      actor_id: user.id,
+      action: "announcement_saved",
+      entity_type: "announcement",
+      entity_id: existing?.id || "latest",
+      details: { layout: parsed.layout, hasImage: Boolean(parsed.imageUrl), presentation: parsed.presentation },
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error, "The announcement could not be saved.");

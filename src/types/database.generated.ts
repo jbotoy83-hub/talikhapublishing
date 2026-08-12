@@ -28,6 +28,9 @@ export type Database = {
           ends_at: string | null
           frequency: string
           id: string
+          image_alt: string
+          image_url: string | null
+          layout: string
           message: string
           presentation: string
           starts_at: string | null
@@ -47,6 +50,9 @@ export type Database = {
           ends_at?: string | null
           frequency?: string
           id?: string
+          image_alt?: string
+          image_url?: string | null
+          layout?: string
           message?: string
           presentation?: string
           starts_at?: string | null
@@ -66,6 +72,9 @@ export type Database = {
           ends_at?: string | null
           frequency?: string
           id?: string
+          image_alt?: string
+          image_url?: string | null
+          layout?: string
           message?: string
           presentation?: string
           starts_at?: string | null
