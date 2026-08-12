@@ -515,6 +515,7 @@
 .me-workspace-fatal h2 { margin: 0; color: var(--me-forest-950); font-family: "Newsreader Variable", serif; font-size: 24px; }
 .me-workspace-loading span,
 .me-workspace-fatal p { max-width: 520px; margin: 0; color: var(--me-muted); font-size: 12px; line-height: 1.5; }
+.me-fatal-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
 
 .me-workspace button:focus-visible,
 .me-hub button:focus-visible,

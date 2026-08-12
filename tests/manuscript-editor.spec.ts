@@ -159,8 +159,12 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function mockManuscriptApi(page: Page, options: { editable?: boolean } = {}) {
+async function mockManuscriptApi(page: Page, options: { editable?: boolean; emptySourceSnapshot?: boolean } = {}) {
   const detail = buildDetail(options.editable !== false);
+  if (options.emptySourceSnapshot) {
+    detail.draft.importReport = null;
+    (detail.draft as unknown as { sourceSnapshot: unknown }).sourceSnapshot = {};
+  }
   const docx = await sourceDocx();
   const requests = { saves: 0, finalized: 0, conflictNext: false };
   const second = summary({
@@ -290,6 +294,17 @@ test.describe("Manuscript editor", () => {
     await finalButton.click();
     await expect(page.getByText("Final manuscript attached", { exact: true })).toBeVisible({ timeout: 10_000 });
     expect(requests.finalized).toBe(1);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("an unimported draft with an empty source snapshot opens instead of crashing", async ({ page }) => {
+    await mockManuscriptApi(page, { emptySourceSnapshot: true });
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.goto(`${origin}/admin?view=manuscripts&submission=${submissionId}`);
+    await expect(page.locator(".me-workspace")).toBeVisible();
+    await expect(page.getByLabel("Manuscript document")).toBeVisible();
+    await expect(page.getByText("Opening the manuscript workspace")).toHaveCount(0);
     expect(pageErrors).toEqual([]);
   });
 

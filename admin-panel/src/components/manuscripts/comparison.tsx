@@ -8,21 +8,22 @@ function normalized(value: string) {
   return normalizeManuscriptText(value).toLocaleLowerCase();
 }
 
-export function compareManuscriptParagraphs(source: ManuscriptSourceParagraph[], convertedText: string): ComparisonFinding[] {
+export function compareManuscriptParagraphs(source: ManuscriptSourceParagraph[] | null | undefined, convertedText: string): ComparisonFinding[] {
+  const sourceParagraphs = Array.isArray(source) ? source : [];
   const converted = convertedText.replace(/\r\n?/g, "\n").split(/\n+/).map((text) => text.trim()).filter(Boolean);
   const findings: ComparisonFinding[] = [];
   let sourceIndex = 0;
   let editorIndex = 0;
   const lookahead = 8;
-  while (sourceIndex < source.length || editorIndex < converted.length) {
-    const sourceText = source[sourceIndex]?.text || "";
+  while (sourceIndex < sourceParagraphs.length || editorIndex < converted.length) {
+    const sourceText = sourceParagraphs[sourceIndex]?.text || "";
     const editorText = converted[editorIndex] || "";
-    if (sourceIndex < source.length && editorIndex < converted.length && normalized(sourceText) === normalized(editorText)) {
+    if (sourceIndex < sourceParagraphs.length && editorIndex < converted.length && normalized(sourceText) === normalized(editorText)) {
       sourceIndex += 1;
       editorIndex += 1;
       continue;
     }
-    if (sourceIndex >= source.length) {
+    if (sourceIndex >= sourceParagraphs.length) {
       findings.push({ id: `extra-${editorIndex}`, kind: "extra", editorIndex, editorText });
       editorIndex += 1;
       continue;
@@ -33,7 +34,7 @@ export function compareManuscriptParagraphs(source: ManuscriptSourceParagraph[],
       continue;
     }
     const sourceMatch = converted.slice(editorIndex + 1, editorIndex + lookahead + 1).findIndex((text) => normalized(text) === normalized(sourceText));
-    const editorMatch = source.slice(sourceIndex + 1, sourceIndex + lookahead + 1).findIndex((paragraph) => normalized(paragraph.text) === normalized(editorText));
+    const editorMatch = sourceParagraphs.slice(sourceIndex + 1, sourceIndex + lookahead + 1).findIndex((paragraph) => normalized(paragraph.text) === normalized(editorText));
     if (sourceMatch >= 0 && (editorMatch < 0 || sourceMatch <= editorMatch)) {
       findings.push({ id: `extra-${editorIndex}`, kind: "extra", editorIndex, editorText });
       editorIndex += 1;
@@ -64,10 +65,11 @@ export function ManuscriptComparison({ sourceBlob, fileName, mimeType, sourcePar
   sourceParagraphs: ManuscriptSourceParagraph[];
   convertedText: string;
 }) {
-  const findings = useMemo(() => compareManuscriptParagraphs(sourceParagraphs, convertedText), [sourceParagraphs, convertedText]);
+  const safeSourceParagraphs = Array.isArray(sourceParagraphs) ? sourceParagraphs : [];
+  const findings = useMemo(() => compareManuscriptParagraphs(safeSourceParagraphs, convertedText), [safeSourceParagraphs, convertedText]);
   const [active, setActive] = useState(0);
   const selected = findings[active];
-  const page = selected?.sourceIndex === undefined ? undefined : sourceParagraphs[selected.sourceIndex]?.page;
+  const page = selected?.sourceIndex === undefined ? undefined : safeSourceParagraphs[selected.sourceIndex]?.page;
   return <div className="me-compare-workspace">
     <div className="me-compare-summary">
       <div><strong>{findings.length}</strong><span>differences</span></div>
@@ -78,7 +80,7 @@ export function ManuscriptComparison({ sourceBlob, fileName, mimeType, sourcePar
     </div>
     <div className={`me-compare-grid ${findings.length ? "has-findings" : "is-clear"}`}>
       <section className="me-compare-source"><header><span>Original</span>{page ? <small>Source page {page}</small> : null}</header>{sourceBlob ? <OriginalManuscriptViewer blob={sourceBlob} fileName={fileName} mimeType={mimeType} page={page} /> : <div className="me-empty-inline">Load the original to compare.</div>}</section>
-      <section className="me-compare-converted"><header><span>Converted text</span><small>Paragraph structure</small></header><div className="me-converted-pages">{sourceParagraphs.map((paragraph) => {
+      <section className="me-compare-converted"><header><span>Converted text</span><small>Paragraph structure</small></header><div className="me-converted-pages">{safeSourceParagraphs.map((paragraph) => {
         const finding = findings.find((item) => item.sourceIndex === paragraph.index);
         return <p key={paragraph.index} className={finding ? `is-${finding.kind}` : ""} data-page={paragraph.page}><small>¶ {paragraph.index + 1}{paragraph.page ? ` · p. ${paragraph.page}` : ""}</small>{finding?.editorText ?? paragraph.text}</p>;
       })}</div></section>

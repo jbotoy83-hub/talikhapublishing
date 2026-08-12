@@ -142,6 +142,13 @@ describe("manuscript comparison and output", () => {
     expect(findings.map((finding) => finding.kind)).toEqual(expect.arrayContaining(["extra", "missing", "changed"]));
   });
 
+  it("treats an unimported draft without source paragraphs as an empty comparison", () => {
+    expect(compareManuscriptParagraphs(undefined, "Draft title\nDraft paragraph")).toEqual([
+      { id: "extra-0", kind: "extra", editorIndex: 0, editorText: "Draft title" },
+      { id: "extra-1", kind: "extra", editorIndex: 1, editorText: "Draft paragraph" },
+    ]);
+  });
+
   it("serializes linked fields as copyable plain text", () => {
     const state: ManuscriptEditorState = { root: { children: [{ children: [{ detail: 0, format: 0, mode: "normal", style: "", text: "Dr. Maria Santos", type: "linked-field", version: 1, fieldKey: "author.1.name", fieldLabel: "Author 1 name", sourcePath: "submission_authors[position=1]", sourceValue: "Dr. Maria Santos", overridden: false, frozen: false, private: false }], direction: null, format: "left", indent: 0, type: "manuscript-paragraph", version: 1, spacingBeforePt: 0, spacingAfterPt: 6, lineSpacing: 1.5, firstLineIndentPt: 0, leftIndentPt: 0 }], direction: null, format: "", indent: 0, type: "root", version: 1 } };
     expect(manuscriptPlainTextFromState(state)).toBe("Dr. Maria Santos");

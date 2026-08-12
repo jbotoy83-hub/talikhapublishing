@@ -21,6 +21,7 @@ import {
   type ManuscriptJson,
   type ManuscriptManualConfirmations,
   type ManuscriptPageSettings,
+  type ManuscriptSourceParagraph,
   type ManuscriptSubmissionSummary,
   type ManuscriptVersion,
 } from "@/lib/manuscript-editor-contract";
@@ -135,6 +136,24 @@ function asFieldSnapshot(value: unknown) {
 function asImportReport(value: unknown): ManuscriptImportReport | null {
   const report = objectValue(value);
   return report.format === "docx" || report.format === "pdf" ? report as ManuscriptImportReport : null;
+}
+
+function asSourceSnapshot(value: unknown): ManuscriptDraft["sourceSnapshot"] {
+  const snapshot = objectValue(value);
+  const paragraphs = arrayValue(snapshot.paragraphs).map((item, index): ManuscriptSourceParagraph => ({
+    index: Number.isInteger(item.index) && Number(item.index) >= 0 ? Number(item.index) : index,
+    text: stringValue(item.text),
+    ...(Number.isInteger(item.page) && Number(item.page) > 0 ? { page: Number(item.page) } : {}),
+    ...(typeof item.style === "string" ? { style: item.style } : {}),
+    ...(item.alignment === "left" || item.alignment === "center" || item.alignment === "right" || item.alignment === "justify" ? { alignment: item.alignment } : {}),
+    ...(Number.isFinite(Number(item.spacingBeforePt)) ? { spacingBeforePt: Number(item.spacingBeforePt) } : {}),
+    ...(Number.isFinite(Number(item.spacingAfterPt)) ? { spacingAfterPt: Number(item.spacingAfterPt) } : {}),
+    ...(Number.isFinite(Number(item.lineSpacing)) ? { lineSpacing: Number(item.lineSpacing) } : {}),
+    ...(Number.isFinite(Number(item.firstLineIndentPt)) ? { firstLineIndentPt: Number(item.firstLineIndentPt) } : {}),
+    ...(Number.isFinite(Number(item.leftIndentPt)) ? { leftIndentPt: Number(item.leftIndentPt) } : {}),
+    ...(Number.isFinite(Number(item.confidence)) ? { confidence: Number(item.confidence) } : {}),
+  }));
+  return { text: stringValue(snapshot.text), paragraphs };
 }
 
 function asConfirmations(value: unknown): ManuscriptManualConfirmations {
@@ -468,7 +487,7 @@ export async function getManuscriptDetail(documentId: string, user: AdminUser): 
     fieldBindings: asBindings(draft.field_bindings),
     fieldSnapshot: asFieldSnapshot(draft.field_snapshot),
     importReport: asImportReport(draft.import_report),
-    sourceSnapshot: objectValue(draft.source_snapshot) as ManuscriptDraft["sourceSnapshot"],
+    sourceSnapshot: asSourceSnapshot(draft.source_snapshot),
     manualConfirmations: asConfirmations(draft.manual_confirmations),
     contentText: draft.content_text,
     contentHash: draft.content_hash,
@@ -577,7 +596,7 @@ export async function saveManuscriptDraft(documentId: string, user: AdminUser, i
     field_bindings: asJson(input.fieldBindings || asBindings(current.field_bindings)),
     field_snapshot: asJson(input.fieldSnapshot || asFieldSnapshot(current.field_snapshot)),
     import_report: asJson(input.importReport === undefined ? objectValue(current.import_report) : input.importReport || {}),
-    source_snapshot: asJson(input.sourceSnapshot || objectValue(current.source_snapshot)),
+    source_snapshot: asJson(input.sourceSnapshot || asSourceSnapshot(current.source_snapshot)),
     manual_confirmations: asJson(input.manualConfirmations || asConfirmations(current.manual_confirmations)),
     content_text: contentText,
     content_hash: contentHash,
@@ -907,7 +926,7 @@ export async function finalizeManuscript(documentId: string, user: AdminUser, co
       fieldBindings: frozenBindings,
       fieldSnapshot: asFieldSnapshot(output.draft.field_snapshot),
       importReport: asImportReport(output.draft.import_report),
-      sourceSnapshot: objectValue(output.draft.source_snapshot) as ManuscriptDraft["sourceSnapshot"],
+      sourceSnapshot: asSourceSnapshot(output.draft.source_snapshot),
       manualConfirmations: confirmations,
     });
     const version = await createVersion(admin, documentId, user, "final", changeSummary || "Final DOCX and PDF attached", { docx: docxFile.id, pdf: pdfFile.id });

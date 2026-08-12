@@ -459,7 +459,8 @@ export function ManuscriptWorkspace() {
   };
 
   const currentEditorText = editorState ? manuscriptPlainTextFromState(editorState) : "";
-  const findings = useMemo(() => detail ? compareManuscriptParagraphs(detail.draft.sourceSnapshot.paragraphs, currentEditorText) : [], [currentEditorText, detail]);
+  const sourceParagraphs = detail?.draft.sourceSnapshot?.paragraphs ?? [];
+  const findings = useMemo(() => compareManuscriptParagraphs(sourceParagraphs, currentEditorText), [currentEditorText, sourceParagraphs]);
   const fieldsByGroup = useMemo(() => {
     const groups = new Map<string, ManuscriptFieldValue[]>();
     for (const field of detail?.fields || []) groups.set(field.group, [...(groups.get(field.group) || []), field]);
@@ -507,7 +508,7 @@ export function ManuscriptWorkspace() {
       </aside>
 
       <main className="me-editor-main">
-        {comparisonOpen ? <div className="me-comparison-surface"><div className="me-surface-heading"><div><span className="me-eyebrow">Verification workspace</span><h2>Original vs. converted manuscript</h2></div><button type="button" className="me-secondary-button" onClick={() => setComparisonOpen(false)}><X size={16} />Return to editor</button></div>{sourceLoading ? <div className="me-viewer-loading"><RefreshCw size={18} />Loading the immutable original…</div> : <ManuscriptComparison sourceBlob={sourceBlob} fileName={detail.document.sourceFileName} mimeType={detail.document.sourceMimeType} sourceParagraphs={detail.draft.sourceSnapshot.paragraphs} convertedText={contentTextRef.current} />}</div> : <ManuscriptEditor key={`${detail.document.id}-${editorKey}`} initialState={editorState} editable={editable} pageSettings={pageSettings} zoom={zoom} onReady={(editor) => { editorRef.current = editor; }} onDocumentChange={handleDocumentChange} onMetricsChange={setMetrics} />}
+        {comparisonOpen ? <div className="me-comparison-surface"><div className="me-surface-heading"><div><span className="me-eyebrow">Verification workspace</span><h2>Original vs. converted manuscript</h2></div><button type="button" className="me-secondary-button" onClick={() => setComparisonOpen(false)}><X size={16} />Return to editor</button></div>{sourceLoading ? <div className="me-viewer-loading"><RefreshCw size={18} />Loading the immutable original…</div> : <ManuscriptComparison sourceBlob={sourceBlob} fileName={detail.document.sourceFileName} mimeType={detail.document.sourceMimeType} sourceParagraphs={sourceParagraphs} convertedText={contentTextRef.current} />}</div> : <ManuscriptEditor key={`${detail.document.id}-${editorKey}`} initialState={editorState} editable={editable} pageSettings={pageSettings} zoom={zoom} onReady={(editor) => { editorRef.current = editor; }} onDocumentChange={handleDocumentChange} onMetricsChange={setMetrics} />}
       </main>
 
       <aside className={`me-right-panel ${rightOpen ? "is-mobile-open" : ""}`}><button type="button" className="me-drawer-close" onClick={() => setRightOpen(false)}><X size={16} /></button>

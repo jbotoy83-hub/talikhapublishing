@@ -29,10 +29,24 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function normalizeDetail(detail: ManuscriptDetail): ManuscriptDetail {
+  const snapshot = detail?.draft?.sourceSnapshot;
+  return {
+    ...detail,
+    draft: {
+      ...detail.draft,
+      sourceSnapshot: {
+        text: typeof snapshot?.text === "string" ? snapshot.text : "",
+        paragraphs: Array.isArray(snapshot?.paragraphs) ? snapshot.paragraphs : [],
+      },
+    },
+  };
+}
+
 export const manuscriptApi = {
   eligible: async () => ({ submissions: (await requestJson<{ manuscripts: ManuscriptSubmissionSummary[] }>("/api/admin/manuscripts/eligible")).manuscripts }),
-  open: async (submissionId: string) => (await requestJson<{ manuscript: ManuscriptDetail }>("/api/admin/manuscripts", { method: "POST", body: JSON.stringify({ submissionId }) })).manuscript,
-  detail: async (documentId: string) => (await requestJson<{ manuscript: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}`)).manuscript,
+  open: async (submissionId: string) => normalizeDetail((await requestJson<{ manuscript: ManuscriptDetail }>("/api/admin/manuscripts", { method: "POST", body: JSON.stringify({ submissionId }) })).manuscript),
+  detail: async (documentId: string) => normalizeDetail((await requestJson<{ manuscript: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}`)).manuscript),
   save: (documentId: string, input: {
     baseRevision: number;
     editorState: ManuscriptEditorState;
@@ -46,9 +60,15 @@ export const manuscriptApi = {
   }) => requestJson<{ revision: number; updatedAt: string; contentHash: string }>(`/api/admin/manuscripts/${documentId}/draft`, { method: "PATCH", body: JSON.stringify(input) }),
   import: (documentId: string, baseRevision: number, payload: ManuscriptImportPayload) => requestJson<{ revision: number; updatedAt: string; contentHash: string; report: ManuscriptImportReport; versionId: string }>(`/api/admin/manuscripts/${documentId}/import`, { method: "POST", body: JSON.stringify({ baseRevision, payload }) }),
   fieldSync: (documentId: string, input: { action: "preview" | "apply"; baseRevision?: number; selectedKeys?: string[] }) => requestJson<Record<string, unknown>>(`/api/admin/manuscripts/${documentId}/field-sync`, { method: "POST", body: JSON.stringify(input) }),
-  checkpoint: (documentId: string, changeSummary: string) => requestJson<{ detail: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/versions`, { method: "POST", body: JSON.stringify({ action: "checkpoint", changeSummary }) }),
-  restore: (documentId: string, versionId: string) => requestJson<{ detail: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/versions`, { method: "POST", body: JSON.stringify({ action: "restore", versionId }) }),
-  lease: async (documentId: string, action: "acquire" | "heartbeat" | "release" | "takeover") => (await requestJson<{ manuscript: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/lease`, { method: "POST", keepalive: action === "release", body: JSON.stringify({ action }) })).manuscript,
+  checkpoint: async (documentId: string, changeSummary: string) => {
+    const response = await requestJson<{ detail: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/versions`, { method: "POST", body: JSON.stringify({ action: "checkpoint", changeSummary }) });
+    return { detail: normalizeDetail(response.detail) };
+  },
+  restore: async (documentId: string, versionId: string) => {
+    const response = await requestJson<{ detail: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/versions`, { method: "POST", body: JSON.stringify({ action: "restore", versionId }) });
+    return { detail: normalizeDetail(response.detail) };
+  },
+  lease: async (documentId: string, action: "acquire" | "heartbeat" | "release" | "takeover") => normalizeDetail((await requestJson<{ manuscript: ManuscriptDetail }>(`/api/admin/manuscripts/${documentId}/lease`, { method: "POST", keepalive: action === "release", body: JSON.stringify({ action }) })).manuscript),
   finalize: (documentId: string, confirmations: ManuscriptManualConfirmations, changeSummary: string) => requestJson<{ versionId: string; docxFileId: string; pdfFileId: string; docxUrl: string; pdfUrl: string }>(`/api/admin/manuscripts/${documentId}/finalize`, { method: "POST", body: JSON.stringify({ confirmations, changeSummary }) }),
 };
 

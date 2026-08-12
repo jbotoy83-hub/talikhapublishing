@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from "react";
+import { Component, Fragment, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
 import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, formatCrossref, formatDataCite, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
@@ -106,6 +106,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import "./styles.css";
 
 const LazyManuscriptWorkspace = lazy(() => import("./components/manuscripts/manuscript-workspace"));
+
+class ManuscriptWorkspaceBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[manuscript-workspace]", error, info.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <div className="me-workspace-fatal"><AlertTriangle size={28} /><h2>The manuscript workspace could not open</h2><p>Your manuscript and saved draft are safe. Reload the editor, or return to the Editors queue and try again.</p><div className="me-fatal-actions"><button type="button" className="me-secondary-button" onClick={() => window.location.assign("/admin?view=manuscripts")}>Return to Editors</button><button type="button" className="me-primary-button" onClick={() => window.location.reload()}>Reload workspace</button></div></div>;
+  }
+}
 
 const A = "/assets/";
 const portraits = [
@@ -7483,9 +7500,11 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             <ActivityLogView />
           </div>
         ) : active === 17 ? (
-          <Suspense fallback={<div className="me-workspace-loading"><RefreshCw size={24} /><strong>Loading Editors</strong><span>Preparing the manuscript tools…</span></div>}>
-            <LazyManuscriptWorkspace />
-          </Suspense>
+          <ManuscriptWorkspaceBoundary key={window.location.search}>
+            <Suspense fallback={<div className="me-workspace-loading"><RefreshCw size={24} /><strong>Loading Editors</strong><span>Preparing the manuscript tools…</span></div>}>
+              <LazyManuscriptWorkspace />
+            </Suspense>
+          </ManuscriptWorkspaceBoundary>
         ) : (
           <OverviewDashboard
             displayName={accountIdentity.displayName}
