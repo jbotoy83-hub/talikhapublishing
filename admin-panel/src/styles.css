@@ -8218,6 +8218,31 @@ blockquote {
 .announcement-admin-preview { grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:18px; align-items:center; background:#f4f8f4; }.announcement-admin-preview > span { grid-column:1 / -1; color:#a65335; font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }.announcement-admin-preview > div { display:flex; align-items:center; gap:14px; min-width:0; }.announcement-admin-preview b { color:#a65335; font-size:11px; text-transform:uppercase; }.announcement-admin-preview p { flex:1; margin:0; color:#193b2d; font-size:13px; }.announcement-admin-preview strong { color:#a65335; font-size:12px; }.announcement-admin-preview button { display:inline-flex; align-items:center; gap:8px; border:0; border-radius:9px; background:#173c2b; padding:11px 14px; color:#fff; font-weight:800; }.announcement-admin-preview button svg { width:15px; }.announcement-admin-preview small { grid-column:1 / -1; color:#68766e; font-size:11px; }
 @media (max-width:760px) { .announcement-admin-layout { grid-template-columns:1fr; }.announcement-admin-preview { grid-column:auto; grid-template-columns:1fr; }.announcement-admin-preview > span,.announcement-admin-preview small { grid-column:auto; }.announcement-admin-preview > div { align-items:flex-start; flex-direction:column; }.announcement-form-grid { grid-template-columns:1fr; }.announcement-form-grid .wide { grid-column:auto; } }
 
+/* Announcement workspace: the embedded Home preview follows the same title/body hierarchy as the public popup. */
+.announcement-preview-title {
+  font-size:clamp(1.8rem,calc(var(--announcement-popup-title-size,48) * 1px),4.5rem);
+  font-weight:700;
+  line-height:1.08;
+  text-wrap:balance;
+}
+.announcement-preview-description {
+  font-size:clamp(1rem,calc(var(--announcement-popup-description-size,18) * 1px),1.75rem);
+  font-weight:400;
+  letter-spacing:0;
+  line-height:1.6;
+  text-wrap:pretty;
+}
+.announcement-font-range {
+  width:100%;
+  height:1.2rem;
+  accent-color:#183d2c;
+  cursor:pointer;
+}
+@media (max-width:640px) {
+  .announcement-preview-title { font-size:clamp(1.8rem,calc(var(--announcement-popup-title-size,48) * .75px),3rem); }
+  .announcement-preview-description { font-size:clamp(.98rem,calc(var(--announcement-popup-description-size,18) * .88px),1.35rem); }
+}
+
 /* Clean admin blueprint — a compact SF Pro-style system shared by every workspace. */
 :root {
   --ui-strong: #1c2821;

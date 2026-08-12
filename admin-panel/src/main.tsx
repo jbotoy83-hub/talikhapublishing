@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
 import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, formatCrossref, formatDataCite, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
@@ -5416,9 +5416,9 @@ function CertificatesWorkspace({ submissions }: { submissions: EditorialSubmissi
   </section>;
 }
 type AnnouncementSettings = {
-  enabled: boolean; presentation: "banner" | "popup" | "both"; category: string; message: string; popupDescription: string; actionLabel: string; actionHref: string; imageUrl: string | null; imageAlt: string; layout: "image-led" | "split"; target: "all" | "home" | "journals" | "submit"; trigger: "load" | "scroll"; delaySeconds: number; dismissible: boolean; frequency: "visit" | "session"; startsAt: string; endsAt: string;
+  enabled: boolean; presentation: "banner" | "popup" | "both"; category: string; message: string; popupDescription: string; titleFontSize: number; descriptionFontSize: number; actionLabel: string; actionHref: string; imageUrl: string | null; imageAlt: string; layout: "image-led" | "split"; target: "all" | "home" | "journals" | "submit"; trigger: "load" | "scroll"; delaySeconds: number; dismissible: boolean; frequency: "visit" | "session"; startsAt: string; endsAt: string;
 };
-const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", popupDescription: "", actionLabel: "Submit your work", actionHref: "/submit", imageUrl: null, imageAlt: "", layout: "image-led", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
+const defaultAnnouncementSettings: AnnouncementSettings = { enabled: true, presentation: "banner", category: "Announcement", message: "Talikha Publishing is now accepting submissions for all journals.", popupDescription: "", titleFontSize: 48, descriptionFontSize: 18, actionLabel: "Submit your work", actionHref: "/submit", imageUrl: null, imageAlt: "", layout: "image-led", target: "all", trigger: "load", delaySeconds: 0, dismissible: true, frequency: "visit", startsAt: "", endsAt: "" };
 
 function AnxCard({ icon: Icon, title, desc, children }: { icon: ComponentType<{ className?: string }>; title: string; desc: string; children: ReactNode }) {
   return (
@@ -5658,17 +5658,21 @@ function AnnouncementWorkspace() {
   const activePreview = (previewTabs.includes(previewTab) ? previewTab : previewTabs[0]) || "bar";
   const targetLabel: Record<AnnouncementSettings["target"], string> = { all: "all public pages", home: "the home page", journals: "journal pages", submit: "the submissions page" };
   const messageLeft = 240 - settings.message.length;
-  const signature = [settings.category, settings.message, settings.popupDescription, settings.actionLabel, settings.presentation, settings.imageUrl || "", settings.imageAlt, settings.layout, String(settings.dismissible)].join("·");
+  const signature = [settings.category, settings.message, settings.popupDescription, settings.titleFontSize, settings.descriptionFontSize, settings.actionLabel, settings.presentation, settings.imageUrl || "", settings.imageAlt, settings.layout, String(settings.dismissible)].join("·");
   const previewImageAlt = settings.imageAlt.trim() || `${settings.category || "Announcement"} image`;
   const hasPreviewImage = Boolean(settings.imageUrl && imagePreviewState === "ready");
+  const announcementPreviewTypography = {
+    "--announcement-popup-title-size": settings.titleFontSize,
+    "--announcement-popup-description-size": settings.descriptionFontSize,
+  } as CSSProperties;
   const popupCopy = (
-    <div className="relative space-y-4 bg-white p-5 sm:space-y-5 sm:p-7">
+    <div className="announcement-preview-copy relative space-y-4 bg-white p-5 sm:space-y-5 sm:p-7" style={announcementPreviewTypography}>
       <div className="flex items-start justify-between gap-3 pr-8">
         <span className="inline-flex rounded-full border border-[#183d2c]/15 bg-[#f5f7f3] px-2.5 py-1 text-[10px] font-semibold text-[#53635a]">{settings.category || "Announcement"}</span>
         <span className="pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#8b948d]">Talikha</span>
       </div>
-      <p className="max-w-[34rem] font-serif text-[21px] font-medium leading-[1.14] tracking-[-0.015em] text-[#17382b] sm:text-[28px]">{settings.message || "Your announcement message appears here."}</p>
-      {settings.popupDescription ? <p className="max-w-[34rem] text-[12px] leading-relaxed text-[#64736a] sm:text-[13px]">{settings.popupDescription}</p> : null}
+      <p className="announcement-preview-title max-w-[34rem] font-serif font-bold leading-[1.14] tracking-[-0.015em] text-[#17382b]">{settings.message || "Your announcement title appears here."}</p>
+      {settings.popupDescription ? <p className="announcement-preview-description max-w-[38rem] font-normal leading-[1.6] text-[#64736a]">{settings.popupDescription}</p> : null}
       <div className="flex flex-wrap items-center gap-3 pt-1">
         {settings.actionLabel ? <span className="inline-flex items-center gap-1.5 rounded-full bg-[#151a17] px-4 py-2 text-[12.5px] font-semibold text-white shadow-[0_8px_15px_-8px_rgba(24,61,44,0.8)]">{settings.actionLabel} <span aria-hidden>→</span></span> : null}
         {settings.dismissible ? <span className="text-[12px] font-medium text-[#64736a]">Maybe later</span> : null}
@@ -5771,16 +5775,25 @@ function AnnouncementWorkspace() {
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <AnxCard icon={MessageSquare} title="Announcement content" desc="A category, headline, optional popup description, and one linked action.">
+        <AnxCard icon={MessageSquare} title="Announcement content" desc="A category, title, optional popup description, and one linked action.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <AnxField label="Category"><AnxSelect ariaLabel="Category" value={settings.category} onChange={(value) => update("category", value)} options={["Announcement", "Notice", "Update", "Call for papers", "Event"]} /></AnxField>
             <AnxField label="Display as"><AnxSegmented ariaLabel="Display as" value={settings.presentation} onChange={(value) => update("presentation", value)} options={[{ value: "banner", label: "Bar" }, { value: "popup", label: "Popup" }, { value: "both", label: "Both" }]} /></AnxField>
-            <AnxField full label="Message" hint={<span className={cn(messageLeft < 40 ? "font-semibold" : "", messageLeft <= 0 ? "text-[#b54747]" : messageLeft < 40 ? "text-[#a65335]" : "")}>{settings.message.length}/240</span>}>
-              <Textarea value={settings.message} maxLength={240} rows={3} placeholder="Write the announcement visitors will see…" onChange={(event) => update("message", event.target.value)} />
+            <AnxField full label="Title" hint={<span className={cn(messageLeft < 40 ? "font-semibold" : "", messageLeft <= 0 ? "text-[#b54747]" : messageLeft < 40 ? "text-[#a65335]" : "")}>{settings.message.length}/240</span>}>
+              <Textarea value={settings.message} maxLength={240} rows={3} placeholder="Write the announcement title visitors will see…" onChange={(event) => update("message", event.target.value)} />
             </AnxField>
-            <AnxField full label="Popup description" hint="Optional · popup only">
-              <Textarea value={settings.popupDescription} maxLength={500} rows={3} placeholder="Add supporting text shown beneath the popup headline…" onChange={(event) => update("popupDescription", event.target.value)} />
+            <AnxField full label="Description" hint="Optional · popup only">
+              <Textarea value={settings.popupDescription} maxLength={500} rows={3} placeholder="Add regular-weight supporting text shown beneath the popup title…" onChange={(event) => update("popupDescription", event.target.value)} />
             </AnxField>
+            <div className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-soft)]/70 p-3.5 sm:grid-cols-2">
+              <AnxField label="Popup title size" hint={`${settings.titleFontSize}px`}>
+                <input aria-label="Popup title font size" type="range" min={28} max={72} step={1} value={settings.titleFontSize} onChange={(event) => update("titleFontSize", Number(event.target.value))} className="announcement-font-range" />
+              </AnxField>
+              <AnxField label="Popup description size" hint={`${settings.descriptionFontSize}px`}>
+                <input aria-label="Popup description font size" type="range" min={14} max={28} step={1} value={settings.descriptionFontSize} onChange={(event) => update("descriptionFontSize", Number(event.target.value))} className="announcement-font-range" />
+              </AnxField>
+              <p className="sm:col-span-2 text-[11.5px] leading-relaxed text-[var(--ui-muted)]">Use the live Home preview above to check the title and description at desktop and phone widths before saving.</p>
+            </div>
             <AnxField label="Action label"><Input value={settings.actionLabel} maxLength={80} placeholder="Submit your work" onChange={(event) => update("actionLabel", event.target.value)} /></AnxField>
             <AnxField label="Action link"><Input value={settings.actionHref} maxLength={500} placeholder="/submit or https://…" onChange={(event) => update("actionHref", event.target.value)} /></AnxField>
           </div>

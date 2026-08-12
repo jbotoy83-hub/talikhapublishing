@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "./icon";
@@ -12,6 +12,8 @@ type AnnouncementSettings = {
   category: string;
   message: string;
   popupDescription: string;
+  titleFontSize: number;
+  descriptionFontSize: number;
   actionLabel: string;
   actionHref: string;
   imageUrl: string | null;
@@ -33,6 +35,8 @@ const defaults: AnnouncementSettings = {
   category: "Announcement",
   message: "Talikha Publishing is now accepting submissions for all journals.",
   popupDescription: "",
+  titleFontSize: 48,
+  descriptionFontSize: 18,
   actionLabel: "Submit your work",
   actionHref: "/submit",
   imageUrl: null,
@@ -172,6 +176,10 @@ export function AnnouncementBanner() {
     hasImage && settings.layout === "split" ? "announcement-popup--split" : "announcement-popup--image-led",
   ].join(" ");
   const titleId = "announcement-popup-title";
+  const popupTypography = {
+    "--announcement-popup-title-size": settings.titleFontSize,
+    "--announcement-popup-description-size": settings.descriptionFontSize,
+  } as CSSProperties;
   const action = settings.actionLabel ? (
     <Link href={settings.actionHref || "/"} className="announcement-popup-action" onClick={close}>
       {settings.actionLabel}
@@ -209,6 +217,7 @@ export function AnnouncementBanner() {
             aria-modal="true"
             aria-labelledby={titleId}
             data-layout={hasImage ? settings.layout : "text-only"}
+            style={popupTypography}
           >
             {settings.dismissible && (
               <button type="button" className="announcement-popup-close" onClick={close} aria-label="Dismiss announcement">

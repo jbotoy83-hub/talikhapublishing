@@ -22,6 +22,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           delay_seconds: number
+          description_font_size: number
           dismissible: boolean
           display_trigger: string
           enabled: boolean
@@ -36,6 +37,7 @@ export type Database = {
           presentation: string
           starts_at: string | null
           target: string
+          title_font_size: number
           updated_at: string
         }
         Insert: {
@@ -45,6 +47,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           delay_seconds?: number
+          description_font_size?: number
           dismissible?: boolean
           display_trigger?: string
           enabled?: boolean
@@ -59,6 +62,7 @@ export type Database = {
           presentation?: string
           starts_at?: string | null
           target?: string
+          title_font_size?: number
           updated_at?: string
         }
         Update: {
@@ -68,6 +72,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           delay_seconds?: number
+          description_font_size?: number
           dismissible?: boolean
           display_trigger?: string
           enabled?: boolean
@@ -82,6 +87,7 @@ export type Database = {
           presentation?: string
           starts_at?: string | null
           target?: string
+          title_font_size?: number
           updated_at?: string
         }
         Relationships: []
