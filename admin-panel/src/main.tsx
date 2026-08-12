@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from "react";
+import { Fragment, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createApa7JournalCitation } from "../../src/lib/apa-citation";
 import { formatApa, formatMla, formatChicago, formatBibtex, formatRis, formatCrossref, formatDataCite, segsToPlain, type CitationSeg } from "../../src/lib/citation-format";
@@ -105,6 +105,8 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./styles.css";
 
+const LazyManuscriptWorkspace = lazy(() => import("./components/manuscripts/manuscript-workspace"));
+
 const A = "/assets/";
 const portraits = [
   "author-profile-filipino-researcher.webp",
@@ -113,36 +115,43 @@ const portraits = [
   "author-profile-pawikan-researcher.webp",
   "author-profile-carabao-researcher.webp",
 ];
-const sidebarSections = [
-  {
-    label: "Workspace",
-    items: [
-      { label: "Overview", icon: LayoutGrid, index: 0 },
-      { label: "Production", icon: FolderOpen, index: 12 },
-      { label: "Publishing schedule", icon: CalendarDays, index: 2 },
-      { label: "Certificates", icon: Award, index: 10 },
-      { label: "Authors", icon: Users, index: 3 },
-    ],
-  },
-  {
-    label: "Editorial library",
-    items: [
-      { label: "Studies & papers", icon: FileText, index: 4 },
-      { label: "Journals", icon: BookOpen, index: 11 },
-      { label: "Featured", icon: Star, index: 6 },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { label: "Inbox", icon: Inbox, index: 15 },
-      { label: "Announcements", icon: Bell, index: 14 },
-      { label: "Media", icon: ImageIcon, index: 13 },
-      { label: "Reports", icon: FileCheck2, index: 7 },
-      { label: "Activity log", icon: Activity, index: 16 },
-    ],
-  },
-];
+type WorkspaceSection = "Workspace" | "Editorial library" | "Operations";
+type WorkspaceDefinition = {
+  key: string;
+  label: string;
+  index: number;
+  icon: ComponentType<{ size?: number; strokeWidth?: number | string; className?: string }>;
+  section?: WorkspaceSection;
+  sidebar?: boolean;
+};
+const workspaceRegistry = [
+  { key: "overview", label: "Overview", index: 0, icon: LayoutGrid, section: "Workspace", sidebar: true },
+  { key: "submissions", label: "Submissions", index: 1, icon: FileText },
+  { key: "schedule", label: "Publishing schedule", index: 2, icon: CalendarDays, section: "Workspace", sidebar: true },
+  { key: "authors", label: "Authors", index: 3, icon: Users, section: "Workspace", sidebar: true },
+  { key: "studies", label: "Studies and papers", index: 4, icon: FileText, section: "Editorial library", sidebar: true },
+  { key: "bank", label: "Bank and wallets", index: 5, icon: CreditCard },
+  { key: "featured", label: "Featured", index: 6, icon: Star, section: "Editorial library", sidebar: true },
+  { key: "reports", label: "Reports", index: 7, icon: FileCheck2, section: "Operations", sidebar: true },
+  { key: "settings", label: "Settings", index: 8, icon: Settings },
+  { key: "support", label: "Support", index: 9, icon: Headphones },
+  { key: "certificates", label: "Certificates", index: 10, icon: Award },
+  { key: "journals", label: "Journals", index: 11, icon: BookOpen, section: "Editorial library", sidebar: true },
+  { key: "production", label: "Production", index: 12, icon: FolderOpen, section: "Workspace", sidebar: true },
+  { key: "media", label: "Media", index: 13, icon: ImageIcon, section: "Operations", sidebar: true },
+  { key: "announcements", label: "Announcements", index: 14, icon: Bell, section: "Operations", sidebar: true },
+  { key: "inbox", label: "Inbox", index: 15, icon: Inbox, section: "Operations", sidebar: true },
+  { key: "activity", label: "Activity log", index: 16, icon: Activity, section: "Operations", sidebar: true },
+  { key: "manuscripts", label: "Editors", index: 17, icon: BookOpenCheck, section: "Workspace", sidebar: true },
+] as const satisfies readonly WorkspaceDefinition[];
+const sidebarSectionOrder: WorkspaceSection[] = ["Workspace", "Editorial library", "Operations"];
+const sidebarSections = sidebarSectionOrder.map((label) => ({
+  label,
+  items: workspaceRegistry.filter((item) => "sidebar" in item && item.sidebar && "section" in item && item.section === label).map((item) => ({ label: item.label, icon: item.icon, index: item.index })),
+}));
+const destinations = workspaceRegistry.map((view) => view.label);
+const workspaceViews = workspaceRegistry.map((view) => view.key);
+type WorkspaceView = (typeof workspaceRegistry)[number]["key"];
 
 const journalIssueDefaults: Record<string, JournalIssueDefault> = {
   InQuira: { volume: "1", issue: "1" },
@@ -3275,6 +3284,13 @@ function PublicationRecordEditor({
     if (!saved) return;
     window.location.assign(`/admin?view=certificates&certificateSubmission=${encodeURIComponent(submission.id)}`);
   };
+  const openManuscriptEditor = async () => {
+    if (savingRecord) return;
+    setRecordMessage("");
+    const saved = await saveRecord();
+    if (!saved) return;
+    window.location.assign(`/admin?view=manuscripts&submission=${encodeURIComponent(submission.id)}`);
+  };
   const publicationPreviewPath = `/admin/publication-preview/${encodeURIComponent(submission.id)}`;
   const saveAction: PubAction = { key: "save", label: savingRecord ? "Saving…" : "Save production record", variant: "default", disabled: savingRecord, onClick: () => { void saveRecord(); } };
   const markAction: PubAction = { key: "mark", label: "Run Quality Check", variant: "default", disabled: savingRecord, onClick: onOpenQualityCheck };
@@ -3381,7 +3397,7 @@ function PublicationRecordEditor({
       </section>
       <section className="publication-card publication-right-card">
         <div id="publication-materials-section" className="publication-record-materials">
-          <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onPreviewFile={onPreviewFile} onOpenCertificateCreator={openCertificateCreator} />
+          <PublicationMaterialsPanel submission={submission} onSubmissionUpdate={onSubmissionUpdate} onPreviewFile={onPreviewFile} onOpenCertificateCreator={openCertificateCreator} onOpenManuscriptEditor={openManuscriptEditor} />
         </div>
         <div id="publication-metadata-section" className="publication-subsection publication-publishing-subsection">
         <header><div><span>Publishing details</span><h2>Issue, DOI, and pages</h2><p>The journal’s current volume and issue are applied automatically.</p></div></header>
@@ -3522,7 +3538,7 @@ const publicationMaterialOptions: Array<{ kind: PublicationMaterialKind; title: 
   { kind: "publication_certificate", title: "Issued certificate", description: "Attached automatically after issue, or add an approved PDF.", accept: "application/pdf,.pdf", required: true },
 ];
 
-function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFile, onOpenCertificateCreator }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onPreviewFile: (file: { id: string; mime_type: string; original_name: string }) => void; onOpenCertificateCreator: () => void }) {
+function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFile, onOpenCertificateCreator, onOpenManuscriptEditor }: { submission: EditorialSubmission; onSubmissionUpdate: (submission: EditorialSubmission) => void; onPreviewFile: (file: { id: string; mime_type: string; original_name: string }) => void; onOpenCertificateCreator: () => void; onOpenManuscriptEditor: () => void }) {
   const [uploading, setUploading] = useState<Partial<Record<PublicationMaterialKind, number>>>({});
   const [uploadJobs, setUploadJobs] = useState<Array<{ id: string; kind: PublicationMaterialKind; name: string; progress: number; status: "uploading" | "complete" | "error"; error?: string }>>([]);
   const [message, setMessage] = useState("");
@@ -3574,8 +3590,8 @@ function PublicationMaterialsPanel({ submission, onSubmissionUpdate, onPreviewFi
     setMessage(errors.length ? `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved. ${errors.join(" ")}` : `${savedFiles.length} attachment${savedFiles.length === 1 ? "" : "s"} saved to this publication record.`);
   };
   return <section className="publication-card publication-materials">
-    <header><div><span>Record materials</span><h2>Files required for publication</h2><p>Keep the certificate, final manuscript, and editorial evidence together with this record.</p></div><button type="button" className="publication-certificate-launch" onClick={onOpenCertificateCreator}><Award /> + Certificate</button></header>
-    <div className="publication-certificate-note"><FileCheck2 /><div><strong>Certificate editor is linked</strong><span>It opens with this manuscript, author, journal, issue, citation, and reference already prepared. Issuing the certificate attaches its PDF back to this record.</span></div></div>
+    <header><div><span>Record materials</span><h2>Files required for publication</h2><p>Keep the certificate, final manuscript, and editorial evidence together with this record.</p></div><div className="publication-editor-launches"><button type="button" className="publication-certificate-launch publication-manuscript-launch" onClick={onOpenManuscriptEditor}><BookOpenCheck /> Open manuscript editor</button><button type="button" className="publication-certificate-launch" onClick={onOpenCertificateCreator}><Award /> + Certificate</button></div></header>
+    <div className="publication-certificate-note"><FileCheck2 /><div><strong>Publication editors are linked</strong><span>The Manuscript Editor uses the secure original and linked author fields, then attaches versioned DOCX and PDF outputs. The Certificate Editor continues to issue its PDF to this record.</span></div></div>
     <div className="publication-material-grid">
       {publicationMaterialOptions.map((option) => {
         const attached = files.filter((file) => file.file_kind === option.kind);
@@ -5222,14 +5238,9 @@ function SettingRow({
   );
 }
 
-const destinations = [
-  "Overview", "Submissions", "Publishing schedule", "Authors", "Studies and papers", "Bank and wallets", "Featured", "Reports", "Settings", "Support", "Certificates", "Journals", "Production", "Media", "Announcements", "Inbox",
-];
-const workspaceViews = ["overview", "submissions", "schedule", "authors", "studies", "bank", "featured", "reports", "settings", "support", "certificates", "journals", "production", "media", "announcements", "inbox"] as const;
-type WorkspaceView = typeof workspaceViews[number];
-const viewIndex = (view: string | null) => {
-  const index = workspaceViews.indexOf(view as WorkspaceView);
-  return index >= 0 ? index : 0;
+const viewIndex = (view: string | null): number => {
+  const entry = workspaceRegistry.find((candidate) => candidate.key === view);
+  return entry?.index ?? 0;
 };
 const viewFromLocation = () => typeof window === "undefined" ? 0 : viewIndex(new URLSearchParams(window.location.search).get("view"));
 const stageToSubmissionStatus: Record<string, SubmissionStatus> = {
@@ -6922,7 +6933,9 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
       : null;
   const effectiveRole = previewRole;
   const isAdmin = effectiveRole === "admin";
-  const allowedViews = isAdmin ? null : (assignedViews || ["overview", "schedule", "authors", "studies", "reports", "certificates", "production", "media", "inbox"]).map((view) => viewIndex(view));
+  const baseAllowedViews = assignedViews || ["overview", "schedule", "authors", "studies", "reports", "certificates", "production", "media", "inbox"];
+  const compatibleAllowedViews = baseAllowedViews.includes("manuscripts") || (!baseAllowedViews.includes("certificates") && !baseAllowedViews.includes("production")) ? baseAllowedViews : [...baseAllowedViews, "manuscripts"];
+  const allowedViews = isAdmin ? null : compatibleAllowedViews.map((view) => viewIndex(view));
   // restores URL view on role change; reads window.location
   // allowedViews is derived from isAdmin (the dep); including it would cause infinite loop
   useEffect(() => {
@@ -6979,6 +6992,10 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     if (active === 10) {
       const certificateSubmission = new URLSearchParams(window.location.search).get("certificateSubmission");
       if (certificateSubmission) params.set("certificateSubmission", certificateSubmission);
+    }
+    if (active === 17) {
+      const manuscriptSubmission = new URLSearchParams(window.location.search).get("submission");
+      if (manuscriptSubmission) params.set("submission", manuscriptSubmission);
     }
     window.history.replaceState(null, "", `/admin?${params.toString()}`);
   }, [active, selectedSubmissionId, submissionsReady]);
@@ -7300,10 +7317,10 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
         productionNeedsActionCount={productionNeedsActionCount}
       />
       <SidebarInset
-        className={`tp-main ${active === 10 ? "tp-main--certificate" : ""}${active === 15 ? "tp-main--inbox" : ""}${wallpaper.mode !== "none" ? " tp-main--wallpaper" : ""}`}
+        className={`tp-main ${active === 10 ? "tp-main--certificate" : ""}${active === 15 ? "tp-main--inbox" : ""}${active === 17 ? "tp-main--manuscript" : ""}${wallpaper.mode !== "none" ? " tp-main--wallpaper" : ""}`}
         style={wallpaperSrc ? ({ "--tp-wallpaper": `url("${wallpaperSrc}")` } as React.CSSProperties) : undefined}
       >
-        <header className={`tp-top ${active === 10 ? "tp-top--certificate" : ""}`}>
+        <header className={`tp-top ${active === 10 ? "tp-top--certificate" : ""}${active === 17 ? " tp-top--manuscript" : ""}`}>
           <div className="tp-top__left">
             <SidebarTrigger className="tp-iconbtn" />
             <nav className="tp-crumb" aria-label="Breadcrumb">
@@ -7465,6 +7482,10 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
           <div className="utility-workspace">
             <ActivityLogView />
           </div>
+        ) : active === 17 ? (
+          <Suspense fallback={<div className="me-workspace-loading"><RefreshCw size={24} /><strong>Loading Editors</strong><span>Preparing the manuscript tools…</span></div>}>
+            <LazyManuscriptWorkspace />
+          </Suspense>
         ) : (
           <OverviewDashboard
             displayName={accountIdentity.displayName}
@@ -7517,7 +7538,7 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             { index: 4, title: "Publications", icon: BookOpen, onClick: () => setActive(4) },
           ]}
         />}
-        {process.env.NODE_ENV !== "production" && <button
+        {process.env.NODE_ENV !== "production" && active !== 17 && <button
           type="button"
           className="tp-roletoggle"
           onClick={() => setPreviewRole((role) => role === "admin" ? "editor" : "admin")}

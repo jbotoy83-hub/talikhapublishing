@@ -3,7 +3,7 @@ import { z } from "zod";
 export const submissionFileRules = {
   manuscript: {
     max: 15 * 1024 * 1024,
-    types: ["application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/pdf"]
+    types: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/pdf"]
   },
   authorPhoto: {
     max: 5 * 1024 * 1024,

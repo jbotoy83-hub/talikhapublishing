@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { after, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isSubmissionsEnabled } from "@/lib/launch";
@@ -21,7 +22,6 @@ function matchesFileSignature(field: SubmissionFileField, mimetype: string, byte
   const startsWith = (...signature: number[]) => signature.every((value, index) => bytes[index] === value);
   const ascii = new TextDecoder("latin1").decode(bytes);
   if (mimetype === "application/pdf") return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d);
-  if (mimetype === "application/msword") return startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1);
   if (mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     return field === "manuscript" && startsWith(0x50, 0x4b, 0x03, 0x04) && ascii.includes("[Content_Types].xml") && ascii.includes("word/document.xml");
   }
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const { data: pendingSubmission, error: pendingError } = await admin
     .from("submissions")
-    .select("reference, status")
+    .select("reference, status, author_details")
     .eq("id", submissionId)
     .maybeSingle();
   if (pendingError || !pendingSubmission) return NextResponse.json({ error: "Submission not found." }, { status: 404 });
@@ -85,10 +85,38 @@ export async function POST(request: Request) {
       await admin.from("submissions").update({ status: "upload_failed" }).eq("id", submissionId).eq("status", "uploading");
       return NextResponse.json({ error: `The ${upload.field} upload contents did not match the declared file type.` }, { status: 400 });
     }
-    fileRows.push({ submission_id: submissionId, file_kind: upload.field, storage_path: upload.path, original_name: filename.replace(/^[0-9a-f-]{36}-/, ""), mime_type: mimetype, size_bytes: size });
+    fileRows.push({ submission_id: submissionId, file_kind: upload.field, storage_path: upload.path, original_name: filename.replace(/^[0-9a-f-]{36}-/, ""), mime_type: mimetype, size_bytes: size, sha256: createHash("sha256").update(signatureBytes).digest("hex") });
   }
-  const { error: fileError } = await admin.from("submission_files").upsert(fileRows, { onConflict: "storage_path" });
-  if (fileError) return NextResponse.json({ error: "Could not record the uploaded files." }, { status: 500 });
+  const { data: recordedFiles, error: fileError } = await admin.from("submission_files").upsert(fileRows, { onConflict: "storage_path" }).select("id,file_kind,original_name");
+  if (fileError || !recordedFiles) return NextResponse.json({ error: "Could not record the uploaded files." }, { status: 500 });
+  const sourceManuscript = recordedFiles.find((file) => file.file_kind === "manuscript");
+  if (!sourceManuscript) return NextResponse.json({ error: "Could not identify the source manuscript." }, { status: 500 });
+  const submittedAuthors = Array.isArray(pendingSubmission.author_details) ? pendingSubmission.author_details.filter((author): author is Record<string, unknown> => Boolean(author && typeof author === "object" && !Array.isArray(author))) : [];
+  const authorRows = submittedAuthors.map((author, index) => {
+    const position = index + 1;
+    const photo = recordedFiles.find((file) => file.file_kind === "authorPhoto" && file.original_name.toLowerCase().startsWith(`author-${String(position).padStart(3, "0")}`));
+    return {
+      submission_id: submissionId,
+      position,
+      first_name: String(author.firstName || ""),
+      middle_initial: String(author.middleInitial || "") || null,
+      surname: String(author.surname || ""),
+      position_title: String(author.position || "") || null,
+      academic_title: String(author.academicTitle || "") || null,
+      email: String(author.email || ""),
+      institution: String(author.institution || "") || null,
+      affiliation: String(author.affiliation || author.institution || "") || null,
+      location: String(author.location || "") || null,
+      orcid: String(author.orcid || "") || null,
+      photo_file_id: photo?.id || null,
+    };
+  });
+  if (authorRows.length) {
+    const { error: authorError } = await admin.from("submission_authors").upsert(authorRows, { onConflict: "submission_id,position" });
+    if (authorError) return NextResponse.json({ error: "Could not securely record the submitted author details." }, { status: 500 });
+  }
+  const { error: pointerError } = await admin.from("submissions").update({ source_manuscript_file_id: sourceManuscript.id }).eq("id", submissionId).eq("status", "uploading");
+  if (pointerError) return NextResponse.json({ error: "Could not link the source manuscript to the submission." }, { status: 500 });
   const { data: submission, error } = await admin.from("submissions").update({ status: "submitted", submitted_at: new Date().toISOString() }).eq("id", submissionId).eq("status", "uploading").select("reference").maybeSingle();
   if (error || !submission) return NextResponse.json({ error: "Could not finalize the submission." }, { status: 500 });
   await admin.from("submission_history").insert({ submission_id: submissionId, event_type: "submitted", message: "Submission files validated and record finalized." });

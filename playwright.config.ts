@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const installedBrowserChannel = process.env.PLAYWRIGHT_CHANNEL === 'chrome' ? 'chrome' : undefined;
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -36,7 +38,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], ...(installedBrowserChannel ? { channel: installedBrowserChannel } : {}) },
     },
 
     // {

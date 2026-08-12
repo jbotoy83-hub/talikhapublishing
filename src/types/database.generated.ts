@@ -1096,6 +1096,249 @@ export type Database = {
           },
         ]
       }
+      manuscript_documents: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          current_revision: number
+          current_version_id: string | null
+          finalized_at: string | null
+          id: string
+          imported_at: string | null
+          lease_expires_at: string | null
+          lease_owner_id: string | null
+          schema_version: number
+          source_file_id: string
+          source_sha256: string | null
+          status: string
+          submission_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          current_revision?: number
+          current_version_id?: string | null
+          finalized_at?: string | null
+          id?: string
+          imported_at?: string | null
+          lease_expires_at?: string | null
+          lease_owner_id?: string | null
+          schema_version?: number
+          source_file_id: string
+          source_sha256?: string | null
+          status?: string
+          submission_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          current_revision?: number
+          current_version_id?: string | null
+          finalized_at?: string | null
+          id?: string
+          imported_at?: string | null
+          lease_expires_at?: string | null
+          lease_owner_id?: string | null
+          schema_version?: number
+          source_file_id?: string
+          source_sha256?: string | null
+          status?: string
+          submission_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manuscript_documents_current_version_fkey"
+            columns: ["current_version_id"]
+            isOneToOne: false
+            referencedRelation: "manuscript_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_documents_source_file_id_fkey"
+            columns: ["source_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_documents_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: true
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manuscript_drafts: {
+        Row: {
+          content_hash: string
+          content_text: string
+          document_id: string
+          editor_state: Json
+          field_bindings: Json
+          field_snapshot: Json
+          import_report: Json
+          manual_confirmations: Json
+          page_settings: Json
+          revision: number
+          source_snapshot: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          content_hash?: string
+          content_text?: string
+          document_id: string
+          editor_state?: Json
+          field_bindings?: Json
+          field_snapshot?: Json
+          import_report?: Json
+          manual_confirmations?: Json
+          page_settings?: Json
+          revision?: number
+          source_snapshot?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          content_hash?: string
+          content_text?: string
+          document_id?: string
+          editor_state?: Json
+          field_bindings?: Json
+          field_snapshot?: Json
+          import_report?: Json
+          manual_confirmations?: Json
+          page_settings?: Json
+          revision?: number
+          source_snapshot?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manuscript_drafts_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "manuscript_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manuscript_versions: {
+        Row: {
+          change_summary: string
+          content_hash: string
+          content_text: string
+          created_at: string
+          created_by: string | null
+          document_id: string
+          docx_file_id: string | null
+          editor_state: Json
+          field_bindings: Json
+          field_snapshot: Json
+          id: string
+          import_report: Json
+          manual_confirmations: Json
+          page_settings: Json
+          parent_version_id: string | null
+          pdf_file_id: string | null
+          revision: number
+          source_snapshot: Json
+          submission_id: string
+          version_kind: string
+          version_number: number
+        }
+        Insert: {
+          change_summary?: string
+          content_hash: string
+          content_text?: string
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          docx_file_id?: string | null
+          editor_state: Json
+          field_bindings?: Json
+          field_snapshot?: Json
+          id?: string
+          import_report?: Json
+          manual_confirmations?: Json
+          page_settings: Json
+          parent_version_id?: string | null
+          pdf_file_id?: string | null
+          revision: number
+          source_snapshot?: Json
+          submission_id: string
+          version_kind: string
+          version_number: number
+        }
+        Update: {
+          change_summary?: string
+          content_hash?: string
+          content_text?: string
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          docx_file_id?: string | null
+          editor_state?: Json
+          field_bindings?: Json
+          field_snapshot?: Json
+          id?: string
+          import_report?: Json
+          manual_confirmations?: Json
+          page_settings?: Json
+          parent_version_id?: string | null
+          pdf_file_id?: string | null
+          revision?: number
+          source_snapshot?: Json
+          submission_id?: string
+          version_kind?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manuscript_versions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "manuscript_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_versions_docx_file_id_fkey"
+            columns: ["docx_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_versions_parent_version_id_fkey"
+            columns: ["parent_version_id"]
+            isOneToOne: false
+            referencedRelation: "manuscript_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_versions_pdf_file_id_fkey"
+            columns: ["pdf_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manuscript_versions_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       media_assets: {
         Row: {
           alt_text: string
@@ -1970,6 +2213,7 @@ export type Database = {
       submission_authors: {
         Row: {
           academic_title: string | null
+          affiliation: string | null
           created_at: string
           email: string
           first_name: string
@@ -1978,14 +2222,18 @@ export type Database = {
           location: string | null
           middle_initial: string | null
           orcid: string | null
+          photo_file_id: string | null
           position: number
           position_title: string | null
+          row_revision: number
           submission_id: string
           surname: string
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           academic_title?: string | null
+          affiliation?: string | null
           created_at?: string
           email?: string
           first_name?: string
@@ -1994,14 +2242,18 @@ export type Database = {
           location?: string | null
           middle_initial?: string | null
           orcid?: string | null
+          photo_file_id?: string | null
           position: number
           position_title?: string | null
+          row_revision?: number
           submission_id: string
           surname?: string
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           academic_title?: string | null
+          affiliation?: string | null
           created_at?: string
           email?: string
           first_name?: string
@@ -2010,13 +2262,23 @@ export type Database = {
           location?: string | null
           middle_initial?: string | null
           orcid?: string | null
+          photo_file_id?: string | null
           position?: number
           position_title?: string | null
+          row_revision?: number
           submission_id?: string
           surname?: string
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "submission_authors_photo_file_id_fkey"
+            columns: ["photo_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "submission_authors_submission_id_fkey"
             columns: ["submission_id"]
@@ -2164,6 +2426,7 @@ export type Database = {
           reference: string
           review_settings: Json
           source_ip_hash: string | null
+          source_manuscript_file_id: string | null
           status: string
           submitted_at: string | null
           title: string
@@ -2194,6 +2457,7 @@ export type Database = {
           reference: string
           review_settings?: Json
           source_ip_hash?: string | null
+          source_manuscript_file_id?: string | null
           status?: string
           submitted_at?: string | null
           title: string
@@ -2224,6 +2488,7 @@ export type Database = {
           reference?: string
           review_settings?: Json
           source_ip_hash?: string | null
+          source_manuscript_file_id?: string | null
           status?: string
           submitted_at?: string | null
           title?: string
@@ -2244,6 +2509,13 @@ export type Database = {
             columns: ["preferred_journal_id"]
             isOneToOne: false
             referencedRelation: "journals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submissions_source_manuscript_file_id_fkey"
+            columns: ["source_manuscript_file_id"]
+            isOneToOne: false
+            referencedRelation: "submission_files"
             referencedColumns: ["id"]
           },
         ]
@@ -2391,6 +2663,7 @@ export type Database = {
           reference: string
           review_settings: Json
           source_ip_hash: string | null
+          source_manuscript_file_id: string | null
           status: string
           submitted_at: string | null
           title: string
@@ -2619,6 +2892,7 @@ export type Database = {
           reference: string
           review_settings: Json
           source_ip_hash: string | null
+          source_manuscript_file_id: string | null
           status: string
           submitted_at: string | null
           title: string

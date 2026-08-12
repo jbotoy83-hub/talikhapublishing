@@ -40,11 +40,11 @@ function messages(result: { success: boolean; error?: { issues: Array<{ message:
 }
 
 describe("submissionFileRules", () => {
-  it("defines manuscript limits (15 MB; doc/pdf types)", () => {
+  it("defines manuscript limits (15 MB; DOCX/searchable PDF types)", () => {
     expect(submissionFileRules.manuscript.max).toBe(15 * 1024 * 1024);
     expect(submissionFileRules.manuscript.types).toContain("application/pdf");
-    expect(submissionFileRules.manuscript.types).toContain("application/msword");
     expect(submissionFileRules.manuscript.types).toContain("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    expect(submissionFileRules.manuscript.types).not.toContain("application/msword");
   });
 
   it("defines authorPhoto limits (5 MB; jpeg/png only)", () => {

@@ -113,6 +113,7 @@ export async function POST(request: Request) {
   });
 
   if (fileKind === "authorPhoto") {
+    await admin.from("submission_authors").update({ photo_file_id: file.id, updated_by: user.id }).eq("submission_id", submissionId).eq("position", authorPosition);
     const { data: publicationRecord } = await admin.from("publication_records").select("id,metadata").eq("submission_id", submissionId).maybeSingle();
     if (publicationRecord) {
       const metadata = (publicationRecord.metadata as Record<string, unknown>) || {};

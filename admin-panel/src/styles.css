@@ -9119,6 +9119,36 @@ main.tp-main--inbox {
   overflow: hidden;
 }
 
+main.tp-main--manuscript {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+main.tp-main--manuscript .tp-top--manuscript,
+main.tp-main--manuscript .tp-dock {
+  display: none;
+}
+
+main.tp-main--manuscript .me-hub {
+  height: 100dvh;
+  overflow: auto;
+}
+
+.publication-editor-launches {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.publication-manuscript-launch {
+  border-color: #244b38 !important;
+  background: #244b38 !important;
+  color: #fff !important;
+}
+
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 

@@ -1,6 +1,6 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-07-31 (refreshed)
+**Analysis Date:** 2026-08-12 (manuscript-editor coverage refreshed)
 
 ## Test Framework
 
@@ -26,6 +26,7 @@
 npm run test                 # Run Vitest unit tests once
 npm run test:watch           # Run Vitest in watch mode
 npx playwright test          # Run Playwright tests in tests/
+$env:PLAYWRIGHT_CHANNEL='chrome'; npx.cmd playwright test tests/manuscript-editor.spec.ts tests/certificate-convert-to-field.spec.ts --project=chromium --workers=1
 npx playwright show-report  # Open the Playwright HTML report
 npm run typecheck            # Root TypeScript check
 npm run lint                 # ESLint check (now functional — react-hooks plugin resolved)
@@ -48,13 +49,16 @@ The root `package.json` owns Vitest and Playwright dependencies and scripts. `ad
 - Unit files use `*.test.ts` or `*.test.tsx`.
 - Playwright files use `*.spec.ts`.
 
-**Current inventory (5 unit files + 2 E2E specs):**
+**Current inventory (7 unit files + 3 E2E specs):**
 - `src/__tests__/workflow-transitions.test.ts` — 25 assertions covering editorial workflow transitions and author progress.
 - `src/__tests__/citation-format.test.ts` — citation formatting logic.
 - `src/__tests__/display-formatting.test.ts` — author-display and journal-presentation formatting (added 2026-07-31).
 - `src/__tests__/publication-preflight-rules.test.ts` — preflight rule evaluation.
 - `src/__tests__/submission-schema.test.ts` — submission Zod schema characterization (added 2026-07-31).
+- `src/__tests__/email-correspondence.test.ts` — correspondence formatting and event behavior.
+- `src/__tests__/manuscript-editor.test.tsx` — document contract, DOCX/PDF import, sanitization, comparison, serialization, and a representative 100-page worker conversion fixture.
 - `tests/certificate-convert-to-field.spec.ts` — certificate editor interaction (requires running Vite dev server).
+- `tests/manuscript-editor.spec.ts` — Editors hub, direct route, import/comparison, formatting, fields, autosave/reload, conflicts, lease takeover, mobile review, and finalization confirmations.
 - `tests/example.spec.ts` — default Playwright example against `playwright.dev` (not a Talikha feature test).
 
 ## Test Structure
@@ -84,8 +88,8 @@ describe("progressIndexOf", () => {
 **Framework:** No mocking library is configured.
 
 **Current pattern:**
-- Existing Vitest tests do not mock dependencies; they exercise pure workflow logic and schema validation.
-- Existing Playwright tests use a real browser and live local UI rather than API mocks.
+- Most Vitest tests exercise pure workflow logic and schema validation; manuscript tests also exercise generated DOCX/PDF bytes and the browser import adapter with deterministic fixtures.
+- Playwright feature tests route protected manuscript API calls to deterministic browser fixtures so the UI, persistence states, conflict behavior, and Certificate regression path can be exercised without mutating production records.
 - `src/__tests__/setup.ts` only installs DOM matchers; it does not create fixtures or replace services.
 
 **When adding unit tests:**
@@ -116,20 +120,20 @@ describe("progressIndexOf", () => {
 ## Test Types
 
 **Unit tests:**
-- Use Vitest for deterministic domain and utility logic. Current scope covers `src/lib/editorial-workflow.ts`, `src/lib/apa-citation.ts`, `src/lib/citation-format.ts`, `src/lib/author-display.ts`, `src/lib/journal-presentation.ts`, `src/lib/publication-preflight-rules.ts`, and `src/lib/submission.ts`.
+- Use Vitest for deterministic domain and utility logic. Manuscript coverage spans the shared editor contract, export rendering, import verification, sanitization, paragraph comparison, and large-document conversion in addition to the existing workflow/citation/preflight/submission suites.
 
 **Integration tests:**
 - None detected. Supabase queries and Next route handlers are not currently exercised by an automated integration suite.
 
 **E2E tests:**
-- Playwright covers the certificate editor UI in `tests/certificate-convert-to-field.spec.ts`.
-- The certificate suite expects the admin Vite app at `http://localhost:5173/admin?view=certificates`, waits for `.cert-ws` and `Saved`, and then checks selection/conversion behavior.
-- There is no configured automated server startup, authenticated production route suite, or public submission flow suite.
+- Playwright covers the Manuscript and Certificate editors in `tests/manuscript-editor.spec.ts` and `tests/certificate-convert-to-field.spec.ts`.
+- Both suites expect the admin Vite app at `http://localhost:5173/admin`; the system Chrome channel can be selected with `PLAYWRIGHT_CHANNEL=chrome` when the bundled Chromium runtime is unavailable.
+- There is no configured automated server startup or authenticated production write suite; a real accepted-record walkthrough remains a separate release sign-off step.
 
 ## Verification Practices
 
 - `npm run typecheck` currently passes the strict root TypeScript check.
-- `npm run test` currently passes 5 Vitest files (workflow transitions, citation format, display formatting, preflight rules, submission schema).
+- `npm run test` is the complete Vitest gate, including manuscript import/export and the 100-page fixture.
 - `npm run lint` is now functional (the `eslint-plugin-react-hooks` import was resolved on 2026-07-31). Several rules are warnings rather than errors.
 - `npm run build` is the production compile gate for both apps: `build:admin` runs Vite, `copy:admin` places the static admin bundle under `public/admin`, and `next build` compiles the public app.
 - `npm run readiness` is a deployment/configuration gate implemented by `scripts/check-launch-readiness.mjs`; it validates required environment values, explicit boolean flags, launch approvals, URL/config consistency, and production safety checks. Known bug: it checks `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` instead of the actual runtime variable names (see CONCERNS.md).
@@ -154,4 +158,4 @@ describe("progressIndexOf", () => {
 
 ---
 
-*Testing analysis: 2026-07-31 (refreshed)*
+*Testing analysis: 2026-08-12 (targeted manuscript-editor refresh)*

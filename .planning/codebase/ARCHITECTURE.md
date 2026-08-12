@@ -1,7 +1,7 @@
-<!-- refreshed: 2026-07-31 (full remap) -->
+<!-- refreshed: 2026-08-12 (targeted manuscript-editor update) -->
 # Architecture
 
-**Analysis Date:** 2026-07-31 (refreshed)
+**Analysis Date:** 2026-08-12 (manuscript-editor paths refreshed)
 
 ## System Overview
 
@@ -26,7 +26,7 @@
                ▼                                             ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │   Supabase  (`src/lib/supabase/` factories)                                │
-│   Postgres (34 tables + functions) · Auth (SSR cookies) · Storage buckets  │
+│   Postgres (tables + functions) · Auth (SSR cookies) · Storage buckets     │
 │   `submission-files` (private) · `editorial-media` (public)                │
 └──────────────────────────────────────────────────────────────────────────┘
         ▲                                   ▲
@@ -52,6 +52,8 @@
 | Public submission intake | Validates, rate-limits, Turnstile-checks, creates submission + payment + signed uploads | `src/app/api/submissions/init/route.ts` |
 | Launch gates | Feature flags + production launch assertion | `src/lib/launch.ts` |
 | Admin SPA | Single-page editorial workspace (overview, inbox, journals, certificates, preflight, team) | `admin-panel/src/main.tsx` + `admin-panel/src/components/*` |
+| Manuscript editor | Lazy-loaded Lexical workspace, browser import worker, A4 editing surface, comparison, linked fields, recovery, and history | `admin-panel/src/components/manuscripts/*` |
+| Manuscript production service | Lease and revision enforcement, private source verification, versioning, DOCX/PDF generation, and publication attachment | `src/lib/manuscripts.ts`, `src/lib/manuscript-*.ts`, `src/app/api/admin/manuscripts/*` |
 | Admin build bridge | Copies Vite build into `public/admin/` for Next to serve | `scripts/copy-admin-build.mjs` |
 
 ## Pattern Overview
@@ -126,9 +128,17 @@
 2. `POST /api/journal-store` (`src/app/api/journal-store/route.ts:213`) upserts `journals` and `issues`, uploads base64 covers to the `editorial-media` bucket, records `media_assets`, and sets `current_issue_id`/`submission_issue_id`.
 3. Public reads pick up the new catalog through `content.ts` (DB-first) on the next request.
 
+### Manuscript Production Path
+
+1. An editor opens `/admin?view=manuscripts&submission=<id>`; `manuscript-workspace.tsx` is loaded as a separate browser chunk and opens or creates the submission's manuscript document.
+2. The protected `/api/admin/manuscripts/*` handlers enforce editor membership, same-origin mutations, accepted/production stage eligibility, a 120-second single-editor lease, Zod limits, and revision-based conflict checks.
+3. A browser worker converts supported DOCX or searchable PDF sources into structured editor JSON. The server independently extracts the private source and records coverage, counts, warnings, and its SHA-256 hash before accepting an import.
+4. Draft JSON is authoritative on the server; IndexedDB stores only unsent recovery edits. Checkpoints and imports append immutable `manuscript_versions` snapshots.
+5. Preview generates uncommitted DOCX/PDF files. Finalization freezes linked-field values, creates both versioned files in private `submission-files`, attaches them to the production record, records workflow/audit events, and marks the submitted preflight run stale without advancing publication.
+
 **State Management:**
 - Public site: server state in Supabase; RSC reads; minimal client state.
-- Admin SPA: local React state in `main.tsx`; the journal catalog is also mirrored to `localStorage` (`talikha-journal-catalog-v2`) as an offline cache, with the server treated as authoritative (`admin-panel/src/main.tsx:796`).
+- Admin SPA: local React state in `main.tsx`; the journal catalog is also mirrored to `localStorage` (`talikha-journal-catalog-v2`) as an offline cache, with the server treated as authoritative. Manuscript drafts use server revisions as authority and IndexedDB only for unsent recovery state.
 
 ## Key Abstractions
 
@@ -176,7 +186,7 @@
 
 ## Architectural Constraints
 
-- **Threading:** Single-threaded Node event loop; no worker threads in app code. PDF workers (`pdfjs-dist`) run client-side.
+- **Threading:** Server work uses the Node event loop. Manuscript DOCX/PDF parsing runs in a dedicated browser Web Worker so editing does not block the admin UI; source preview rendering remains client-side.
 - **Global state:** The admin SPA keeps a module-level mutable `JOURNAL_CATALOG` singleton (`admin-panel/src/main.tsx`) synced to `localStorage` and a `talikha:catalog` CustomEvent. The rate-limiter cache is a module-level `Map` (`src/lib/rate-limit.ts:8`) — does not survive across serverless instances. A one-time `console.warn` fires when Redis is absent (SEC-5).
 - **Cross-app import:** The admin SPA imports shared modules from the parent repo via relative paths (`../../src/lib/apa-citation`, `../../src/lib/citation-format`, `../../src/lib/types`) and a Vite alias for `@/components/icons` → `../src/components/icons`. This couples the two apps at build time.
 - **React dedupe:** Admin Vite aliases `react`/`react-dom` to the root `node_modules` to avoid two React copies (`admin-panel/vite.config.ts:13`).
@@ -187,7 +197,7 @@
 
 ### Admin route without an auth guard — RESOLVED (2026-07-31)
 
-**Status:** All 14 `/api/admin/*` sub-routes now call `requireEditorApi()` or `requireAdminApi()` as their first statement. The `/api/admin/dashboard` gap (SEC-1) and the `/api/admin/files/[id]` + `/api/admin/workspace` viewer access (SEC-8) were fixed on 2026-07-31.
+**Status:** Privileged `/api/admin/*` routes, including the manuscript tree, call `requireEditorApi()` or `requireAdminApi()` before service-role access. The `/api/admin/dashboard` gap (SEC-1) and the `/api/admin/files/[id]` + `/api/admin/workspace` viewer access (SEC-8) were fixed on 2026-07-31.
 **Do this instead:** Start every new handler with the guard pattern in `src/app/api/admin/submissions/[id]/advance/route.ts:6` — `const user = await requireEditorApi(); if (isApiError(user)) return user;`.
 
 ### Importing server-only logic into the admin SPA bundle
@@ -223,4 +233,4 @@
 
 ---
 
-*Architecture analysis: 2026-07-31 (refreshed)*
+*Architecture analysis: 2026-08-12 (targeted manuscript-editor refresh)*

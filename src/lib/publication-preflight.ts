@@ -195,7 +195,7 @@ async function loadContext(submissionId: string) {
     admin.from("submissions").select("id,reference,title,abstract,author_name,author_email,affiliation,author_details,submitted_at,current_stage,preferred_journal_id,assigned_issue_id").eq("id", submissionId).maybeSingle(),
     admin.from("publication_records").select("id,submission_id,publication_id,journal_id,issue_id,doi,citation_data,final_pdf_file_id,certificate_file_id,metadata,public_article_url").eq("submission_id", submissionId).maybeSingle(),
     admin.from("submission_files").select("*").eq("submission_id", submissionId).order("created_at", { ascending: true }),
-    admin.from("submission_authors").select("id,position,first_name,middle_initial,surname,email,institution,affiliation,orcid,academic_title,photo_url").eq("submission_id", submissionId).order("position"),
+    admin.from("submission_authors").select("id,position,first_name,middle_initial,surname,email,institution,affiliation,orcid,academic_title,photo_file_id,position_title").eq("submission_id", submissionId).order("position"),
   ]);
   if (submissionResult.error || !submissionResult.data) throw new Error("Submission not found.");
   if (recordResult.error || !recordResult.data) throw new Error("Save the publication record before running quality control.");

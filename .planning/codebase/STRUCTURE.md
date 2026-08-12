@@ -1,6 +1,6 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-07-31 (refreshed)
+**Analysis Date:** 2026-08-12 (manuscript-editor paths refreshed)
 
 Monorepo: a Next.js 16 public site at the root plus a Vite + React 19 admin SPA in `admin-panel/`, sharing one Supabase backend.
 
@@ -19,7 +19,7 @@ talikhapublishing/
 │   │   │   └── page.tsx  layout.tsx  loading.tsx  not-found.tsx
 │   │   ├── admin/           # Admin login + preview shells (Next pages)
 │   │   ├── api/             # Route handlers (public + admin + cron)
-│   │   │   ├── admin/       # 14 privileged sub-routes (see below)
+│   │   │   ├── admin/       # 18 privileged top-level route groups
 │   │   │   ├── announcements/  publications/  search/
 │   │   │   ├── submissions/  track/  journal-store/
 │   │   │   └── cron/journal-lifecycle/
@@ -32,12 +32,12 @@ talikhapublishing/
 │   │   ├── ui/              # shadcn/ui primitives (19 files, radix-nova)
 │   │   ├── certificates/    # Certificate display components
 │   │   └── icons/           # Shared icon set (also aliased into admin)
-│   ├── lib/                 # Server-only business logic (30 modules)
+│   ├── lib/                 # Server-only and shared domain logic (34 files)
 │   │   └── supabase/        # Null-guarded Supabase client factories
 │   ├── data/                # demo-content.ts, journal-store.json (fallbacks)
 │   ├── hooks/               # Client hooks (use-mobile.ts)
 │   ├── types/               # database.generated.ts (Supabase types)
-│   ├── __tests__/           # Vitest unit tests (5 files) + setup.ts
+│   ├── __tests__/           # Vitest unit tests (7 files) + setup.ts
 │   ├── proxy.ts             # Next middleware (session + /admin guard)
 │   └── styles.css           # Global site styles + theme variables
 ├── admin-panel/             # Vite + React 19 admin SPA
@@ -46,6 +46,7 @@ talikhapublishing/
 │   │   ├── components/
 │   │   │   ├── certificates/  # 6 files (workspace, canvas, field-engine, types)
 │   │   │   ├── inbox/         # 11 files (workspace, channels, conversations)
+│   │   │   ├── manuscripts/   # Lazy editor, worker import, compare, recovery, history
 │   │   │   ├── preflight/     # 2 files (workspace + css)
 │   │   │   ├── ui/            # 14 shadcn primitives
 │   │   │   ├── floating-dock.tsx
@@ -59,10 +60,10 @@ talikhapublishing/
 │   └── index.html  vite.config.ts  components.json
 │       tsconfig.json  tsconfig.app.json  postcss.config.js
 ├── supabase/                # Backend definition
-│   ├── migrations/          # 41 ordered SQL migrations
+│   ├── migrations/          # 53 ordered SQL migrations
 │   └── seed.sql  config.toml
 ├── scripts/                 # Build/helper Node scripts (.mjs)
-├── tests/                   # Playwright E2E specs (2 files)
+├── tests/                   # Playwright E2E specs (3 files)
 ├── public/                  # Next static assets
 │   └── admin/               # GENERATED — copied Vite admin build
 ├── docs/                    # Operational + refactor documentation
@@ -86,17 +87,19 @@ talikhapublishing/
 - Contains: `page.tsx`/`layout.tsx` (RSC), `route.ts` (handlers), `loading.tsx`, metadata files.
 - Key files: `src/app/layout.tsx` (root layout), `src/app/api/submissions/init/route.ts` (public intake), `src/app/api/journal-store/route.ts` (catalog sync), `src/app/api/admin/**` (privileged handlers), `src/app/api/cron/journal-lifecycle/route.ts` (Vercel cron).
 
-**`src/app/api/admin/` (14 sub-routes):**
-- `account-setup/`, `accounts/`, `activity/`, `announcements/`, `audit/`, `authors/`, `certificates/`, `dashboard/`, `featured/`, `files/`, `logout/`, `submissions/`, `workflow-files/`, `workspace/`.
+**`src/app/api/admin/` (18 top-level route groups):**
+- `account-setup/`, `accounts/`, `activity/`, `announcements/`, `audit/`, `authors/`, `certificates/`, `dashboard/`, `featured/`, `files/`, `inbox/`, `logout/`, `manuscripts/`, `profile/`, `submissions/`, `team/`, `workflow-files/`, `workspace/`.
 - All privileged handlers now use `requireEditorApi()` or `requireAdminApi()` guards.
+- `manuscripts/` contains eligible/open/detail/import/draft/field-sync/version/preview/finalize/lease handlers.
 
 **`src/app/(public)/`:**
 - Purpose: content/marketing pages under a route group (no URL segment).
 - Contains: `authors/[slug]`, `journals/[slug]/issues/[volume]/[issue]`, `publications/[slug]`, `search`, `submit`, `track`, `faq`, `services`, `privacy`, `terms`, `editorial-standards`.
 
-**`src/lib/` (30 modules):**
+**`src/lib/` (34 files):**
 - Purpose: server-only domain logic. Add new business rules here, not in route handlers.
-- Contains: `content.ts`, `auth.ts`, `admin-api.ts`, `submission.ts`, `editorial-workflow-server.ts`, `editorial-workflow.ts`, `journal-lifecycle.ts`, `certificates.ts`, `certificate-editor.ts`, `certificate-import.ts`, `certificate-security.ts`, `render-certificate.ts`, `publication-preflight.ts`, `publication-preflight-rules.ts`, `search.ts`, `rate-limit.ts`, `turnstile.ts`, `launch.ts`, `announcements.ts`, `team-accounts.ts`, `site.ts`, `apa-citation.ts`, `citation-format.ts`, `author-display.ts`, `journal-presentation.ts`, `receipt-pdf.tsx`, `file-storage.ts`, `utils.ts` (`cn()`), `types.ts`.
+- Manuscript domain files: `manuscripts.ts`, `manuscript-api.ts`, `manuscript-editor-contract.ts`, `manuscript-import-server.ts`, and `manuscript-export.tsx`.
+- Other central files include `content.ts`, `auth.ts`, `admin-api.ts`, `submission.ts`, `editorial-workflow-server.ts`, `certificates.ts`, `publication-preflight.ts`, `search.ts`, `rate-limit.ts`, `turnstile.ts`, and `launch.ts`.
 - Key subdirectory: `src/lib/supabase/` — `server.ts`, `admin.ts`, `browser.ts`, `public.ts`, `config.ts`.
 
 **`src/components/` (48 files):**
@@ -106,12 +109,12 @@ talikhapublishing/
 
 **`admin-panel/src/`:**
 - Purpose: the entire admin SPA.
-- Contains: `main.tsx` (the ~7,188-line workspace monolith), `components/certificates/` (6 files), `components/inbox/` (11 files), `components/preflight/` (2 files), `components/ui/` (14 primitives), `components/floating-dock.tsx`, `components/team-accounts.tsx`, `lib/`, `hooks/`, `assets/`.
-- Key files: `admin-panel/src/main.tsx`, `admin-panel/src/components/inbox/inbox-workspace.tsx`, `admin-panel/src/components/certificates/certificate-workspace.tsx`.
+- Contains: `main.tsx` (the large workspace shell), feature folders for certificates, inbox, preflight, and manuscripts, reusable UI primitives, `lib/`, `hooks/`, and bundled assets/fonts.
+- Key files: `admin-panel/src/main.tsx`, `admin-panel/src/components/manuscripts/manuscript-workspace.tsx`, `admin-panel/src/components/manuscripts/manuscript-editor.tsx`, `admin-panel/src/components/manuscripts/manuscript-import.worker.ts`, and the isolated `admin-panel/src/components/certificates/certificate-workspace.tsx`.
 
-**`supabase/migrations/` (41 files):**
+**`supabase/migrations/` (53 files):**
 - Purpose: authoritative database schema + Postgres functions, applied in timestamp order.
-- Key files: `20260714000000_initial_production_schema.sql`, `20260718114052_unified_editorial_workflow.sql`, `20260726113036_payment_gate_and_certificate_delivery.sql`, `20260729173318_publication_preflight_gate.sql`, `20260730184727_publication_author_metadata.sql`, `20260730200950_delete_submission_cascade.sql`, `20260730232338_submission_idempotency.sql`.
+- Manuscript foundation: `20260812134536_manuscript_editor_foundation.sql`, `20260812233000_manuscript_version_permissions.sql`, and `20260812234000_manuscript_fk_indexes.sql`.
 
 **`scripts/`:**
 - Purpose: build and ops helpers (ESM `.mjs`).
@@ -142,11 +145,13 @@ talikhapublishing/
 - `src/lib/supabase/*`: data access.
 - `src/lib/content.ts`: public reads.
 - `src/lib/editorial-workflow-server.ts`: submission state machine.
+- `src/lib/manuscripts.ts`: manuscript leases, revisions, versions, field synchronization, export, and attachment.
+- `src/lib/manuscript-editor-contract.ts`: shared manuscript document and API contract.
 - `src/app/api/journal-store/route.ts`: catalog persistence.
 
 **Testing:**
-- `src/__tests__/`: vitest unit tests (5 files): `citation-format.test.ts`, `display-formatting.test.ts`, `publication-preflight-rules.test.ts`, `submission-schema.test.ts`, `workflow-transitions.test.ts` + `setup.ts`.
-- `tests/`: Playwright specs (`example.spec.ts`, `certificate-convert-to-field.spec.ts`).
+- `src/__tests__/`: Vitest unit tests (7 files), including `manuscript-editor.test.tsx`.
+- `tests/`: Playwright specs, including `manuscript-editor.spec.ts` and repaired `certificate-convert-to-field.spec.ts` coverage.
 
 **Generated / types:**
 - `src/types/database.generated.ts`: Supabase-generated DB types (regenerate via `npm run db:types`).
@@ -162,7 +167,7 @@ talikhapublishing/
 
 **Directories:**
 - kebab-case for feature dirs (`certificate-access`, `admin-panel`); Next route group in parentheses (`(public)`).
-- Domain subpaths nest under `src/lib/supabase/`, `src/components/ui/`, `admin-panel/src/components/{certificates,inbox,preflight}/`.
+- Domain subpaths nest under `src/lib/supabase/`, `src/components/ui/`, `admin-panel/src/components/{certificates,inbox,preflight,manuscripts}/`.
 
 **Identifiers (observed):**
 - Components: PascalCase (`PublicationCard`, `JournalsView`).
@@ -185,7 +190,7 @@ talikhapublishing/
 - Call the admin SPA from `admin-panel/src/main.tsx` (or a component) using `fetch("/api/admin/...", { credentials: "same-origin" })`.
 
 **New admin workspace/feature:**
-- Prefer a new component under `admin-panel/src/components/<feature>/` and wire it into the sidebar in `admin-panel/src/main.tsx` (`sidebarSections`). Avoid growing `main.tsx` further (see CONCERNS.md monolith note).
+- Prefer a new component under `admin-panel/src/components/<feature>/` and wire it into the typed `workspaceRegistry` in `admin-panel/src/main.tsx`. Avoid growing `main.tsx` further (see CONCERNS.md monolith note).
 
 **New shared (cross-app) helper:**
 - Only if browser-safe (no `server-only`, no Node APIs). Place in `src/lib/<name>.ts` and import from the admin via relative path (`../../src/lib/<name>`) — follow `apa-citation.ts`/`citation-format.ts`.
@@ -225,4 +230,4 @@ talikhapublishing/
 
 ---
 
-*Structure analysis: 2026-07-31 (refreshed)*
+*Structure analysis: 2026-08-12 (targeted manuscript-editor refresh)*

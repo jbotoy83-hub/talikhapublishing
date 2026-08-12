@@ -1,6 +1,6 @@
 # External Integrations
 
-**Analysis Date:** 2026-07-31 (refreshed)
+**Analysis Date:** 2026-08-12 (manuscript-editor integration refreshed)
 
 ## APIs & External Services
 
@@ -40,15 +40,15 @@
   - `src/lib/supabase/public.ts` — `getPublicSupabase()`: stateless anon client for server reads.
   - `src/lib/supabase/admin.ts` — `getSupabaseAdmin()`: **service-role** client that bypasses RLS; used by all `/api/admin/*` handlers and public write endpoints.
   - `src/lib/supabase/config.ts` — shared env readers (`getPublicSupabaseConfig`, `hasAdminSupabaseConfig`).
-- Schema: 34 tables + several Postgres functions. Key tables (from `src/types/database.generated.ts`): `submissions`, `submission_authors`, `submission_files`, `submission_history`, `journals`, `issues`, `publications`, `publication_records`, `publication_authors`, `authors`, `profiles`, `payments`, `payment_line_items`, `receipts`, `certificate_templates`, `certificate_template_pages`, `certificate_template_fields`, `certificate_records`, `certificate_access_links`, `certificate_fonts`, `media_assets`, `media_placements`, `announcements`, `notifications`, `audit_events`, `workflow_events`, `workflow_checklist_items`, `editorial_notes`, `publication_preflight_runs`, `publication_preflight_checks`, `author_requests`, `newsletter_subscribers`.
+- Schema: generated in `src/types/database.generated.ts`. Manuscript production adds service-only `manuscript_documents`, `manuscript_drafts`, and append-only `manuscript_versions`, plus normalized affiliation/photo/revision fields on `submission_authors` and `source_manuscript_file_id` on `submissions`.
 - DB functions invoked from app code: `transition_submission`, `confirm_submission_payment`, `confirm_payment_and_start_review`, `configure_submission_payment`, `allocate_certificate_number`, `increment_publication_metric`, `create_author_request`, `respond_to_author_request`, `complete_workflow_checklist_item`, `admin_transition_publication`.
-- Migrations: `supabase/migrations/` (40+ ordered SQL files), seed: `supabase/seed.sql`, local config: `supabase/config.toml`.
+- Migrations: `supabase/migrations/` (ordered SQL files), seed: `supabase/seed.sql`, local config: `supabase/config.toml`. The manuscript foundation, append-only permissions, and foreign-key indexes are in the three `20260812*manuscript*` migrations.
 
 **File Storage:**
 - Supabase Storage buckets:
-  - `submission-files` — **private** bucket; public uploads go through signed upload URLs created in `src/app/api/submissions/init/route.ts` (`createSignedUploadUrl`). Files served back to admins via `src/app/api/admin/files/[id]/route.ts`.
+  - `submission-files` — **private** bucket; public uploads go through signed upload URLs created in `src/app/api/submissions/init/route.ts` (`createSignedUploadUrl`). Original manuscripts and generated versioned DOCX/PDF outputs stay private and are served to authorized staff via `src/app/api/admin/files/[id]/route.ts`.
   - `editorial-media` — **public** bucket; journal/issue cover images uploaded in `src/app/api/journal-store/route.ts` (`persistImage`), metadata recorded in the `media_assets` table.
-- Browser-side scratch storage: `src/lib/file-storage.ts` uses IndexedDB (`talikha-file-storage`) for client-side file staging/validation in the submission UI (not the source of truth).
+- Browser-side scratch storage: `src/lib/file-storage.ts` uses IndexedDB (`talikha-file-storage`) for client-side submission staging. The Manuscript Editor uses a separate recovery store for unsent JSON edits only; source blobs are never persisted locally and the server remains authoritative.
 
 **Caching:**
 - Upstash Redis is used only for rate limiting, not response caching.
@@ -113,7 +113,8 @@
 **Outgoing:**
 - Server-to-Supabase (DB, Auth, Storage) and server-to-Turnstile (`src/lib/turnstile.ts`).
 - Admin SPA → `/api/journal-store` POST to publish the journal catalog (`admin-panel/src/main.tsx` `publishCatalogToSite`).
+- Admin Manuscript Editor → protected same-origin `/api/admin/manuscripts/*` endpoints. No external OCR, conversion, or manuscript-content service is used.
 
 ---
 
-*Integration audit: 2026-07-31 (refreshed)*
+*Integration audit: 2026-08-12 (targeted manuscript-editor refresh)*

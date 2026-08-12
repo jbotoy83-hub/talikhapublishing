@@ -277,7 +277,7 @@ async function syncPublicationAuthorMetadata(admin: AdminClient, publicationId: 
       affiliation: author.affiliation || null,
       orcid: author.orcid || null,
       corresponding: author.corresponding,
-      metadata: { email: author.email || null },
+      metadata: {},
     }).eq("publication_id", publicationId).eq("author_id", link.author_id);
     if (error) throw new Error("The publication author metadata could not be saved.");
   }
@@ -312,6 +312,27 @@ async function completeReviewHandoffChecklist(
     });
     if (completionError) throw new Error(completionError.message);
   }
+}
+
+async function syncPrivateSubmissionAuthorMetadata(admin: AdminClient, submissionId: string, authors: Array<z.infer<typeof publicationAuthorInput>>, actorId: string) {
+  if (!authors.length) return;
+  const rows = authors.map((author) => ({
+    submission_id: submissionId,
+    position: author.position,
+    first_name: author.firstName,
+    middle_initial: author.middleInitial || null,
+    surname: author.surname,
+    position_title: author.occupation || null,
+    academic_title: author.academicTitle || null,
+    email: author.email,
+    institution: author.affiliation || null,
+    affiliation: author.affiliation || null,
+    orcid: author.orcid || null,
+    photo_file_id: author.photoFileId || null,
+    updated_by: actorId,
+  }));
+  const { error } = await admin.from("submission_authors").upsert(rows, { onConflict: "submission_id,position" });
+  if (error) throw new Error("The private submission author details could not be saved.");
 }
 
 async function emitProgressActivity(
@@ -622,7 +643,9 @@ export async function savePublicationRecord(input: z.input<typeof publicationRec
       await syncPublicationAuthorMetadata(admin, publicationId, finalAuthors);
     }
 
-    parsed.metadata.authorMetadata = finalAuthors;
+    await syncPrivateSubmissionAuthorMetadata(admin, parsed.submissionId, finalAuthors, user.id);
+
+    parsed.metadata.authorMetadata = finalAuthors.map(({ email: _email, ...author }) => author);
   }
 
   const publicationMetadata = {
