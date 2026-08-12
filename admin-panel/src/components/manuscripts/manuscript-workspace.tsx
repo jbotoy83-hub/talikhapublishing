@@ -479,7 +479,7 @@ export function ManuscriptWorkspace() {
   return <div className="me-workspace">
     <header className="me-command-bar">
       <button type="button" className="me-icon-button" title="Back to Editors" aria-label="Back to Editors" onClick={backToHub}><ArrowLeft size={18} /></button>
-      <div className="me-document-identity"><strong>{detail.submission.title}</strong><span>{detail.submission.reference} · {detail.document.sourceFileName}</span></div>
+      <div className="me-document-identity"><strong title={detail.submission.title}>{detail.submission.title}</strong><span>{detail.submission.reference} · {detail.document.sourceFileName}</span></div>
       <div className="me-source-version" title={detail.document.sourceSha256 || "The source hash is created on first import"}><ShieldCheck size={15} /><span>Source</span><strong>{shortHash(detail.document.sourceSha256)}</strong></div>
       <div className={`me-lease-status ${editable ? "is-editable" : "is-readonly"}`}><span className="me-presence-dot" /><div><small>{editable ? "Editing lease" : "Read-only"}</small><strong>{editable ? "You" : detail.lease.ownerName || (detail.permissions.published ? "Published" : "No active editor")}</strong></div></div>
       <div className={`me-save-status is-${saveState}`}>{saveState === "saving" ? <RefreshCw size={15} /> : saveState === "conflict" || saveState === "offline" ? <AlertTriangle size={15} /> : saveState === "read_only" ? <LockKeyhole size={15} /> : <Check size={15} />}<span>{stateLabel(saveState)}</span></div>
