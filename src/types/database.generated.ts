@@ -32,6 +32,7 @@ export type Database = {
           image_url: string | null
           layout: string
           message: string
+          popup_description: string
           presentation: string
           starts_at: string | null
           target: string
@@ -54,6 +55,7 @@ export type Database = {
           image_url?: string | null
           layout?: string
           message?: string
+          popup_description?: string
           presentation?: string
           starts_at?: string | null
           target?: string
@@ -76,6 +78,7 @@ export type Database = {
           image_url?: string | null
           layout?: string
           message?: string
+          popup_description?: string
           presentation?: string
           starts_at?: string | null
           target?: string

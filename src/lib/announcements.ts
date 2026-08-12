@@ -16,6 +16,7 @@ export const announcementInput = z.object({
   presentation: z.enum(["banner", "popup", "both"]).default("banner"),
   category: z.string().trim().max(80).default("Announcement"),
   message: z.string().trim().max(240).default(""),
+  popupDescription: z.string().trim().max(500).default(""),
   actionLabel: z.string().trim().max(120).default(""),
   actionHref: z.string().trim().max(500).default("").refine(isSafeAnnouncementHref, "Action links must be a relative path or secure HTTPS URL."),
   imageUrl: z.string().trim().max(1000).nullable().default(null).refine((value) => {
@@ -46,6 +47,7 @@ export type AnnouncementRow = {
   presentation: string;
   category: string;
   message: string;
+  popup_description: string;
   action_label: string;
   action_href: string;
   image_url: string | null;
@@ -66,6 +68,7 @@ export type AnnouncementSettings = {
   presentation: string;
   category: string;
   message: string;
+  popupDescription: string;
   actionLabel: string;
   actionHref: string;
   imageUrl: string | null;
@@ -101,6 +104,7 @@ export function toSettings(row: AnnouncementRow): AnnouncementSettings {
     presentation: row.presentation,
     category: row.category,
     message: row.message,
+    popupDescription: row.popup_description,
     actionLabel: row.action_label,
     actionHref: row.action_href,
     imageUrl: row.image_url,
@@ -122,6 +126,7 @@ export function toPayload(input: AnnouncementInput, actorId: string) {
     presentation: input.presentation,
     category: input.category,
     message: input.message,
+    popup_description: input.popupDescription,
     action_label: input.actionLabel,
     action_href: input.actionHref,
     image_url: input.imageUrl,

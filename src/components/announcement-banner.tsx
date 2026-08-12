@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "./icon";
+import { XIcon } from "./icons/x";
 
 type AnnouncementSettings = {
   enabled: boolean;
   presentation: "banner" | "popup" | "both";
   category: string;
   message: string;
+  popupDescription: string;
   actionLabel: string;
   actionHref: string;
   imageUrl: string | null;
@@ -30,6 +32,7 @@ const defaults: AnnouncementSettings = {
   presentation: "banner",
   category: "Announcement",
   message: "Talikha Publishing is now accepting submissions for all journals.",
+  popupDescription: "",
   actionLabel: "Submit your work",
   actionHref: "/submit",
   imageUrl: null,
@@ -207,36 +210,39 @@ export function AnnouncementBanner() {
             aria-labelledby={titleId}
             data-layout={hasImage ? settings.layout : "text-only"}
           >
-            {hasImage && settings.imageUrl && (
-              <figure className="announcement-popup-media">
-                <img
-                  src={settings.imageUrl}
-                  alt={settings.imageAlt || settings.category}
-                  loading="eager"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                  onError={() => {
-                    setImageState("error");
-                    setFailedImageUrl(settings.imageUrl);
-                  }}
-                />
-              </figure>
+            {settings.dismissible && (
+              <button type="button" className="announcement-popup-close" onClick={close} aria-label="Dismiss announcement">
+                <XIcon size={16} strokeWidth={1.8} aria-hidden />
+              </button>
             )}
-            <div className="announcement-popup-copy">
-              {settings.dismissible && (
-                <button type="button" className="announcement-popup-close" onClick={close} aria-label="Dismiss announcement">
-                  ×
-                </button>
+            <div className="announcement-popup-scroll">
+              {hasImage && settings.imageUrl && (
+                <figure className="announcement-popup-media">
+                  <img
+                    src={settings.imageUrl}
+                    alt={settings.imageAlt || settings.category}
+                    loading="eager"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    onError={() => {
+                      setImageState("error");
+                      setFailedImageUrl(settings.imageUrl);
+                    }}
+                  />
+                </figure>
               )}
-              <span className="announcement-popup-category">{settings.category}</span>
-              <h2 id={titleId}>{settings.message}</h2>
-              <div className="announcement-popup-actions">
-                {action}
-                {settings.dismissible && (
-                  <button type="button" className="announcement-popup-later" onClick={close}>
-                    Not now
-                  </button>
-                )}
+              <div className="announcement-popup-copy">
+                <span className="announcement-popup-category">{settings.category}</span>
+                <h2 id={titleId}>{settings.message}</h2>
+                {settings.popupDescription && <p className="announcement-popup-description">{settings.popupDescription}</p>}
+                <div className="announcement-popup-actions">
+                  {action}
+                  {settings.dismissible && (
+                    <button type="button" className="announcement-popup-later" onClick={close}>
+                      Not now
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </section>

@@ -4812,36 +4812,48 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
   background:rgba(12,42,31,.46);
   padding:clamp(1rem,3vw,2.5rem);
   backdrop-filter:blur(6px);
+  scrollbar-width:none;
+  -ms-overflow-style:none;
 }
+.announcement-popup-backdrop::-webkit-scrollbar { display:none; width:0; height:0; }
 .announcement-popup {
   position:relative;
-  display:grid;
+  display:block;
   width:min(54rem,100%);
   max-height:min(48rem,calc(100vh - 2rem));
-  overflow-y:auto;
-  overflow-x:hidden;
+  overflow:hidden;
   border:1px solid rgba(24,61,44,.18);
   border-radius:28px;
   background:#fff;
   box-shadow:0 28px 90px rgba(12,42,31,.34),0 5px 18px rgba(12,42,31,.12);
 }
 .announcement-popup--text-only { width:min(43rem,100%); }
-.announcement-popup--image-led { grid-template-columns:1fr; }
-.announcement-popup--split { grid-template-columns:minmax(0,1.08fr) minmax(17rem,.92fr); }
+.announcement-popup-scroll {
+  display:grid;
+  width:100%;
+  max-height:inherit;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
+}
+.announcement-popup-scroll::-webkit-scrollbar { display:none; width:0; height:0; }
+.announcement-popup--image-led .announcement-popup-scroll { grid-template-columns:1fr; }
+.announcement-popup--split .announcement-popup-scroll { grid-template-columns:minmax(0,1.08fr) minmax(17rem,.92fr); align-items:stretch; }
 .announcement-popup-media {
   position:relative;
+  display:block;
+  width:100%;
   min-height:0;
   margin:0;
   overflow:hidden;
   background:linear-gradient(145deg,#d8e2d9,#b9cbbd);
 }
 .announcement-popup--image-led .announcement-popup-media {
-  aspect-ratio:1.38 / 1;
-  max-height:26rem;
-  margin:.45rem .45rem 0;
-  border-radius:22px;
+  height:clamp(16rem,38vw,26rem);
 }
-.announcement-popup--split .announcement-popup-media { min-height:clamp(22rem,34vw,31rem); margin:.45rem 0 .45rem .45rem; border-radius:22px; }
+.announcement-popup--split .announcement-popup-media { height:100%; min-height:clamp(22rem,34vw,31rem); }
 .announcement-popup-media::after {
   position:absolute;
   inset:0;
@@ -4863,13 +4875,13 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
   align-items:flex-start;
   justify-content:center;
   overflow:visible;
-  padding:clamp(2rem,5vw,4rem);
+  width:100%;
+  min-height:100%;
+  padding:clamp(2rem,4.5vw,3.75rem);
   background:#fff;
-  scrollbar-width:thin;
-  scrollbar-color:rgba(24,61,44,.28) transparent;
 }
 .announcement-popup--text-only .announcement-popup-copy { min-height:22rem; }
-.announcement-popup--split .announcement-popup-copy { min-height:clamp(22rem,34vw,31rem); }
+.announcement-popup--split .announcement-popup-copy { min-height:clamp(22rem,34vw,31rem); padding-top:clamp(3.5rem,5vw,4.25rem); }
 .announcement-popup-category {
   display:inline-flex;
   align-items:center;
@@ -4893,6 +4905,13 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
   letter-spacing:-.035em;
   line-height:1.08;
   text-wrap:balance;
+}
+.announcement-popup-description {
+  max-width:40rem;
+  margin:1.05rem 0 0;
+  color:#53635a;
+  font-size:clamp(.95rem,1.5vw,1.08rem);
+  line-height:1.65;
 }
 .announcement-popup-actions {
   display:flex;
@@ -4939,7 +4958,7 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
   place-items:center;
   border:1px solid rgba(24,61,44,.13);
   border-radius:999px;
-  background:rgba(255,253,248,.75);
+  background:rgba(255,255,255,.92);
   color:var(--forest-dark);
   cursor:pointer;
   font-size:1.35rem;
@@ -4950,9 +4969,9 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
 @media (max-width:760px) {
   .announcement-popup-backdrop { align-items:start; padding:clamp(.75rem,3vw,1.25rem); }
   .announcement-popup { width:100%; max-height:calc(100vh - 1.5rem); border-radius:22px; }
-  .announcement-popup--split { grid-template-columns:1fr; }
-  .announcement-popup--image-led .announcement-popup-media { aspect-ratio:16 / 10; max-height:15rem; margin:.35rem .35rem 0; }
-  .announcement-popup--split .announcement-popup-media { min-height:0; aspect-ratio:16 / 10; max-height:15rem; margin:.35rem .35rem 0; }
+  .announcement-popup--split .announcement-popup-scroll { grid-template-columns:1fr; }
+  .announcement-popup--image-led .announcement-popup-media { height:clamp(13rem,58vw,17rem); }
+  .announcement-popup--split .announcement-popup-media { height:clamp(13rem,58vw,17rem); min-height:0; }
   .announcement-popup-copy { padding:clamp(1.5rem,6vw,2.4rem); }
   .announcement-popup--text-only .announcement-popup-copy { min-height:18rem; }
   .announcement-popup h2 { max-width:none; font-size:clamp(1.8rem,8vw,2.55rem); }
@@ -4960,7 +4979,7 @@ button.aphoto-circle:hover .aphoto-veil, button.aphoto-circle:focus-visible .aph
 @media (max-width:420px) {
   .announcement-popup-backdrop { padding:.5rem; }
   .announcement-popup { max-height:calc(100vh - 1rem); border-radius:18px; }
-  .announcement-popup-media { max-height:12rem !important; }
+  .announcement-popup--image-led .announcement-popup-media,.announcement-popup--split .announcement-popup-media { height:12rem; }
   .announcement-popup-copy { padding:1.35rem 1.2rem 1.5rem; }
   .announcement-popup-close { top:.7rem; right:.7rem; }
   .announcement-popup-actions { align-items:stretch; flex-direction:column; width:100%; }
