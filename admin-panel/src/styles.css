@@ -11438,3 +11438,48 @@ button.hm-stat:focus-visible { outline: 3px solid rgba(8, 122, 69, 0.18); outlin
   background: #fff0ed;
   color: #a84632;
 }
+
+/* ========================================================================
+   LIVE TEAM CARD — real account presence with a calm editorial hierarchy
+   ======================================================================== */
+.tp-team-card { min-width: 0; }
+.tp-team-card__head { align-items: flex-start; }
+.tp-team-card__head .tp-ph__text { min-width: 0; flex: 1; }
+.tp-team-card__head .tp-ph__text p { margin-top: 3px; color: #7b887f; font-size: 11px; }
+.tp-team-live-badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d6e8dd; border-radius: 999px; background: #f4faf6; padding: 5px 8px; color: #236b49; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.tp-team-live-badge i { width: 6px; height: 6px; border-radius: 50%; background: #168452; box-shadow: 0 0 0 3px rgba(22,132,82,.12); }
+.tp-team-card__intro { max-width: 48ch; margin: -3px 0 16px; color: #728078; font-size: 11px; line-height: 1.55; }
+.tp-team-groups { display: grid; gap: 15px; }
+.tp-team-group { min-width: 0; }
+.tp-team-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; color: #66756c; font-size: 10px; font-weight: 800; letter-spacing: .09em; line-height: 1.2; text-transform: uppercase; }
+.tp-team-label b { display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 999px; background: #eef3ef; color: #587063; font-size: 10px; letter-spacing: 0; }
+.tp-team-label--online { color: #24704d; }
+.tp-team-label--online b { background: #e7f5ec; color: #23714c; }
+.tp-team-label--away { color: #9c6d18; }
+.tp-team-label--away b { background: #fff4d8; color: #98680f; }
+.tp-team-label--offline { color: #7b8580; }
+.tp-team-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tp-team-member { min-width: 0; align-items: center; border: 1px solid #e7ece8; border-radius: 12px; background: #fbfdfb; padding: 9px 10px; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.tp-team-member:hover { border-color: #c9dfd1; background: #fff; box-shadow: 0 5px 14px rgba(28,65,45,.05); }
+.tp-team-member .avatar, .tp-team-avatar { width: 34px; height: 34px; flex: 0 0 34px; }
+.tp-team-avatar { display: grid; place-items: center; border-radius: 50%; background: #e1efe6; color: #256646; font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+.tp-team-member .tp-person__text { display: grid; gap: 1px; }
+.tp-team-member .tp-person__text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-team-member .tp-person__text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-team-member .tp-person__text small { overflow: hidden; color: #9aa59e; font-size: 10px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.tp-presence { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #c3ccc6; animation: none; }
+.tp-presence--online { background: #168452; box-shadow: 0 0 0 3px rgba(22,132,82,.11); }
+.tp-presence--away { background: #d99600; }
+.tp-presence--offline { background: #aeb8b1; }
+.tp-team-state { display: flex; min-height: 86px; align-items: center; justify-content: center; gap: 8px; border: 1px dashed #d7e2da; border-radius: 12px; background: #fafcfb; color: #718079; font-size: 12px; text-align: center; }
+.tp-team-state--error { border-style: solid; border-color: #ead7c9; background: #fffaf6; color: #9a5a38; }
+.tp-team-loading-dot { width: 9px; height: 9px; border: 2px solid #b9d8c5; border-top-color: #27724d; border-radius: 50%; animation: tp-spin .8s linear infinite; }
+@keyframes tp-spin { to { transform: rotate(360deg); } }
+@media (max-width: 767px) {
+  .tp-team-row { grid-template-columns: 1fr; }
+  .tp-team-live-badge { padding-inline: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tp-team-member { transition: none; }
+  .tp-team-loading-dot { animation: none; }
+}

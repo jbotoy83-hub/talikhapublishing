@@ -5721,3 +5721,33 @@ body:has(.track-page) { background:#f7f7f8; }
   .search-journal-card:hover, .search-author-card:hover { transform: none; }
 }
 
+/* Admin sign-in stays inside one viewport; compact breakpoints preserve the
+   full form on short laptop windows without introducing a second scrollbar. */
+.admin-login-shell { height: 100dvh; max-height: 100dvh; overflow: hidden; }
+.admin-login-primary, .admin-login-aside { min-height: 0; height: 100%; }
+.admin-login-panel { max-height: calc(100dvh - 2rem); overflow: hidden; }
+.admin-login-aside-tour { min-height: 0; }
+.admin-login-aside-tour .admin-login-tour-card { min-height: clamp(280px, 44vh, 420px); }
+@media (max-height: 820px) {
+  .admin-login-primary { padding-block: 1rem; }
+  .admin-login-panel { padding: 1.5rem; }
+  .admin-login-eyebrow { margin-top: 2.5rem; }
+  .admin-login-form { margin-top: 1.75rem; }
+  .admin-login-title { font-size: 2.5rem; }
+  .admin-login-copy { margin-top: .75rem; line-height: 1.45; }
+  .admin-login-form { gap: .75rem; }
+  .admin-login-form > label { height: 3.1rem; }
+  .admin-login-aside-heading { padding-top: 2rem; }
+  .admin-login-aside-tour { margin-top: 2rem; }
+  .admin-login-aside-tour .admin-login-tour-card { min-height: 0; transform: scale(.88); transform-origin: top left; width: 113.64%; }
+}
+@media (max-height: 680px) {
+  .admin-login-panel { padding: 1.25rem; }
+  .admin-login-eyebrow { margin-top: 1.75rem; }
+  .admin-login-title { margin-top: .5rem; font-size: 2.2rem; }
+  .admin-login-copy { margin-top: .5rem; font-size: .92rem; line-height: 1.35; }
+  .admin-login-form { margin-top: 1.25rem; gap: .6rem; }
+  .admin-login-form > label { height: 2.85rem; padding-inline: 1rem; font-size: .9rem; }
+  .admin-login-form button { padding-block: .7rem; }
+}
+

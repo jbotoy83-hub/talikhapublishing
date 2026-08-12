@@ -37,7 +37,7 @@ export function TalikhaBoardTour() {
   const activeItem = tourItems[activeIndex];
 
   return (
-    <section aria-labelledby="talikha-board-tour-title" className="min-h-[420px] w-full rounded-2xl border border-white/15 bg-[#1c1c1c] p-5 shadow-2xl xl:p-6">
+    <section aria-labelledby="talikha-board-tour-title" className="admin-login-tour-card min-h-[420px] w-full rounded-2xl border border-white/15 bg-[#1c1c1c] p-5 shadow-2xl xl:p-6">
       <p id="talikha-board-tour-title" className="text-xs font-bold uppercase tracking-[.16em] text-clay-500">Explore TalikhaBoard</p>
       <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,.88fr)_minmax(0,1.12fr)] xl:gap-6">
         <div className="space-y-1" role="tablist" aria-label="TalikhaBoard features">

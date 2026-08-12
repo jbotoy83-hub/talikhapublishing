@@ -5967,12 +5967,27 @@ type OverviewRealData = {
   totalAuthors: number;
   journals: { id: string; title: string; slug: string }[];
 };
+type TeamPresenceStatus = "online" | "away" | "offline";
+type TeamPresenceMember = {
+  id: string;
+  name: string;
+  username: string | null;
+  email: string;
+  role: "admin" | "editor";
+  headline: string;
+  avatarUrl: string | null;
+  status: TeamPresenceStatus;
+  lastSeenAt: string | null;
+};
 type OverviewDashboardProps = {
   displayName: string;
   submissions: EditorialSubmission[];
   publicationRecords: PublicationRecord[];
   isConnected: boolean;
   realData: OverviewRealData | null;
+  teamPresence: TeamPresenceMember[];
+  teamPresenceLoading: boolean;
+  teamPresenceError: string;
   awaitingScreening: number;
   newCount: number;
   inReviewCount: number;
@@ -6010,16 +6025,17 @@ const overviewRewards = [
   { name: "Copyediting payout", detail: "Volume 3 · Issue 2", amount: "₱ 2,200", state: "Paid" },
   { name: "Layout services", detail: "InQuira · Proofs", amount: "₱ 900", state: "Pending" },
 ];
-const overviewTeam = [
-  { group: "Available", people: [
-    { name: "Nina Villareal", role: "Managing editor", image: portraits[1] },
-    { name: "Marco Dela Cruz", role: "Section editor", image: portraits[2] },
-  ]},
-  { group: "Away", people: [
-    { name: "Alyssa Santos", role: "Copy editor", image: portraits[3] },
-    { name: "Tomas Rivera", role: "Reviewer", image: portraits[4] },
-  ]},
-];
+const teamInitials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "TM";
+const teamLastSeenLabel = (lastSeenAt: string | null, status: TeamPresenceStatus) => {
+  if (!lastSeenAt) return "No activity recorded";
+  const elapsedSeconds = Math.max(0, (Date.now() - Date.parse(lastSeenAt)) / 1000);
+  if (status === "online" || elapsedSeconds < 60) return "Active just now";
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes < 60) return `Last active ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Last active ${hours}h ago`;
+  return `Last active ${Math.floor(hours / 24)}d ago`;
+};
 const journalToneClass = (name: string) => {
   const tones = ["tp-tint--green", "tp-tint--blue", "tp-tint--amber", "tp-tint--clay"];
   const hash = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -6076,6 +6092,9 @@ function OverviewDashboard({
   publicationRecords,
   isConnected,
   realData,
+  teamPresence,
+  teamPresenceLoading,
+  teamPresenceError,
   awaitingScreening,
   newCount,
   inReviewCount,
@@ -6520,29 +6539,47 @@ function OverviewDashboard({
           )}
         </div>
 
-        <div className="tp-card" style={{ "--i": 8 } as React.CSSProperties}>
-          <header className="tp-card__head">
+        <div className="tp-card tp-team-card" style={{ "--i": 8 } as React.CSSProperties}>
+          <header className="tp-card__head tp-team-card__head">
             <span className="tp-ph__icon" aria-hidden="true"><Users size={18} strokeWidth={1.9} /></span>
-            <div className="tp-ph__text"><h2>Team</h2></div>
+            <div className="tp-ph__text"><h2>Team</h2><p>Live presence</p></div>
+            <span className="tp-team-live-badge"><i aria-hidden="true" /> {teamPresence.filter((member) => member.status === "online").length} online</span>
           </header>
-          <p className="tp-sub">Editorial desk · live presence</p>
-          {overviewTeam.map((group, gi) => (
-            <div key={group.group}>
-              <p className={gi ? "tp-team-label tp-team-label--away" : "tp-team-label"}>{group.group}</p>
-              <div className="tp-team-row">
-                {group.people.map((person) => (
-                  <div className="tp-person" key={person.name} title={`${person.name} · ${person.role} · ${group.group}`}>
-                    <Avatar src={person.image} />
-                    <div className="tp-person__text">
-                      <strong>{person.name}</strong>
-                      <span>{person.role}</span>
-                    </div>
-                    <i className={group.group === "Away" ? "tp-presence tp-presence--away" : "tp-presence"} aria-label={group.group} />
+          <p className="tp-team-card__intro">Connected editorial accounts update every 30 seconds. Online means active in the last 90 seconds.</p>
+          {teamPresenceError ? (
+            <div className="tp-team-state tp-team-state--error" role="status"><AlertTriangle size={15} />{teamPresenceError}</div>
+          ) : teamPresenceLoading && !teamPresence.length ? (
+            <div className="tp-team-state" role="status"><span className="tp-team-loading-dot" />Checking team activity…</div>
+          ) : !teamPresence.length ? (
+            <div className="tp-team-state" role="status"><Users size={15} />No team accounts are connected.</div>
+          ) : (
+            <div className="tp-team-groups">
+              {([
+                { status: "online" as const, label: "Online now" },
+                { status: "away" as const, label: "Away" },
+                { status: "offline" as const, label: "Offline" },
+              ]).map((group) => {
+                const members = teamPresence.filter((member) => member.status === group.status);
+                if (!members.length) return null;
+                return <div className="tp-team-group" key={group.status}>
+                  <div className={`tp-team-label tp-team-label--${group.status}`}><span>{group.label}</span><b>{members.length}</b></div>
+                  <div className="tp-team-row">
+                    {members.map((member) => (
+                      <div className="tp-person tp-team-member" key={member.id} title={`${member.name} · ${member.role} · ${group.label}`}>
+                        {member.avatarUrl ? <Avatar src={member.avatarUrl} /> : <span className="tp-team-avatar" aria-hidden="true">{teamInitials(member.name)}</span>}
+                        <div className="tp-person__text">
+                          <strong>{member.name}</strong>
+                          <span>{member.headline || (member.role === "admin" ? "Administrator" : "Editor")}</span>
+                          <small>{teamLastSeenLabel(member.lastSeenAt, member.status)}</small>
+                        </div>
+                        <i className={`tp-presence tp-presence--${member.status}`} aria-label={group.label} />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>;
+              })}
             </div>
-          ))}
+          )}
         </div>
       </section>
 
@@ -6854,6 +6891,9 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     [workspaceAuthRequired, setWorkspaceAuthRequired] = useState(false),
     [workspaceData, setWorkspaceData] = useState<{ media: Record<string, unknown>[] } | null>(null),
     [realData, setRealData] = useState<{ stageCounts: Record<string, number>; totalSubmissions: number; totalJournals: number; totalAuthors: number; journals: { id: string; title: string; slug: string }[] } | null>(null);
+  const [teamPresence, setTeamPresence] = useState<TeamPresenceMember[]>([]);
+  const [teamPresenceLoading, setTeamPresenceLoading] = useState(false);
+  const [teamPresenceError, setTeamPresenceError] = useState("");
   const [viewSwitching, setViewSwitching] = useState(false);
   const viewSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [previewRole, setPreviewRole] = useState<"admin" | "editor">(accessRole === "admin" ? "admin" : "editor");
@@ -7013,7 +7053,6 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     };
     window.addEventListener("popstate", restoreLocation);
     window.addEventListener("storage", syncLocalSamples);
-    fetch("/api/admin/activity", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "admin_app_opened" }) }).catch(() => undefined);
     fetch("/api/admin/workspace")
       .then(async (res) => ({ status: res.status, result: await res.json() }))
       .then(({ status, result }) => {
@@ -7075,6 +7114,56 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only effect; setters are stable, mergeLocalSamples is local
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const heartbeat = () => {
+      if (cancelled) return;
+      fetch("/api/admin/activity", {
+        method: "POST",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "admin_app_opened" }),
+      }).catch(() => undefined);
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 30_000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") heartbeat(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+  useEffect(() => {
+    if (!isConnected || workspaceAuthRequired) return;
+    let cancelled = false;
+    const loadTeamPresence = async () => {
+      setTeamPresenceLoading(true);
+      try {
+        const response = await fetch("/api/admin/team/presence", { credentials: "same-origin", cache: "no-store" });
+        const body = await response.json().catch(() => ({})) as { members?: unknown; error?: string };
+        if (!response.ok) throw new Error(body.error || "Presence is temporarily unavailable.");
+        const members = Array.isArray(body.members) ? body.members : [];
+        if (!cancelled) {
+          setTeamPresence(members.filter((member): member is TeamPresenceMember => {
+            if (!member || typeof member !== "object") return false;
+            const value = member as Partial<TeamPresenceMember>;
+            return typeof value.id === "string" && typeof value.name === "string" && (value.status === "online" || value.status === "away" || value.status === "offline");
+          }));
+          setTeamPresenceError("");
+        }
+      } catch (error) {
+        if (!cancelled) setTeamPresenceError(error instanceof Error ? error.message : "Presence is temporarily unavailable.");
+      } finally {
+        if (!cancelled) setTeamPresenceLoading(false);
+      }
+    };
+    void loadTeamPresence();
+    const timer = window.setInterval(() => { void loadTeamPresence(); }, 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isConnected, workspaceAuthRequired]);
   useEffect(() => {
     if (workspaceAuthRequired) {
       window.location.replace(`/admin/login?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
@@ -7383,6 +7472,9 @@ function App({ accessRole = "admin" }: { accessRole?: "admin" | "editor" | "view
             publicationRecords={publicationRecords}
             isConnected={isConnected}
             realData={realData}
+            teamPresence={teamPresence}
+            teamPresenceLoading={teamPresenceLoading}
+            teamPresenceError={teamPresenceError}
             awaitingScreening={awaitingScreening}
             newCount={newCount}
             inReviewCount={inReviewCount}
